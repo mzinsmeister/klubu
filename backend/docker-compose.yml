@@ -1,0 +1,16 @@
+version: "3"
+services:
+  db:
+    image: postgres:latest
+    restart: on-failure
+    ports:
+      - "5432:5432"
+    environment:
+      - POSTGRES_DB=megebu
+      - POSTGRES_USER=megebu
+      - POSTGRES_PASSWORD=megebu-test
+      - POSTGRES_ROOT_PASSWORD=abc123testroot
+    volumes:
+      - megebu-data:/var/lib/postgresql/data:z
+volumes:
+  megebu-data:
