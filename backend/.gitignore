@@ -35,3 +35,6 @@ out/
 
 ### VS Code ###
 .vscode/
+
+files/fonts/
+files/storage/

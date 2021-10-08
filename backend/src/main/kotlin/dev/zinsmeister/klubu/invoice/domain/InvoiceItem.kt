@@ -1,7 +1,7 @@
 package dev.zinsmeister.klubu.invoice.domain
 
 import dev.zinsmeister.klubu.exception.IllegalModificationException
-import dev.zinsmeister.klubu.quotation.domain.QuotationItem
+import dev.zinsmeister.klubu.offer.domain.OfferItem
 import javax.persistence.Entity
 import javax.persistence.GeneratedValue
 import javax.persistence.Id
@@ -63,6 +63,6 @@ class InvoiceItem(
         return (this.quantity * this.priceCents).roundToInt()
     }
 
-    fun copyToNew() = QuotationItem(position, itemName, quantity, unit, priceCents)
+    fun copyToNew() = OfferItem(itemName, quantity, unit, priceCents)
 
 }

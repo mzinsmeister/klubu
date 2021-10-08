@@ -13,4 +13,4 @@ import org.springframework.web.bind.annotation.ResponseStatus
  * I'm not sure whether this is the way to go but that's the way it is for now.
  */
 @ResponseStatus(HttpStatus.INTERNAL_SERVER_ERROR)
-class IllegalModificationException(msg: String): Exception(msg)
+class IllegalModificationException(msg: String): RuntimeException(msg)

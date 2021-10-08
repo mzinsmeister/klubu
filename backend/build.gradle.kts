@@ -21,10 +21,21 @@ dependencies {
 	//implementation("org.springframework.boot:spring-boot-starter-security")
 	implementation("org.springframework.boot:spring-boot-starter-web")
 	implementation("com.fasterxml.jackson.module:jackson-module-kotlin")
+
+	implementation("com.googlecode.owasp-java-html-sanitizer:owasp-java-html-sanitizer:20200713.1")
+	implementation("com.github.spullara.mustache.java:compiler:0.9.10")
+	// New Docker baseimage has to be built when a new playwright verson is for a new chromium version
+	// TODO: Evaluate goging through chrome devtools protocol directly or using selenium instead
+	implementation("com.microsoft.playwright:playwright:1.15.2")
+	implementation("org.apache.pdfbox:pdfbox:2.0.24")
+
 	implementation("org.jetbrains.kotlin:kotlin-reflect")
 	implementation("org.jetbrains.kotlin:kotlin-stdlib-jdk8")
+
 	developmentOnly("org.springframework.boot:spring-boot-devtools")
+
 	runtimeOnly("org.postgresql:postgresql")
+
 	testImplementation("org.springframework.boot:spring-boot-starter-test")
 	testImplementation("org.springframework.security:spring-security-test")
 }

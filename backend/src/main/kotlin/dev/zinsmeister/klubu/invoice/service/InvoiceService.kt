@@ -1,7 +1,6 @@
 package dev.zinsmeister.klubu.invoice.service
 
 import dev.zinsmeister.klubu.contact.repository.ContactRepository
-import dev.zinsmeister.klubu.contact.repository.findLatestContactById
 import dev.zinsmeister.klubu.contact.service.mapContactEntityToDTO
 import dev.zinsmeister.klubu.exception.IllegalModificationException
 import dev.zinsmeister.klubu.exception.IllegalModificationRequestException
@@ -12,8 +11,8 @@ import dev.zinsmeister.klubu.invoice.domain.Invoice
 import dev.zinsmeister.klubu.invoice.domain.InvoiceItem
 import dev.zinsmeister.klubu.invoice.dto.*
 import dev.zinsmeister.klubu.invoice.repository.InvoiceRepository
-import dev.zinsmeister.klubu.util.dto.CurrencyDTO
-import dev.zinsmeister.klubu.util.dto.MoneyDTO
+import dev.zinsmeister.klubu.common.dto.CurrencyDTO
+import dev.zinsmeister.klubu.common.dto.MoneyDTO
 import dev.zinsmeister.klubu.util.isoFormat
 import org.springframework.data.domain.Page
 import org.springframework.data.domain.Pageable
@@ -47,7 +46,7 @@ class InvoiceService(private val repository: InvoiceRepository,
         val foundEntity = repository.findByIdOrNull(id)
                 ?: throw NotFoundInDBException("Invoice not found")
         if(foundEntity.customer.contactId != dto.customerContactId) {
-            foundEntity.customer = contactRepository.findLatestContactById(dto.customerContactId)
+            foundEntity.customer = contactRepository.findByIdOrNull(dto.customerContactId)
                     ?: throw NotFoundInDBException("Contact not found")
         }
         try {
@@ -85,7 +84,8 @@ class InvoiceService(private val repository: InvoiceRepository,
             isCancelation = entity.isCancelation,
             isCanceled = entity.isCanceled,
             items = entity.immutableItems.map { mapInvoiceItemEntityToDTO(it) },
-            customerContact = mapContactEntityToDTO(entity.customer)
+            customerContact = mapContactEntityToDTO(entity.customer),
+            recipent = entity.recipent
     )
 
     private fun mapInvoiceItemEntityToDTO(entity: InvoiceItem) = InvoiceItemDTO(
@@ -100,9 +100,10 @@ class InvoiceService(private val repository: InvoiceRepository,
     )
 
     private fun mapInvoiceDTOToEntity(dto: RequestInvoiceDTO) = Invoice(
-            contact = contactRepository.findLatestContactById(dto.customerContactId)
+            contact = contactRepository.findByIdOrNull(dto.customerContactId)
                     ?: throw NotFoundInDBException("Contact not found"),
-            items = dto.items.map { mapInvoiceItemDTOToEntity(it) }.toMutableList()
+            items = dto.items.map { mapInvoiceItemDTOToEntity(it) }.toMutableList(),
+            recipent = dto.recipent
     )
 
     private fun mapInvoiceItemDTOToEntity(dto: InvoiceItemDTO) = InvoiceItem(

@@ -27,11 +27,6 @@ class ContactController(val contactService: ContactService) {
         contactService.updateContact(id, body)
     }
 
-    @GetMapping("{id}/revisions/{revision}")
-    fun getRevision(@PathVariable("id") id: Int, @PathVariable("revision") revision: Int): ContactDTO {
-        return contactService.fetchContact(id, revision)
-    }
-
     @GetMapping
     fun listContacts(@RequestParam("name") name: String?, pageable: Pageable): Page<ContactDTO> {
         return contactService.listContacts(name, pageable)

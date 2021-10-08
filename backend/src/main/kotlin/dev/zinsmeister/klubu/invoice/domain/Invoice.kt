@@ -1,5 +1,6 @@
 package dev.zinsmeister.klubu.invoice.domain
 
+import dev.zinsmeister.klubu.common.domain.Recipent
 import dev.zinsmeister.klubu.contact.domain.Contact
 import dev.zinsmeister.klubu.document.domain.Document
 import dev.zinsmeister.klubu.exception.IllegalModificationException
@@ -10,6 +11,8 @@ import javax.persistence.*
 @Entity
 class Invoice(
         contact: Contact,
+
+        recipent: Recipent,
 
         @OneToMany(cascade = [CascadeType.ALL], mappedBy = "invoice", orphanRemoval = true)
         @OrderBy("position asc")
@@ -32,6 +35,15 @@ class Invoice(
 
     @ManyToOne
     var customer: Contact = contact
+    set(value) {
+        if(isCodified) {
+            throw IllegalModificationException("Modification of codified invoice not allowed")
+        }
+        field = value
+    }
+
+    @Embedded
+    var recipent: Recipent = recipent
     set(value) {
         if(isCodified) {
             throw IllegalModificationException("Modification of codified invoice not allowed")

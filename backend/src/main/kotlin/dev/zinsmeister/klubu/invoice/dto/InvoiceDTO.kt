@@ -1,7 +1,8 @@
 package dev.zinsmeister.klubu.invoice.dto
 
+import dev.zinsmeister.klubu.common.domain.Recipent
 import dev.zinsmeister.klubu.contact.dto.ContactDTO
-import dev.zinsmeister.klubu.util.dto.MoneyDTO
+import dev.zinsmeister.klubu.common.dto.MoneyDTO
 
 data class ResponseInvoiceDTO(
         val id: Int,
@@ -11,13 +12,15 @@ data class ResponseInvoiceDTO(
         val isCanceled: Boolean,
         val isCancelation: Boolean,
         val correctedInvoiceId: Int?,
-        val customerContact: ContactDTO
+        val customerContact: ContactDTO,
+        val recipent: Recipent
         )
 
 data class RequestInvoiceDTO(
         val items: List<InvoiceItemDTO>,
         val customerContactId: Int,
-        val paidDate: String?
+        val paidDate: String?,
+        val recipent: Recipent
 )
 
 data class InvoiceItemDTO(

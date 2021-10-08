@@ -1,15 +1,11 @@
 package dev.zinsmeister.klubu.contact.domain
 
-import java.io.Serializable
+import dev.zinsmeister.klubu.common.domain.Address
 import java.time.Instant
 import javax.persistence.*
 
-
-class ContactId(var contactId: Int? = null, var revision: Int? = null): Serializable
-
 @Entity
 @Table(name = "CONTACT")
-@IdClass(ContactId::class)
 class Contact(
         @Id
         @Column(name = "ID")
@@ -22,23 +18,12 @@ class Contact(
         var name: String,
         @Column(name = "FIRST_NAME")
         var firstName: String?,
-        @Column(name = "ADDRESS")
-        var address: String?,
-        @Column(name = "ZIP_CODE")
-        var zipCode: String?,
-        @Column(name = "HOUSE_NUMBER")
-        var houseNumber: String?,
-        @Column(name = "COUNTRY")
-        var country: String?,
+        @Embedded
+        var address: Address = Address(null, null, null, null, null),
         @Column(name = "PHONE")
         var phone: String?,
-        @Column(name = "IS_PRIVATE", nullable = false)
-        var isPrivate: Boolean,
-        @Column(name = "IS_NATURAL_PERSON", nullable = false)
-        var isNaturalPerson: Boolean,
-        @Id
-        @Column(name = "REVISION")
-        var revision: Int = 1,
+        @Column(name = "IS_PERSON", nullable = false)
+        var isPerson: Boolean,
         @Column(name = "CREATED_DATE", updatable = false, nullable = false)
         var createdDate: Instant = Instant.now()
         )
