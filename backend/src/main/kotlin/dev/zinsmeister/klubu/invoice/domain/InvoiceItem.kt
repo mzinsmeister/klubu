@@ -1,5 +1,6 @@
 package dev.zinsmeister.klubu.invoice.domain
 
+import dev.zinsmeister.klubu.common.domain.Item
 import dev.zinsmeister.klubu.exception.IllegalModificationException
 import dev.zinsmeister.klubu.offer.domain.OfferItem
 import javax.persistence.Entity
@@ -10,41 +11,33 @@ import kotlin.math.roundToInt
 
 @Entity
 class InvoiceItem(
-        position: Int,
         itemName: String,
         quantity: Double = 1.0,
         unit: String,
         priceCents: Int
-) {
-    var position = position
+): Item {
+    override var name = itemName
         set(value) {
             if(this.invoice.isCodified) {
                 throw IllegalModificationException("Modification of a fixed invoices attributes")
             }
             field = value
         }
-    var itemName = itemName
+    override var quantity = quantity
         set(value) {
             if(this.invoice.isCodified) {
                 throw IllegalModificationException("Modification of a fixed invoices attributes")
             }
             field = value
         }
-    var quantity = quantity
+    override var unit = unit
         set(value) {
             if(this.invoice.isCodified) {
                 throw IllegalModificationException("Modification of a fixed invoices attributes")
             }
             field = value
         }
-    var unit = unit
-        set(value) {
-            if(this.invoice.isCodified) {
-                throw IllegalModificationException("Modification of a fixed invoices attributes")
-            }
-            field = value
-        }
-    var priceCents = priceCents
+    override var priceCents = priceCents
         set(value) {
             if(this.invoice.isCodified) {
                 throw IllegalModificationException("Modification of a fixed invoices attributes")
@@ -59,10 +52,8 @@ class InvoiceItem(
     @ManyToOne(optional = false)
     lateinit var invoice: Invoice
 
-    fun calculateTotalCents(): Int {
+    override fun calculateTotalCents(): Int {
         return (this.quantity * this.priceCents).roundToInt()
     }
-
-    fun copyToNew() = OfferItem(itemName, quantity, unit, priceCents)
 
 }

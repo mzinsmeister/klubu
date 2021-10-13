@@ -1,112 +1,67 @@
 <template>
   <div class="offer-editor" v-if="offer !== null">
-    <b-button type="is-info" @click="back">Zurück</b-button>
-    <b-button type="is-success" outlined @click="save">Speichern</b-button>
-    <b-button type="is-danger" outlined @click="exportThis">Exportieren</b-button>
+    <div>
+      <div class="top-buttons">
+        <b-button type="is-info" @click="back">Zurück</b-button>
+        <b-button type="is-success" @click="save">Speichern</b-button>
+        <b-button
+          type="is-warning"
+          :loading="isExporting"
+          :disabled="offer.id === undefined"
+          @click="tryExport"
+          >Exportieren</b-button
+        >
+      </div>
+    </div>
     <b-field label="Titel">
-      <b-input v-model="offer.title" />
+      <b-input @input="change" v-model="offer.title" />
     </b-field>
     <b-field label="Kunde">
-      <b-autocomplete
-        :data="customerSuggestions"
-        v-model="customerString"
-        @typing="getCustomerSuggestions"
+      <contact-search
+        :contact="
+          offer.customerContact === undefined ? null : offer.customerContact
+        "
         @select="select"
-        :clear-on-select="true"
-      >
-        <template slot-scope="props">
-          <div class="customerSuggestion">
-            {{ formatCustomer(props.option) }}
-          </div>
-        </template>
-      </b-autocomplete>
+      />
     </b-field>
+    <recipient-editor @change="change" v-model="offer.recipient" />
     <b-field grouped>
-      <b-field expanded label="Anrede">
-        <b-input v-model="offer.recipent.formOfAddress" />
+      <b-field expanded label="Angebotsdatum">
+        <b-datepicker @input="change" v-model="offer.offerDate" />
+        <p class="control">
+          <b-button
+            @click="
+              offer.offerDate = undefined;
+              change();
+            "
+            icon-right="delete"
+            :disabled="offer.offerDate === undefined"
+          />
+        </p>
       </b-field>
-      <b-field expanded label="Titel">
-        <b-input v-model="offer.recipent.title" />
+      <b-field expanded label="Gültig bis">
+        <b-datepicker @input="change" v-model="offer.validUntilDate" />
+        <p class="control">
+          <b-button
+            @click="
+              offer.validUntilDate = undefined;
+              change();
+            "
+            icon-right="delete"
+            :disabled="offer.validUntilDate === undefined"
+          />
+        </p>
       </b-field>
     </b-field>
-    <b-field label="Name">
-      <b-input expanded v-model="offer.recipent.firstName" />
-      <b-input expanded v-model="offer.recipent.name" />
-    </b-field>
-    <b-field grouped>
-      <b-field expanded label="Straße">
-        <b-input v-model="offer.recipent.street" />
-      </b-field>
-      <b-field expanded label="Hausnummer">
-        <b-input v-model="offer.recipent.houseNumber" />
-      </b-field>
-    </b-field>
-    <b-field grouped>
-      <b-field expanded label="PLZ">
-        <b-input v-model="offer.recipent.zipCode" />
-      </b-field>
-      <b-field expanded label="Ort">
-        <b-input v-model="offer.recipent.city" />
-      </b-field>
-    </b-field>
-    <b-field label="Land">
-      <b-input v-model="offer.recipent.country" />
+    <b-field label="Betreff">
+      <b-input @input="change" v-model="offer.subject" />
     </b-field>
     <b-field label="Einleitungstext">
-      <b-input type="textarea" v-model="offer.headerHTML" />
+      <b-input @input="change" type="textarea" v-model="offer.headerHTML" />
     </b-field>
-    <table>
-      <thead>
-        <th></th>
-        <th>Position</th>
-        <th>Menge</th>
-        <th>Einheit</th>
-        <th>Einzelpreis</th>
-        <th>Betrag</th>
-      </thead>
-      <tbody>
-        <tr v-for="(item, i) in offer.items" :key="i">
-          <td :value="i + 1" />
-          <td>
-            <b-input class="position-input" v-model="item.item" />
-          </td>
-          <td>
-            <b-input
-              class="position-input"
-              style="max-width: 50px"
-              v-model="item.quantity"
-            />
-          </td>
-          <td>
-            <b-input
-              class="position-input"
-              style="max-width: 80px"
-              v-model="item.unit"
-            />
-          </td>
-          <td>
-            <b-input
-              class="position-input"
-              style="max-width: 100px"
-              v-model="item.price.amountCents"
-            />
-          </td>
-          <td>
-            {{ formatCentsAsMoney(item.quantity * item.price.amountCents) }}
-          </td>
-          <td>
-            <b-button
-              icon-right="delete"
-              type="is-danger"
-              @click="deleteItem(i)"
-            />
-          </td>
-        </tr>
-      </tbody>
-    </table>
-    <b-button @click="addEmptyItem()">Zusätzliche Position</b-button>
+    <items-editor @change="change" v-model="offer.items" />
     <b-field label="Fußtext">
-      <b-input type="textarea" v-model="offer.footerHTML" />
+      <b-input @input="change" type="textarea" v-model="offer.footerHTML" />
     </b-field>
     <p>Gesamt: {{ getTotal() }}</p>
   </div>
@@ -114,32 +69,36 @@
 
 <script lang="ts">
 import { Contact } from "@/models/ContactModel";
-import { Offer, OfferItem } from "@/models/OfferModel";
-import { listContacts } from "@/services/ContactsApiService";
+import { Offer } from "@/models/OfferModel";
+import RecipientEditor from "../common/RecipientEditor.vue";
+import ContactSearch from "../common/ContactSearch.vue";
+import ItemsEditor from "../common/ItemsEditor.vue";
 import {
   createOffer,
+  exportOffer,
   fetchOffer,
   updateOffer,
 } from "@/services/OffersApiService";
 import { Component, Vue } from "vue-property-decorator";
+import { formatCentsAsMoney } from "@/util/MoneyUtil";
 
 @Component({
   name: "offer-editor",
+  components: {
+    RecipientEditor,
+    ContactSearch,
+    ItemsEditor,
+  },
 })
 export default class OfferEditor extends Vue {
   private offer: Offer | null = null;
-  private changed = false;
+  private changed = false; //TODO: Warn if exporting with unsaved changes
+  private changedSinceSave = false;
 
-  private customerSuggestions: Contact[] = [];
+  private isExporting = false;
 
-  private customerString = "";
-
-  private getCustomerSuggestions(name: string): void {
-    listContacts(0, 10, name).then((v) => (this.customerSuggestions = v));
-  }
-
-  private deleteItem(index: number) {
-    this.offer?.items.splice(index, 1);
+  private change() {
+    this.changedSinceSave = true;
   }
 
   private getTotal(): string {
@@ -154,17 +113,47 @@ export default class OfferEditor extends Vue {
     return this.formatCentsAsMoney(total);
   }
 
-  private exportThis() {
-    console.log("export");
+  private tryExport() {
+    if (this.changedSinceSave) {
+      this.$buefy.dialog.confirm({
+        message:
+          "Das Angebot enthält ungespeicherte Änderungen!\n" +
+          "Trotzdem exportieren (ohne ungespeicherte Änderungen)?",
+        title: "Ungespeicherte Änderungen",
+        onConfirm: this.export,
+        trapFocus: true,
+        canCancel: true,
+        confirmText: "Ja",
+        cancelText: "Abbrechen",
+      });
+    } else {
+      this.export();
+    }
+  }
+
+  private export() {
+    if (this.offer !== null) {
+      exportOffer(this.offer)
+        .then(() => {
+          this.isExporting = false;
+          this.$buefy.toast.open({
+            message: "Export erfolgreich",
+            type: "is-success",
+          });
+        })
+        .catch(() => {
+          this.isExporting = false;
+          this.$buefy.toast.open({
+            message: "Fehler beim Export",
+            type: "is-danger",
+          });
+        });
+      this.isExporting = true;
+    }
   }
 
   private formatCentsAsMoney(cents: number): string {
-    let string = cents.toString().padStart(3, "0");
-    return (
-      string.substring(0, string.length - 2) +
-      "," +
-      string.substring(string.length - 2)
-    );
+    return formatCentsAsMoney(cents);
   }
 
   private back() {
@@ -177,50 +166,17 @@ export default class OfferEditor extends Vue {
   private select(option: Contact) {
     if (this.offer !== null) {
       this.offer.customerContact = option;
-      this.offer.recipent!.formOfAddress = option.formOfAddress;
-      this.offer.recipent!.title = option.title;
-      this.offer.recipent!.name = option.name;
-      this.offer.recipent!.firstName = option.firstName;
-      this.offer.recipent!.street = option.street;
-      this.offer.recipent!.zipCode = option.zipCode;
-      this.offer.recipent!.city = option.city;
-      this.offer.recipent!.houseNumber = option.houseNumber;
-      this.offer.recipent!.country = option.country;
+      this.offer.recipient!.formOfAddress = option.formOfAddress;
+      this.offer.recipient!.title = option.title;
+      this.offer.recipient!.name = option.name;
+      this.offer.recipient!.firstName = option.firstName;
+      this.offer.recipient!.street = option.street;
+      this.offer.recipient!.zipCode = option.zipCode;
+      this.offer.recipient!.city = option.city;
+      this.offer.recipient!.houseNumber = option.houseNumber;
+      this.offer.recipient!.country = option.country;
     }
-    this.customerString = this.formatCustomer(option);
-  }
-
-  private formatCustomer(contact: Contact): string {
-    let result = contact.name;
-    if (
-      contact.firstName !== undefined &&
-      contact.firstName !== null &&
-      contact.firstName.length > 0
-    ) {
-      result += ", " + contact.firstName;
-    }
-    return result;
-  }
-
-  private prefillRecipient(): void {
-    if (
-      this.offer !== null &&
-      (this.offer.recipent == undefined || this.offer.recipent == null)
-    ) {
-      this.offer.recipent = {
-        name: "",
-      };
-    }
-  }
-
-  private addEmptyItem(): void {
-    const newItem: OfferItem = {
-      item: "",
-      quantity: 1,
-      unit: "",
-      price: { amountCents: 0, currency: { code: "EUR" } },
-    };
-    this.offer?.items.push(newItem);
+    this.change();
   }
 
   private save(): void {
@@ -232,9 +188,10 @@ export default class OfferEditor extends Vue {
           "/offers/" + result.id
         );
         this.offer = result;
+        this.changedSinceSave = false;
       });
     } else if (this.offer !== null) {
-      updateOffer(this.offer);
+      updateOffer(this.offer).then(() => (this.changedSinceSave = false));
     }
     this.changed = true;
   }
@@ -242,19 +199,13 @@ export default class OfferEditor extends Vue {
   private created(): void {
     const id = this.$route.params["id"];
     if (id === "new") {
-      this.offer = { items: [] };
-      this.prefillRecipient();
-      this.addEmptyItem();
+      this.offer = { items: [], subject: "Angebot", recipient: { name: "" } };
     } else {
       fetchOffer(Number.parseInt(id)).then((v) => {
+        if (v.recipient === undefined) {
+          v.recipient = { name: "" };
+        }
         this.offer = v;
-        this.prefillRecipient();
-        if (v.customerContact !== undefined && v.customerContact !== null) {
-          this.customerString = this.formatCustomer(v.customerContact);
-        }
-        if (v.items.length === 0) {
-          this.addEmptyItem();
-        }
       });
     }
   }
@@ -265,5 +216,10 @@ export default class OfferEditor extends Vue {
 .position-input {
   margin-left: auto;
   margin-right: auto;
+}
+.top-buttons {
+  display: flex;
+  justify-content: space-between;
+  padding: 10px;
 }
 </style>

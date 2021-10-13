@@ -1,7 +1,8 @@
 <template>
   <div class="invoices">
-    <p>Invoices</p>
-    <img alt="Vue logo" src="../assets/logo.png" />
+    <keep-alive include="invoices-overview">
+      <router-view />
+    </keep-alive>
   </div>
 </template>
 
@@ -11,3 +12,9 @@ import { Component, Vue } from "vue-property-decorator";
 @Component({})
 export default class Invoices extends Vue {}
 </script>
+
+<style lang="scss" scoped>
+.invoices {
+  padding-top: 10px;
+}
+</style>

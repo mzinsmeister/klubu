@@ -10,9 +10,7 @@
 import { Component, Vue } from "vue-property-decorator";
 
 @Component({})
-export default class Offers extends Vue {
-
-}
+export default class Offers extends Vue {}
 </script>
 
 <style lang="scss" scoped>

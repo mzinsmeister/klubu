@@ -5,7 +5,7 @@ import {
   ResponseOfferDTO,
 } from "@/models/ApiModel";
 import { Offer, OfferListItem } from "@/models/OfferModel";
-import { parseISO } from "date-fns";
+import { formatISO, parseISO } from "date-fns";
 import Vue from "vue";
 
 export async function listOffers(
@@ -36,9 +36,14 @@ function mapOfferDTOToOffer(dto: ResponseOfferDTO): Offer {
     revision: dto.revision,
     title: dto.title,
     customerContact: dto.customerContact,
-    recipent: dto.recipent,
+    recipient: dto.recipient,
     items: dto.items,
     createdTimestamp: parseISO(dto.createdTimestamp),
+    offerDate: dto.offerDate ? parseISO(dto.offerDate) : undefined,
+    validUntilDate: dto.validUntilDate
+      ? parseISO(dto.validUntilDate)
+      : undefined,
+    subject: dto.subject,
     headerHTML: dto.headerHTML,
     footerHTML: dto.footerHTML,
   };
@@ -54,10 +59,17 @@ function mapOfferToDTO(offer: Offer): RequestOfferDTO {
     customerContactId: offer.customerContact?.id,
     title: offer.title,
     items: offer.items,
+    subject: offer.subject,
+    validUntilDate: offer.validUntilDate
+      ? formatISO(offer.validUntilDate, { representation: "date" })
+      : undefined,
+    offerDate: offer.offerDate
+      ? formatISO(offer.offerDate, { representation: "date" })
+      : undefined,
     footerHTML: offer.footerHTML,
     headerHTML: offer.headerHTML,
-    recipent: offer.recipent,
-  }
+    recipient: offer.recipient,
+  };
 }
 
 export async function createOffer(offer: Offer): Promise<Offer> {
@@ -69,5 +81,11 @@ export async function updateOffer(offer: Offer): Promise<void> {
   await Vue.axios.put(
     `/api/offers/${offer.id}/revisions/${offer.revision}`,
     mapOfferToDTO(offer)
+  );
+}
+
+export async function exportOffer(offer: Offer): Promise<void> {
+  await Vue.axios.post(
+    `/api/offers/${offer.id}/revisions/${offer.revision}/export`
   );
 }

@@ -1,6 +1,6 @@
 import { Contact } from "./ContactModel";
-import { Recipent } from "./CommonModel";
-import { OfferItem } from "./OfferModel";
+import { Recipient } from "./CommonModel";
+import { Item } from "./CommonModel";
 
 export interface ApiPage<T> {
   content: Array<T>;
@@ -9,8 +9,11 @@ export interface ApiPage<T> {
 export interface RequestOfferDTO {
   title?: string;
   customerContactId?: number;
-  items: Array<OfferItem>;
-  recipent?: Recipent;
+  items: Array<Item>;
+  recipient?: Recipient;
+  offerDate?: string;
+  validUntilDate?: string;
+  subject?: string;
   headerHTML?: string;
   footerHTML?: string;
 }
@@ -20,9 +23,12 @@ export interface ResponseOfferDTO {
   revision: number;
   title?: string;
   customerContact?: Contact;
-  recipent?: Recipent;
-  items: Array<OfferItem>;
+  recipient?: Recipient;
+  items: Array<Item>;
   createdTimestamp: string;
+  offerDate?: string;
+  validUntilDate?: string;
+  subject?: string;
   headerHTML?: string;
   footerHTML?: string;
 }
@@ -33,4 +39,53 @@ export interface OfferListItemDTO {
   title?: string;
   createdTimestamp: string;
   customerContact: Contact;
+}
+
+export interface ResponseInvoiceDTO {
+  id: number;
+  items: Array<Item>;
+  createdTimestamp: string;
+  codifiedTimestamp?: string;
+  invoiceNumber?: number;
+  paidDate?: string;
+  invoiceDate?: string;
+  isCanceled: boolean;
+  isCancelation: boolean;
+  correctedInvoiceId?: number;
+  customerContact?: Contact;
+  document?: Document;
+  recipient?: Recipient;
+  headerHTML?: string;
+  footerHTML?: string;
+  title?: string;
+  subject?: string;
+}
+
+export interface RequestInvoiceDTO {
+  items: Array<Item>;
+  customerContactId?: number;
+  paidDate?: string;
+  invoiceDate?: string;
+  recipient?: Recipient;
+  headerHTML?: string;
+  footerHTML?: string;
+  title?: string;
+  subject?: string;
+}
+
+export interface InvoiceListItemDTO {
+  id: number;
+  title?: string;
+  createdTimestamp: string;
+  customerContact?: Contact;
+  paidDate?: string;
+  codified: boolean;
+  invoiceNumber?: number;
+  isCanceled: boolean;
+  isCancelation: boolean;
+}
+
+export interface InvoiceCodifiedDTO {
+  invoiceNumber: number;
+  codifiedTimestamp: string;
 }

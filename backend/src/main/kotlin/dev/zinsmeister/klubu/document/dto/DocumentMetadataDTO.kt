@@ -7,10 +7,10 @@ import dev.zinsmeister.klubu.util.isoFormat
 data class DocumentDTO (
         val id: Int,
         val lastVersion: Int?,
-        val mimeType: String,
+        val mediaType: String,
 ) {
     constructor(document: Document): this(document.id!!,
-            document.versions.lastOrNull()?.version, document.mimeType)
+            document.versions.lastOrNull()?.version, document.mediaType)
 }
 
 data class DocumentVersionDTO (

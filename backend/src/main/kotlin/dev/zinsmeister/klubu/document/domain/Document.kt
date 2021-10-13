@@ -7,7 +7,7 @@ import javax.persistence.*
 class Document(
         var storageKeyPrefix: String,
         var extension: String,
-        var mimeType: String,
+        var mediaType: String,
         @OneToMany(mappedBy = "document", cascade = [CascadeType.ALL])
         @OrderBy("version asc")
         var versions: MutableList<DocumentVersion> = mutableListOf()

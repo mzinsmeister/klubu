@@ -1,14 +1,18 @@
 package dev.zinsmeister.klubu.offer.dto
 
-import dev.zinsmeister.klubu.common.domain.Recipent
+import dev.zinsmeister.klubu.common.domain.Recipient
+import dev.zinsmeister.klubu.common.dto.ItemDTO
 import dev.zinsmeister.klubu.contact.dto.ContactDTO
 import dev.zinsmeister.klubu.common.dto.MoneyDTO
 
 data class RequestOfferDTO(
         val title: String?,
         val customerContactId: Int?,
-        val items: List<OfferItemDTO>?,
-        val recipent: Recipent?,
+        val items: List<ItemDTO>?,
+        val recipient: Recipient?,
+        val offerDate: String?,
+        val validUntilDate: String?,
+        val subject: String?,
         val headerHTML: String?,
         val footerHTML: String?
         )
@@ -18,19 +22,15 @@ data class ResponseOfferDTO(
         val revision: Int,
         val title: String?,
         val customerContact: ContactDTO?,
-        val items: List<OfferItemDTO>,
+        val items: List<ItemDTO>,
         val createdTimestamp: String,
-        val recipent: Recipent?,
+        val recipient: Recipient?,
+        val offerDate: String?,
+        val validUntilDate: String?,
+        val subject: String?,
         val headerHTML: String?,
         val footerHTML: String?
 )
-
-data class OfferItemDTO(
-        val item: String,
-        val quantity: Double,
-        val unit: String,
-        val price: MoneyDTO
-        )
 
 data class OfferListItemDTO(
         val id: Int,

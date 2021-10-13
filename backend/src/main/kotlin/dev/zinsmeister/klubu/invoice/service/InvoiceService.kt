@@ -1,5 +1,6 @@
 package dev.zinsmeister.klubu.invoice.service
 
+import dev.zinsmeister.klubu.common.dto.ExportItemDTO
 import dev.zinsmeister.klubu.contact.repository.ContactRepository
 import dev.zinsmeister.klubu.contact.service.mapContactEntityToDTO
 import dev.zinsmeister.klubu.exception.IllegalModificationException
@@ -11,12 +12,20 @@ import dev.zinsmeister.klubu.invoice.domain.Invoice
 import dev.zinsmeister.klubu.invoice.domain.InvoiceItem
 import dev.zinsmeister.klubu.invoice.dto.*
 import dev.zinsmeister.klubu.invoice.repository.InvoiceRepository
-import dev.zinsmeister.klubu.common.dto.CurrencyDTO
-import dev.zinsmeister.klubu.common.dto.MoneyDTO
+import dev.zinsmeister.klubu.common.dto.ItemDTO
+import dev.zinsmeister.klubu.document.domain.Document
+import dev.zinsmeister.klubu.document.dto.DocumentDTO
+import dev.zinsmeister.klubu.document.dto.DocumentVersionDTO
+import dev.zinsmeister.klubu.document.service.DocumentService
+import dev.zinsmeister.klubu.exception.NotCodifiedException
+import dev.zinsmeister.klubu.export.service.ExportService
+import dev.zinsmeister.klubu.util.formatCents
 import dev.zinsmeister.klubu.util.isoFormat
+import org.springframework.beans.factory.annotation.Value
 import org.springframework.data.domain.Page
 import org.springframework.data.domain.Pageable
 import org.springframework.data.repository.findByIdOrNull
+import org.springframework.http.MediaType
 import org.springframework.stereotype.Service
 import java.time.Instant
 import java.time.LocalDate
@@ -26,7 +35,11 @@ import javax.transaction.Transactional
 @Service
 class InvoiceService(private val repository: InvoiceRepository,
                      private val contactRepository: ContactRepository,
-                     private val idGeneratorService: IdGeneratorService) {
+                     private val idGeneratorService: IdGeneratorService,
+                     private val documentService: DocumentService,
+                     private val exportService: ExportService,
+                     @Value("\${klubu.export.invoice.titlePrefix}") private val exportTitlePrefix: String
+                     ) {
 
     fun fetchInvoice(id: Int): ResponseInvoiceDTO {
         val foundInvoice = repository.findByIdOrNull(id)
@@ -45,15 +58,23 @@ class InvoiceService(private val repository: InvoiceRepository,
     fun updateInvoice(id: Int, dto: RequestInvoiceDTO) {
         val foundEntity = repository.findByIdOrNull(id)
                 ?: throw NotFoundInDBException("Invoice not found")
-        if(foundEntity.customer.contactId != dto.customerContactId) {
-            foundEntity.customer = contactRepository.findByIdOrNull(dto.customerContactId)
-                    ?: throw NotFoundInDBException("Contact not found")
-        }
-        try {
-            foundEntity.paidDate = dto.paidDate?.let { LocalDate.parse(it) }
-            foundEntity.replaceItems(dto.items.map { mapInvoiceItemDTOToEntity(it) })
-        } catch(e: IllegalModificationException) {
-            throw IllegalModificationRequestException(e)
+        foundEntity.title = dto.title
+        foundEntity.paidDate = dto.paidDate?.let { LocalDate.parse(it) }
+        if(!foundEntity.isCodified) { // TODO: Is silently not updating the other fields correct behaviour here?
+            try {
+                if(foundEntity.customerContact?.contactId != dto.customerContactId) {
+                    foundEntity.customerContact = contactRepository.findByIdOrNull(dto.customerContactId)
+                            ?: throw NotFoundInDBException("Contact not found")
+                }
+                foundEntity.recipient = dto.recipient
+                foundEntity.invoiceDate = dto.invoiceDate?.let { LocalDate.parse(it) }
+                foundEntity.subject = dto.subject
+                foundEntity.headerHTML = dto.headerHTML
+                foundEntity.footerHTML = dto.footerHTML
+                foundEntity.replaceItems(dto.items.map { mapInvoiceItemDTOToEntity(it) })
+            } catch (e: IllegalModificationException) {
+                throw IllegalModificationRequestException(e) //TODO: basically useless
+            }
         }
         repository.save(foundEntity)
     }
@@ -73,41 +94,63 @@ class InvoiceService(private val repository: InvoiceRepository,
             throw IllegalModificationRequestException(e)
         }
         repository.save(foundEntity)
-        return ResponseCodifiedDTO(foundEntity.invoiceNumber!!)
+        return ResponseCodifiedDTO(foundEntity.invoiceNumber!!, foundEntity.codifiedTimestamp!!.isoFormat())
+    }
+
+    @Transactional
+    fun export(id: Int): DocumentVersionDTO {
+        val invoice = repository.findByIdOrNull(id)
+                ?: throw NotFoundInDBException("Invoice not found")
+        if(!invoice.isCodified) throw NotCodifiedException("Can only export Codified Documents")
+        val document = if(invoice.document != null) {
+            invoice.document!!
+        } else {
+            val newDocument = Document(
+                    storageKeyPrefix = "invoices/$id",
+                    extension = "pdf",
+                    mediaType = MediaType.APPLICATION_PDF_VALUE)
+            invoice.document = newDocument
+            newDocument
+        }
+        val title = "$exportTitlePrefix ${invoice.invoiceNumber}"
+        val documentBytes = exportService.exportToPDFA("invoice.html", mapInvoiceEntityToExportDTO(invoice), title)
+        return documentService.storeNewVersion(document, documentBytes)
     }
 
     private fun mapInvoiceEntityToDTO(entity: Invoice) = ResponseInvoiceDTO(
             id = entity.invoiceId!!,
             invoiceNumber = entity.invoiceNumber,
             correctedInvoiceId = entity.correctedInvoice?.invoiceId,
-            codified = entity.isCodified,
+            paidDate = entity.paidDate?.format(DateTimeFormatter.ISO_LOCAL_DATE),
+            invoiceDate = entity.invoiceDate?.format(DateTimeFormatter.ISO_LOCAL_DATE),
+            codifiedTimestamp = entity.codifiedTimestamp?.isoFormat(),
+            createdTimestamp = entity.createdTimestamp.isoFormat(),
             isCancelation = entity.isCancelation,
             isCanceled = entity.isCanceled,
-            items = entity.immutableItems.map { mapInvoiceItemEntityToDTO(it) },
-            customerContact = mapContactEntityToDTO(entity.customer),
-            recipent = entity.recipent
-    )
-
-    private fun mapInvoiceItemEntityToDTO(entity: InvoiceItem) = InvoiceItemDTO(
-            position = entity.position,
-            item = entity.itemName,
-            quantity = entity.quantity,
-            unit = entity.unit,
-            price = MoneyDTO(
-                    amountCents = entity.priceCents,
-                    currency = CurrencyDTO("EUR", "€")
-            )
+            items = entity.immutableItems.map { ItemDTO(it) },
+            document = entity.document?.let { DocumentDTO(it) },
+            customerContact = entity.customerContact?.let { mapContactEntityToDTO(it) },
+            recipient = entity.recipient,
+            headerHTML = entity.headerHTML,
+            footerHTML = entity.footerHTML,
+            title = entity.title,
+            subject = entity.subject
     )
 
     private fun mapInvoiceDTOToEntity(dto: RequestInvoiceDTO) = Invoice(
             contact = contactRepository.findByIdOrNull(dto.customerContactId)
                     ?: throw NotFoundInDBException("Contact not found"),
             items = dto.items.map { mapInvoiceItemDTOToEntity(it) }.toMutableList(),
-            recipent = dto.recipent
+            recipient = dto.recipient,
+            paidDate = dto.paidDate?.let { LocalDate.parse(it) },
+            invoiceDate = dto.invoiceDate?.let { LocalDate.parse(it) },
+            headerHTML = dto.headerHTML,
+            footerHTML = dto.footerHTML,
+            title = dto.title,
+            subject = dto.subject
     )
 
-    private fun mapInvoiceItemDTOToEntity(dto: InvoiceItemDTO) = InvoiceItem(
-            position = dto.position,
+    private fun mapInvoiceItemDTOToEntity(dto: ItemDTO) = InvoiceItem(
             itemName = dto.item,
             quantity = dto.quantity,
             unit = dto.unit,
@@ -116,12 +159,29 @@ class InvoiceService(private val repository: InvoiceRepository,
 
     private fun mapInvoiceEntityToListItemDTO(entity: Invoice) = InvoiceListItemDTO(
             id = entity.invoiceId!!,
+            title = entity.title,
             invoiceNumber = entity.invoiceNumber,
-            customerContact = mapContactEntityToDTO(entity.customer),
+            customerContact = entity.customerContact?.let { mapContactEntityToDTO(it) },
             isCanceled = entity.isCanceled,
             isCancelation = entity.isCancelation,
             codified = entity.isCodified,
             createdTimestamp = entity.createdTimestamp.isoFormat(),
             paidDate = entity.paidDate?.format(DateTimeFormatter.ISO_LOCAL_DATE)
+    )
+
+    private fun mapInvoiceEntityToExportDTO(entity: Invoice) = ExportInvoiceDTO(
+            id = entity.invoiceId!!,
+            title = entity.title,
+            customerContact = entity.customerContact?.let{ mapContactEntityToDTO(it) },
+            recipient = entity.recipient,
+            printRecipientCountry = !(entity.recipient?.country?.equals("Deutschland", ignoreCase = true)?: false),
+            items = entity.immutableItems.withIndex().map { ExportItemDTO(it.value, it.index + 1) },
+            createdTimestamp = entity.createdTimestamp.isoFormat(),
+            subject = entity.subject,
+            headerHTML = entity.headerHTML,
+            footerHTML = entity.footerHTML,
+            totalPrice = formatCents(entity.calculateTotalCents(), ",", "€"),
+            invoiceNumber = entity.invoiceNumber!!.toString(),
+            invoiceDate = entity.invoiceDate?.format(DateTimeFormatter.ofPattern("dd.MM.yyyy"))
     )
 }

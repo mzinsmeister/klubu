@@ -8,7 +8,7 @@ export interface Currency {
   symbol?: string;
 }
 
-export interface Recipent {
+export interface Recipient {
   formOfAddress?: string;
   title?: string;
   name: string;
@@ -18,4 +18,11 @@ export interface Recipent {
   city?: string;
   houseNumber?: string;
   country?: string;
+}
+
+export interface Item {
+  item: string;
+  quantity: number;
+  unit: string;
+  price: Money;
 }

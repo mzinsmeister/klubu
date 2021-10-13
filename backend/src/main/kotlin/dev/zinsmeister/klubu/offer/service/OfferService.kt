@@ -1,5 +1,6 @@
 package dev.zinsmeister.klubu.offer.service
 
+import dev.zinsmeister.klubu.common.dto.ExportItemDTO
 import dev.zinsmeister.klubu.contact.repository.ContactRepository
 import dev.zinsmeister.klubu.contact.service.mapContactEntityToDTO
 import dev.zinsmeister.klubu.exception.NotFoundInDBException
@@ -11,30 +12,33 @@ import dev.zinsmeister.klubu.offer.domain.OfferItem
 import dev.zinsmeister.klubu.offer.dto.*
 import dev.zinsmeister.klubu.offer.repository.OfferRepository
 import dev.zinsmeister.klubu.offer.repository.findLatestByOfferId
-import dev.zinsmeister.klubu.common.dto.CurrencyDTO
-import dev.zinsmeister.klubu.common.dto.MoneyDTO
+import dev.zinsmeister.klubu.common.dto.ItemDTO
 import dev.zinsmeister.klubu.document.domain.Document
-import dev.zinsmeister.klubu.document.dto.DocumentDTO
 import dev.zinsmeister.klubu.document.dto.DocumentVersionDTO
-import dev.zinsmeister.klubu.document.repository.DocumentRepository
 import dev.zinsmeister.klubu.document.service.DocumentService
 import dev.zinsmeister.klubu.export.service.ExportService
+import dev.zinsmeister.klubu.util.formatCents
 import dev.zinsmeister.klubu.util.isoFormat
+import org.springframework.beans.factory.annotation.Value
 import org.springframework.data.domain.Page
 import org.springframework.data.domain.Pageable
 import org.springframework.data.repository.findByIdOrNull
+import org.springframework.http.MediaType
 import org.springframework.stereotype.Service
-import org.springframework.util.MimeType
-import org.springframework.util.MimeTypeUtils
+import java.text.DecimalFormat
+import java.time.LocalDate
+import java.time.format.DateTimeFormatter
+import java.util.*
 import javax.transaction.Transactional
 
 @Service
 class OfferService(private val offerRepository: OfferRepository,
                    private val contactRepository: ContactRepository,
-                   private val documentRepository: DocumentRepository,
                    private val idGeneratorService: IdGeneratorService,
                    private val exportService: ExportService,
-                   private val documentService: DocumentService) {
+                   private val documentService: DocumentService,
+                   @Value("\${klubu.export.offer.titlePrefix}") private val exportTitlePrefix: String
+) {
 
     //TODO: Sanitize Client sent HTML with OWASP HTML Sanitizer
 
@@ -46,8 +50,11 @@ class OfferService(private val offerRepository: OfferRepository,
                 offerId = idGeneratorService.generateId(IdType.OFFER),
                 title = offerDTO.title,
                 customerContact = contact,
-                recipent = offerDTO.recipent,
-                items = offerDTO.items?.map { mapOfferItemDTOToEntity(it) }?.toMutableList() ?: mutableListOf(),
+                recipient = offerDTO.recipient,
+                offerDate = offerDTO.offerDate?.let { LocalDate.parse(it) },
+                validUntilDate = offerDTO.validUntilDate?.let { LocalDate.parse(it) },
+                items = offerDTO.items?.map { mapItemDTOToEntity(it) }?.toMutableList() ?: mutableListOf(),
+                subject = offerDTO.subject,
                 headerHTML = offerDTO.headerHTML,
                 footerHTML = offerDTO.footerHTML
         )
@@ -65,9 +72,12 @@ class OfferService(private val offerRepository: OfferRepository,
                 offerId = offerId,
                 title = offerDTO.title,
                 customerContact = contact,
-                recipent = offerDTO.recipent,
-                items = offerDTO.items?.map { mapOfferItemDTOToEntity(it) }?.toMutableList() ?: mutableListOf(),
+                recipient = offerDTO.recipient,
+                items = offerDTO.items?.map { mapItemDTOToEntity(it) }?.toMutableList() ?: mutableListOf(),
                 revision = previousRevision.revision + 1,
+                offerDate = offerDTO.offerDate?.let{ LocalDate.parse(it) },
+                validUntilDate = offerDTO.validUntilDate?.let{ LocalDate.parse(it) },
+                subject = offerDTO.subject,
                 headerHTML = offerDTO.headerHTML,
                 footerHTML = offerDTO.footerHTML
         )
@@ -102,11 +112,14 @@ class OfferService(private val offerRepository: OfferRepository,
         } else {
             offerRepository.findByIdOrNull(OfferId(offerId, revision))
         }?: throw NotFoundInDBException("Offer not found")
-        val newItems = offerDTO.items?.map { mapOfferItemDTOToEntity(it) } ?: mutableListOf()
+        val newItems = offerDTO.items?.map { mapItemDTOToEntity(it) } ?: mutableListOf()
         offer.replaceItems(newItems)
+        offer.offerDate = offerDTO.offerDate?.let { LocalDate.parse(it) }
+        offer.validUntilDate = offerDTO.validUntilDate?.let { LocalDate.parse(it) }
+        offer.subject = offerDTO.subject
         offer.footerHTML = offerDTO.footerHTML
         offer.headerHTML = offerDTO.headerHTML
-        offer.recipent = offerDTO.recipent
+        offer.recipient = offerDTO.recipient
         offer.title = offerDTO.title
         if(offer.customerContact?.contactId != offerDTO.customerContactId) {
             val newContact = offerDTO.customerContactId?.let{ contactRepository.findByIdOrNull(it)
@@ -137,12 +150,12 @@ class OfferService(private val offerRepository: OfferRepository,
             val newDocument = Document(
                 storageKeyPrefix = "offers/$id",
                 extension = "pdf",
-                mimeType = "application/pdf")
+                mediaType = MediaType.APPLICATION_PDF_VALUE)
             offer.document = newDocument
             newDocument
         }
-
-        val documentBytes = exportService.exportToPDFA("offer.html", mapOfferEntityToDTO(offer))
+        val title = "$exportTitlePrefix ${offer.offerId}"
+        val documentBytes = exportService.exportToPDFA("offer.html", mapOfferEntityToExportDTO(offer), title)
         return documentService.storeNewVersion(document, documentBytes)
     }
 
@@ -151,25 +164,34 @@ class OfferService(private val offerRepository: OfferRepository,
             revision = entity.revision,
             title = entity.title,
             customerContact = entity.customerContact?.let{ mapContactEntityToDTO(it) },
-            recipent = entity.recipent,
-            items = entity.items.map { mapOfferItemEntityToDTO(it) },
+            recipient = entity.recipient,
+            items = entity.items.map { ItemDTO(it) },
             createdTimestamp = entity.createdTimestamp.isoFormat(),
+            offerDate = entity.offerDate?.format(DateTimeFormatter.ISO_LOCAL_DATE),
+            validUntilDate = entity.validUntilDate?.format(DateTimeFormatter.ISO_LOCAL_DATE),
+            subject = entity.subject,
             headerHTML = entity.headerHTML,
             footerHTML = entity.footerHTML
     )
 
-    private fun mapOfferItemEntityToDTO(entity: OfferItem) = OfferItemDTO(
-            item = entity.item,
-            quantity = entity.quantity,
-            unit = entity.unit,
-            price = MoneyDTO(
-                    amountCents = entity.priceCents,
-                    currency = CurrencyDTO("EUR", "€")
-            )
+    private fun mapOfferEntityToExportDTO(entity: Offer) = ExportOfferDTO(
+            id = entity.offerId,
+            revision = entity.revision,
+            title = entity.title,
+            customerContact = entity.customerContact?.let{ mapContactEntityToDTO(it) },
+            recipient = entity.recipient,
+            printRecipientCountry = !(entity.recipient?.country?.equals("Deutschland", ignoreCase = true)?: false),
+            items = entity.items.withIndex().map { ExportItemDTO(it.value, it.index + 1) },
+            createdTimestamp = entity.createdTimestamp.isoFormat(),
+            subject = entity.subject,
+            headerHTML = entity.headerHTML,
+            footerHTML = entity.footerHTML,
+            totalPrice = formatCents(entity.calculateTotalCents(), ",", "€"),
+            offerNumber = entity.getOfferNumber()
     )
 
-    private fun mapOfferItemDTOToEntity(dto: OfferItemDTO) = OfferItem(
-            item = dto.item,
+    private fun mapItemDTOToEntity(dto: ItemDTO) = OfferItem(
+            name = dto.item,
             quantity = dto.quantity,
             unit = dto.unit,
             priceCents = dto.price.amountCents

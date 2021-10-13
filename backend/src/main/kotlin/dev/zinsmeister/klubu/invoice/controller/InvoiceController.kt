@@ -1,5 +1,6 @@
 package dev.zinsmeister.klubu.invoice.controller
 
+import dev.zinsmeister.klubu.document.dto.DocumentVersionDTO
 import dev.zinsmeister.klubu.invoice.dto.InvoiceListItemDTO
 import dev.zinsmeister.klubu.invoice.dto.RequestInvoiceDTO
 import dev.zinsmeister.klubu.invoice.dto.ResponseCodifiedDTO
@@ -33,9 +34,14 @@ class InvoiceController(private val service: InvoiceService) {
         service.updateInvoice(id, invoiceDTO)
     }
 
-    @PutMapping("{id}/codified")
+    @PostMapping("{id}/codified")
     fun codifyInvoice(@PathVariable("id") id: Int): ResponseCodifiedDTO {
         return service.codifyInfoice(id)
+    }
+
+    @PostMapping("/{id}/export")
+    fun export(@PathVariable("id") id: Int): DocumentVersionDTO {
+        return service.export(id)
     }
 
 }

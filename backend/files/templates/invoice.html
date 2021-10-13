@@ -55,7 +55,13 @@
             {{#printRecipientCountry}}<div>{{recipient.country}}</div>{{/printRecipientCountry}}
         </div>
         <main>
-            <div><span>Kundennummer: {{customerContact.id}}</span> <span>Angebotsnummer: {{offerNumber}}</span></div>
+            <table style="width: 100%">
+                <tr>
+                    <td>Kundennummer: {{customerContact.id}}</td>
+                    <td>Rechnungsnummer: {{invoiceNumber}}</td>
+                    <td>Rechnungsdatum: {{invoiceDate}}</td>
+                </tr>
+            </table>
             <div><b>{{subject}}</b></div>
             <div class="contentHeader">{{{headerHTML}}}</div>
             <table class="items">

@@ -1,4 +1,4 @@
-import { Money, Recipent } from "./CommonModel";
+import { Item, Recipient } from "./CommonModel";
 import { Contact } from "./ContactModel";
 
 export interface Offer {
@@ -6,18 +6,14 @@ export interface Offer {
   revision?: number;
   title?: string;
   customerContact?: Contact;
-  recipent?: Recipent;
-  items: Array<OfferItem>;
+  offerDate?: Date;
+  validUntilDate?: Date;
+  recipient?: Recipient;
+  items: Array<Item>;
   createdTimestamp?: Date;
+  subject?: string;
   headerHTML?: string;
   footerHTML?: string;
-}
-
-export interface OfferItem {
-  item: string;
-  quantity: number;
-  unit: string;
-  price: Money;
 }
 
 export interface OfferListItem {
