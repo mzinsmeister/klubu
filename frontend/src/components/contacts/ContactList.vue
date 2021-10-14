@@ -14,6 +14,11 @@
       <b-table-column field="name" label="Name" width="200" v-slot="props">
         {{ props.row.name }}
       </b-table-column>
+      <b-table-column custom-key="actions" v-slot="props">
+        <button class="button is-small is-light" @click="view(props.row)">
+          Öffnen
+        </button>
+      </b-table-column>
     </b-table>
   </div>
 </template>
@@ -22,6 +27,7 @@
 import { Contact } from "@/models/ContactModel";
 import { listContacts } from "@/services/ContactsApiService";
 import { Component, Vue } from "vue-property-decorator";
+import ContactForm from "./ContactFormModal.vue";
 
 @Component
 export default class ContactList extends Vue {
@@ -32,6 +38,25 @@ export default class ContactList extends Vue {
     listContacts(0, 100000).then((v) => {
       this.contacts = v;
       this.contactsCache.set(0, v);
+    });
+  }
+
+  private view(contact: Contact) {
+    this.$buefy.modal.open({
+      parent: this,
+      props: {
+        contact: contact,
+      },
+      component: ContactForm,
+      hasModalCard: true,
+      canCancel: false,
+      trapFocus: true,
+      events: {
+        change: () => {
+          this.clearCache();
+          this.reload;
+        },
+      },
     });
   }
 

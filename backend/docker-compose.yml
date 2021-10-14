@@ -21,9 +21,13 @@ services:
       - "8080:8080"
     volumes:
       - ./:/app
+      - gradle-cache:/root/.gradle
+      - playwright-cache:/root/.cache
     working_dir: /app
     depends_on:
       - db
-    command: ./gradlew --args="--spring.profiles.active=int --spring.datasource.url=jdbc:postgresql://db:5432/klubu"
+    command: ./gradlew bootRun --args="--spring.profiles.active=int --spring.datasource.url=jdbc:postgresql://db:5432/klubu"
 volumes:
   klubu-data:
+  gradle-cache:
+  playwright-cache:

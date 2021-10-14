@@ -1,0 +1,95 @@
+<!DOCTYPE html>
+<html>
+    <head>
+        <link rel="preconnect" href="https://fonts.googleapis.com">
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+        <link href="https://fonts.googleapis.com/css2?family=Roboto&display=swap" rel="stylesheet">
+        <style>
+            * {
+                font-family: Roboto;
+            }
+            @page {
+                margin: 0 8mm 0 20mm;
+                bleed: 0;
+                size: A4;
+            }
+            header {
+                height: 42mm;
+            }
+            .documentHeaderContent {
+                padding-left: 20mm;
+                padding-top: 20mm;
+            }
+            .address {
+                width: 8.5cm;
+                height: 4cm;
+                font-size: 10pt;
+            }
+            main {
+                width: 100%;
+            }
+            .items {
+                width: 100%;
+                border-collapse: collapse;
+            }
+            .items thead {
+                text-align: left;
+            }
+            .item:nth-child(odd) {
+                background: #CCC;
+            }
+        </style>
+    </head>
+    <body>
+        <header>
+            <div class="documentHeaderContent">
+                TESTGEWERBE
+            </div>
+        </header>
+
+        <div class="address"><br><br><br>
+            <div>{{recipient.formOfAddress}}</div>
+            <div>{{#recipient.title}}{{.}} {{/recipient.title}}{{#recipient.firstName}}{{.}} {{/recipient.firstName}}{{recipient.name}}</div>
+            <div>{{recipient.street}} {{recipient.houseNumber}}</div>
+            <div>{{recipient.zipCode}} {{recipient.city}}</div>
+            {{#printRecipientCountry}}<div>{{recipient.country}}</div>{{/printRecipientCountry}}
+        </div>
+        <main>
+            <div><span>Kundennummer: {{customerContact.id}}</span> <span>Angebotsnummer: {{offerNumber}}</span></div>
+            <div><b>{{subject}}</b></div>
+            <div class="contentHeader">{{{headerHTML}}}</div>
+            <table class="items">
+                <thead>
+                <tr>
+                    <th>Position</th>
+                    <th>Beschreibung</th>
+                    <th>Menge</th>
+                    <th>Einheit</th>
+                    <th>Einzelpreis</th>
+                    <th>Betrag</th>
+                </tr>
+                </thead>
+                <tbody>
+                {{#items}}
+                <tr class="item">
+                    <td>{{positionNumber}}</td>
+                    <td>{{item}}</td>
+                    <td>{{quantity}}</td>
+                    <td>{{unit}}</td>
+                    <td>{{price}}</td>
+                    <td>{{total}}</td>
+                </tr>
+                {{/items}}
+                <tr>
+                    <td colspan="6"><i>Als Kleinunternehmer im Sinne von § 19 Abs. 1 UStG wird die Umsatzsteuer nicht berechnet!</i></td>
+                </tr>
+                <tr>
+                    <td colspan="5"><b>Summe</b></td>
+                    <td><b>{{totalPrice}}</b></td>
+                </tr>
+                </tbody>
+            </table>
+            <div class="contentFooter">{{{footerHTML}}}</div>
+        </main>
+    </body>
+</html>

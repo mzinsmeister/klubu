@@ -9,7 +9,7 @@ import java.time.Instant
 import java.time.LocalDate
 import javax.persistence.*
 
-class OfferId(var offerId: Int? = null, var revision: Int? = null): Serializable
+data class OfferId(var offerId: Int? = null, var revision: Int? = null): Serializable
 
 @Entity
 @IdClass(OfferId::class)

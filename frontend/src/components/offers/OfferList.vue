@@ -9,7 +9,13 @@
       aria-page-label="Page"
       aria-current-label="Current page"
     >
-      <b-table-column field="id" label="ID" width="20" numeric v-slot="props">
+      <b-table-column
+        field="id"
+        label="Angebotsnr."
+        width="20"
+        numeric
+        v-slot="props"
+      >
         {{ props.row.id }}
       </b-table-column>
       <b-table-column field="title" label="Titel" width="200" v-slot="props">
@@ -52,7 +58,6 @@ export default class OfferList extends Vue {
   }
 
   private activated(): void {
-    console.log(this.$route.params);
     if (this.$route.query["forceRefresh"] === "true") {
       this.clearCache();
       this.reload();

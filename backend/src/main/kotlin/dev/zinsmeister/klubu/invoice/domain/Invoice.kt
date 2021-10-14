@@ -145,7 +145,7 @@ class Invoice(
     var isCancelation: Boolean = false
     set(value) {
         if(!isCodified) {
-            correctedInvoice?: throw IllegalStateException("can't be cancelation without corrected invoice")
+            if(value) correctedInvoice?: throw IllegalStateException("can't be cancelation without corrected invoice")
             correctedInvoice?.isCanceled = true
             field = value
         } else {

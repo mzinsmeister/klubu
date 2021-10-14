@@ -4,7 +4,7 @@ import java.io.Serializable
 import java.time.Instant
 import javax.persistence.*
 
-class DocumentVersionId(var document: Int? = null, var version: Int? = null): Serializable
+data class DocumentVersionId(var document: Int? = null, var version: Int? = null): Serializable
 
 @Entity
 @IdClass(DocumentVersionId::class)

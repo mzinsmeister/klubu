@@ -20,7 +20,7 @@ import ContactForm from "@/components/contacts/ContactFormModal.vue";
 export default class Contacts extends Vue {
   @Ref("contactList") private contactList?: ContactList;
 
-  newContact(): void {
+  private newContact(): void {
     this.$buefy.modal.open({
       parent: this,
       component: ContactForm,
@@ -28,14 +28,15 @@ export default class Contacts extends Vue {
       canCancel: false,
       trapFocus: true,
       events: {
-        newContact: () => {
-          console.log("t");
+        change: () => {
           this.contactList?.clearCache();
           this.contactList?.reload();
         },
       },
     });
   }
+
+
 }
 </script>
 

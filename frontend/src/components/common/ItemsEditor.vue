@@ -70,6 +70,7 @@
 
 <script lang="ts">
 import { Item } from "@/models/CommonModel";
+import { formatCentsAsMoney } from "@/util/MoneyUtil";
 import { Component, Prop, Vue } from "vue-property-decorator";
 
 @Component({
@@ -95,12 +96,7 @@ export default class ItemsEditor extends Vue {
   }
 
   private formatCentsAsMoney(cents: number): string {
-    let string = cents.toString().padStart(3, "0");
-    return (
-      string.substring(0, string.length - 2) +
-      "," +
-      string.substring(string.length - 2)
-    );
+    return formatCentsAsMoney(cents);
   }
 
   private addEmptyItem(): void {

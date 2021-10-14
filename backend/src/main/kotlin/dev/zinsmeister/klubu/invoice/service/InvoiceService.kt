@@ -94,6 +94,7 @@ class InvoiceService(private val repository: InvoiceRepository,
 
     @Transactional
     fun codifyInfoice(id: Int): ResponseCodifiedDTO {
+        //TODO: Check if all required fields are filled
         val foundEntity = repository.findByIdOrNull(id)
                 ?: throw NotFoundInDBException("Invoice not found")
         try {
@@ -149,8 +150,8 @@ class InvoiceService(private val repository: InvoiceRepository,
     )
 
     private fun mapInvoiceDTOToEntity(dto: RequestInvoiceDTO) = Invoice(
-            contact = contactRepository.findByIdOrNull(dto.customerContactId)
-                    ?: throw NotFoundInDBException("Contact not found"),
+            contact = dto.customerContactId?.let {contactRepository.findByIdOrNull(it)
+                    ?: throw NotFoundInDBException("Contact not found") },
             items = dto.items.map { mapInvoiceItemDTOToEntity(it) }.toMutableList(),
             recipient = dto.recipient,
             paidDate = dto.paidDate?.let { LocalDate.parse(it) },
