@@ -38,3 +38,5 @@ out/
 
 files/fonts/
 files/storage/
+
+src/main/resources/user.properties
