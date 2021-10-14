@@ -5,6 +5,7 @@ import dev.zinsmeister.klubu.contact.domain.Contact
 import dev.zinsmeister.klubu.document.domain.Document
 import dev.zinsmeister.klubu.document.domain.DocumentEntity
 import dev.zinsmeister.klubu.exception.IllegalModificationException
+import dev.zinsmeister.klubu.offer.domain.Offer
 import java.time.Instant
 import java.time.LocalDate
 import javax.persistence.*
@@ -28,6 +29,13 @@ class Invoice(
         footerHTML: String?,
 
         subject: String?,
+
+        @ManyToOne
+        @JoinColumns(
+            JoinColumn(name = "FROM_OFFER_ID", referencedColumnName = "ID"),
+            JoinColumn(name = "FROM_OFFER_REVISION", referencedColumnName = "REVISION")
+        )
+        var offer: Offer? = null,
 
         invoiceDate: LocalDate? = null,
 
@@ -129,12 +137,41 @@ class Invoice(
     override var document: Document? = null
 
     var isCanceled: Boolean = false
+    set(value) {
+        correctedBy?: throw IllegalStateException("Can't be cancelled without corrected by")
+        field = value
+    }
 
     var isCancelation: Boolean = false
+    set(value) {
+        if(!isCodified) {
+            correctedInvoice?: throw IllegalStateException("can't be cancelation without corrected invoice")
+            correctedInvoice?.isCanceled = true
+            field = value
+        } else {
+            throw IllegalModificationException("Cannot change codified state of Invoice once codified")
+        }
+    }
 
     @OneToOne(optional = true)
     @JoinColumn(name = "CORRECTED_INVOICE_ID")
-    val correctedInvoice: Invoice? = null
+    var correctedInvoice: Invoice? = null
+    set(value) {
+        if(!isCodified) {
+            value?.correctedBy = this
+            field = value
+        } else {
+            throw IllegalModificationException("Cannot change codified state of Invoice once codified")
+        }
+    }
+
+    @OneToOne(optional = true)
+    @JoinColumn(name = "CORRECTED_BY_INVOICE_ID")
+    var correctedBy: Invoice? = null
+    set(value) {
+        value?.correctedInvoice = this
+        field = value
+    }
 
     val immutableItems: List<InvoiceItem>
     get(): List<InvoiceItem> = items

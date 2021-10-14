@@ -5,6 +5,7 @@ import dev.zinsmeister.klubu.common.dto.ItemDTO
 import dev.zinsmeister.klubu.contact.dto.ContactDTO
 import dev.zinsmeister.klubu.common.dto.MoneyDTO
 import dev.zinsmeister.klubu.document.dto.DocumentDTO
+import dev.zinsmeister.klubu.offer.dto.OfferIdDTO
 
 data class ResponseInvoiceDTO(
         val id: Int,
@@ -16,14 +17,16 @@ data class ResponseInvoiceDTO(
         val invoiceDate: String?,
         val isCanceled: Boolean,
         val isCancelation: Boolean,
-        val correctedInvoiceId: Int?,
+        val correctedInvoice: InvoiceMetadataDTO?,
+        val correctedByInvoice: InvoiceMetadataDTO?,
         val customerContact: ContactDTO?,
         val document: DocumentDTO?,
         val recipient: Recipient?,
         val headerHTML: String?,
         val footerHTML: String?,
         val title: String?,
-        val subject: String?
+        val subject: String?,
+        val fromOffer: OfferIdDTO?,
         )
 
 data class RequestInvoiceDTO(
@@ -35,10 +38,13 @@ data class RequestInvoiceDTO(
         val headerHTML: String?,
         val footerHTML: String?,
         val title: String?,
-        val subject: String?
+        val subject: String?,
+        val correctedInvoiceId: Int?,
+        val isCancelation: Boolean?,
+        val fromOffer: OfferIdDTO?
 )
 
-data class InvoiceListItemDTO(
+data class InvoiceMetadataDTO(
         val id: Int,
         val title: String?,
         val createdTimestamp: String,

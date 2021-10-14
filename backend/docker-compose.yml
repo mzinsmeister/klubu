@@ -12,5 +12,14 @@ services:
       - POSTGRES_ROOT_PASSWORD=abc123testroot
     volumes:
       - klubu-data:/var/lib/postgresql/data:z
+
+  backend:
+    image: amazoncorretto:11.0.12-alpine3.14
+    profiles:
+      - backend
+    volumes:
+      - ./:/app
+    working_dir: /app
+    command: ./gradlew --args="--spring.profiles.active=int --spring.datasource.url=jdbc:postgresql://db:5432/klubu"
 volumes:
   klubu-data:

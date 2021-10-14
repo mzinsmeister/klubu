@@ -1,7 +1,7 @@
 package dev.zinsmeister.klubu.invoice.controller
 
 import dev.zinsmeister.klubu.document.dto.DocumentVersionDTO
-import dev.zinsmeister.klubu.invoice.dto.InvoiceListItemDTO
+import dev.zinsmeister.klubu.invoice.dto.InvoiceMetadataDTO
 import dev.zinsmeister.klubu.invoice.dto.RequestInvoiceDTO
 import dev.zinsmeister.klubu.invoice.dto.ResponseCodifiedDTO
 import dev.zinsmeister.klubu.invoice.dto.ResponseInvoiceDTO
@@ -20,7 +20,7 @@ class InvoiceController(private val service: InvoiceService) {
     }
 
     @GetMapping
-    fun listInvoices(pageable: Pageable): Page<InvoiceListItemDTO> {
+    fun listInvoices(pageable: Pageable): Page<InvoiceMetadataDTO> {
         return service.listInvoices(pageable)
     }
 

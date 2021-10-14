@@ -5,6 +5,8 @@ import dev.zinsmeister.klubu.common.dto.ItemDTO
 import dev.zinsmeister.klubu.contact.dto.ContactDTO
 import dev.zinsmeister.klubu.common.dto.MoneyDTO
 
+data class OfferIdDTO(val id: Int, val revision: Int)
+
 data class RequestOfferDTO(
         val title: String?,
         val customerContactId: Int?,

@@ -19,6 +19,9 @@ import dev.zinsmeister.klubu.document.dto.DocumentVersionDTO
 import dev.zinsmeister.klubu.document.service.DocumentService
 import dev.zinsmeister.klubu.exception.NotCodifiedException
 import dev.zinsmeister.klubu.export.service.ExportService
+import dev.zinsmeister.klubu.offer.domain.OfferId
+import dev.zinsmeister.klubu.offer.dto.OfferIdDTO
+import dev.zinsmeister.klubu.offer.repository.OfferRepository
 import dev.zinsmeister.klubu.util.formatCents
 import dev.zinsmeister.klubu.util.isoFormat
 import org.springframework.beans.factory.annotation.Value
@@ -34,6 +37,7 @@ import javax.transaction.Transactional
 
 @Service
 class InvoiceService(private val repository: InvoiceRepository,
+                     private val offerRepository: OfferRepository,
                      private val contactRepository: ContactRepository,
                      private val idGeneratorService: IdGeneratorService,
                      private val documentService: DocumentService,
@@ -60,6 +64,8 @@ class InvoiceService(private val repository: InvoiceRepository,
                 ?: throw NotFoundInDBException("Invoice not found")
         foundEntity.title = dto.title
         foundEntity.paidDate = dto.paidDate?.let { LocalDate.parse(it) }
+        foundEntity.offer = dto.fromOffer?.let { offerRepository.findByIdOrNull(OfferId(it.id, it.revision))
+                ?: throw NotFoundInDBException("Offer not found") }
         if(!foundEntity.isCodified) { // TODO: Is silently not updating the other fields correct behaviour here?
             try {
                 if(foundEntity.customerContact?.contactId != dto.customerContactId) {
@@ -71,6 +77,9 @@ class InvoiceService(private val repository: InvoiceRepository,
                 foundEntity.subject = dto.subject
                 foundEntity.headerHTML = dto.headerHTML
                 foundEntity.footerHTML = dto.footerHTML
+                foundEntity.correctedInvoice = dto.correctedInvoiceId?.let { repository.findByIdOrNull(it)
+                        ?: throw NotFoundInDBException("Corrected Invoice not found") }
+                foundEntity.isCancelation = dto.isCancelation?: false
                 foundEntity.replaceItems(dto.items.map { mapInvoiceItemDTOToEntity(it) })
             } catch (e: IllegalModificationException) {
                 throw IllegalModificationRequestException(e) //TODO: basically useless
@@ -79,8 +88,8 @@ class InvoiceService(private val repository: InvoiceRepository,
         repository.save(foundEntity)
     }
 
-    fun listInvoices(pageable: Pageable): Page<InvoiceListItemDTO> {
-        return repository.findAll(pageable).map { mapInvoiceEntityToListItemDTO(it) }
+    fun listInvoices(pageable: Pageable): Page<InvoiceMetadataDTO> {
+        return repository.findAll(pageable).map { mapInvoiceEntityToMetadataDTO(it) }
     }
 
     @Transactional
@@ -120,7 +129,8 @@ class InvoiceService(private val repository: InvoiceRepository,
     private fun mapInvoiceEntityToDTO(entity: Invoice) = ResponseInvoiceDTO(
             id = entity.invoiceId!!,
             invoiceNumber = entity.invoiceNumber,
-            correctedInvoiceId = entity.correctedInvoice?.invoiceId,
+            correctedInvoice = entity.correctedInvoice?.let { mapInvoiceEntityToMetadataDTO(it) },
+            correctedByInvoice = entity.correctedBy?.let { mapInvoiceEntityToMetadataDTO(it) },
             paidDate = entity.paidDate?.format(DateTimeFormatter.ISO_LOCAL_DATE),
             invoiceDate = entity.invoiceDate?.format(DateTimeFormatter.ISO_LOCAL_DATE),
             codifiedTimestamp = entity.codifiedTimestamp?.isoFormat(),
@@ -134,7 +144,8 @@ class InvoiceService(private val repository: InvoiceRepository,
             headerHTML = entity.headerHTML,
             footerHTML = entity.footerHTML,
             title = entity.title,
-            subject = entity.subject
+            subject = entity.subject,
+            fromOffer = entity.offer?.let { OfferIdDTO(it.offerId, it.revision) }
     )
 
     private fun mapInvoiceDTOToEntity(dto: RequestInvoiceDTO) = Invoice(
@@ -157,7 +168,7 @@ class InvoiceService(private val repository: InvoiceRepository,
             priceCents = dto.price.amountCents
     )
 
-    private fun mapInvoiceEntityToListItemDTO(entity: Invoice) = InvoiceListItemDTO(
+    private fun mapInvoiceEntityToMetadataDTO(entity: Invoice) = InvoiceMetadataDTO(
             id = entity.invoiceId!!,
             title = entity.title,
             invoiceNumber = entity.invoiceNumber,
