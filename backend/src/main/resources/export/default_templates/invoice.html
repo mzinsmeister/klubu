@@ -9,7 +9,7 @@
                 font-family: Roboto;
             }
             @page {
-                margin: 0 8mm 0 20mm;
+                margin: 0 20mm 0 20mm;
                 bleed: 0;
                 size: A4;
             }
@@ -20,9 +20,19 @@
                 padding-left: 20mm;
                 padding-top: 20mm;
             }
+            .address-extra {
+                width: 8.5cm;
+                height: 17.7mm;
+                position: relative;
+            }
+            .address-extra-content {
+                position: absolute;
+                bottom: 0;
+                font-size: 8pt;
+            }
             .address {
                 width: 8.5cm;
-                height: 4cm;
+                height: 27.3mm;
                 font-size: 10pt;
             }
             main {
@@ -47,23 +57,50 @@
             </div>
         </header>
 
-        <div class="address"><br><br><br>
-            <div>{{recipient.formOfAddress}}</div>
-            <div>{{#recipient.title}}{{.}} {{/recipient.title}}{{#recipient.firstName}}{{.}} {{/recipient.firstName}}{{recipient.name}}</div>
-            <div>{{recipient.street}} {{recipient.houseNumber}}</div>
-            <div>{{recipient.zipCode}} {{recipient.city}}</div>
-            {{#printRecipientCountry}}<div>{{recipient.country}}</div>{{/printRecipientCountry}}
-        </div>
-        <main>
-            <table style="width: 100%">
+        <div class="upper-field">
+            <table>
                 <tr>
-                    <td>Kundennummer: {{customerContact.id}}</td>
-                    <td>Rechnungsnummer: {{invoiceNumber}}</td>
-                    <td>Rechnungsdatum: {{invoiceDate}}</td>
+                    <td class="address-wrapper">
+                        <div class="address-extra">
+                            <div class="address-extra-content">
+                                <div>{{user.name}} - {{user.street}} {{user.houseNumber}} - {{user.zipCode}} {{user.city}}</div>
+                            </div>
+                        </div>
+                        <div class="address">
+                            <div>{{recipient.formOfAddress}}</div>
+                            <div>{{#recipient.title}}{{.}} {{/recipient.title}}{{#recipient.firstName}}{{.}} {{/recipient.firstName}}{{recipient.name}}</div>
+                            <div>{{recipient.street}} {{recipient.houseNumber}}</div>
+                            <div>{{recipient.zipCode}} {{recipient.city}}</div>
+                            {{#printRecipientCountry}}<div>{{recipient.country}}</div>{{/printRecipientCountry}}
+                        </div>
+                    </td>
+                    <td class="upper-info">
+                        <table>
+                            <tr>
+                                <td>Kundennummer:</td>
+                                <td>{{customerContact.id}}</td>
+                            </tr>
+                            <tr>
+                                <td>Rechnungsnummer:</td>
+                                <td>{{invoiceNumber}}</td>
+                            </tr>
+                            <tr>
+                                <td>Rechnungsdatum:</td>
+                                <td>{{invoiceDate}}</td>
+                            </tr>
+                        </table>
+                    </td>
                 </tr>
             </table>
+        </div>
+
+
+        <main>
+            <br><br>
             <div><b>{{subject}}</b></div>
+            <br>
             <div class="contentHeader">{{{headerHTML}}}</div>
+            <br>
             <table class="items">
                 <thead>
                 <tr>
@@ -95,6 +132,7 @@
                 </tr>
                 </tbody>
             </table>
+            <br>
             <div class="contentFooter">{{{footerHTML}}}</div>
         </main>
     </body>

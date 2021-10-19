@@ -52,8 +52,4 @@ class InvoiceItem(
     @ManyToOne(optional = false)
     lateinit var invoice: Invoice
 
-    override fun calculateTotalCents(): Int {
-        return (this.quantity * this.priceCents).roundToInt()
-    }
-
 }

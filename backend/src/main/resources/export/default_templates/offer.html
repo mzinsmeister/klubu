@@ -20,9 +20,19 @@
                 padding-left: 20mm;
                 padding-top: 20mm;
             }
+            .address-extra {
+                width: 8.5cm;
+                height: 17.7mm;
+                position: relative;
+            }
+            .address-extra-content {
+                position: absolute;
+                bottom: 0;
+                font-size: 8pt;
+            }
             .address {
                 width: 8.5cm;
-                height: 4cm;
+                height: 27.3mm;
                 font-size: 10pt;
             }
             main {
@@ -47,15 +57,44 @@
             </div>
         </header>
 
-        <div class="address"><br><br><br>
-            <div>{{recipient.formOfAddress}}</div>
-            <div>{{#recipient.title}}{{.}} {{/recipient.title}}{{#recipient.firstName}}{{.}} {{/recipient.firstName}}{{recipient.name}}</div>
-            <div>{{recipient.street}} {{recipient.houseNumber}}</div>
-            <div>{{recipient.zipCode}} {{recipient.city}}</div>
-            {{#printRecipientCountry}}<div>{{recipient.country}}</div>{{/printRecipientCountry}}
+        <div class="upper-field">
+            <table>
+                <tr>
+                    <td class="address-wrapper">
+                        <div class="address-extra">
+                            <div class="address-extra-content">
+                                <div>{{user.name}} - {{user.street}} {{user.houseNumber}} - {{user.zipCode}} {{user.city}}</div>
+                            </div>
+                        </div>
+                        <div class="address">
+                            <div>{{recipient.formOfAddress}}</div>
+                            <div>{{#recipient.title}}{{.}} {{/recipient.title}}{{#recipient.firstName}}{{.}} {{/recipient.firstName}}{{recipient.name}}</div>
+                            <div>{{recipient.street}} {{recipient.houseNumber}}</div>
+                            <div>{{recipient.zipCode}} {{recipient.city}}</div>
+                            {{#printRecipientCountry}}<div>{{recipient.country}}</div>{{/printRecipientCountry}}
+                        </div>
+                    </td>
+                    <td class="upper-info">
+                        <table>
+                            <tr>
+                                <td>Kundennummer:</td>
+                                <td>{{customerContact.id}}</td>
+                            </tr>
+                            <tr>
+                                <td>Rechnungsnummer:</td>
+                                <td>{{offerId}}</td>
+                            </tr>
+                            <tr>
+                                <td>Rechnungsdatum:</td>
+                                <td>{{offerDate}}</td>
+                            </tr>
+                        </table>
+                    </td>
+                </tr>
+            </table>
         </div>
+
         <main>
-            <div><span>Kundennummer: {{customerContact.id}}</span> <span>Angebotsnummer: {{offerNumber}}</span></div>
             <div><b>{{subject}}</b></div>
             <div class="contentHeader">{{{headerHTML}}}</div>
             <table class="items">

@@ -3,6 +3,7 @@ package dev.zinsmeister.klubu.offer.dto
 import dev.zinsmeister.klubu.common.domain.Recipient
 import dev.zinsmeister.klubu.common.dto.ExportItemDTO
 import dev.zinsmeister.klubu.contact.dto.ContactDTO
+import dev.zinsmeister.klubu.user.dto.ExportUserDTO
 
 data class ExportOfferDTO(
         val id: Int,
@@ -17,5 +18,6 @@ data class ExportOfferDTO(
         val subject: String?,
         val headerHTML: String?,
         val footerHTML: String?,
-        val offerNumber: String
+        val offerNumber: String,
+        val user: ExportUserDTO
 )

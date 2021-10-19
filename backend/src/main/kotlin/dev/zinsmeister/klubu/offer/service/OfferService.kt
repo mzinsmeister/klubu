@@ -17,6 +17,8 @@ import dev.zinsmeister.klubu.document.domain.Document
 import dev.zinsmeister.klubu.document.dto.DocumentVersionDTO
 import dev.zinsmeister.klubu.document.service.DocumentService
 import dev.zinsmeister.klubu.export.service.ExportService
+import dev.zinsmeister.klubu.user.dto.ExportUserDTO
+import dev.zinsmeister.klubu.user.service.UserService
 import dev.zinsmeister.klubu.util.formatCents
 import dev.zinsmeister.klubu.util.isoFormat
 import org.springframework.beans.factory.annotation.Value
@@ -37,6 +39,7 @@ class OfferService(private val offerRepository: OfferRepository,
                    private val idGeneratorService: IdGeneratorService,
                    private val exportService: ExportService,
                    private val documentService: DocumentService,
+                   private val userService: UserService,
                    @Value("\${klubu.export.offer.titlePrefix}") private val exportTitlePrefix: String
 ) {
 
@@ -180,14 +183,16 @@ class OfferService(private val offerRepository: OfferRepository,
             title = entity.title,
             customerContact = entity.customerContact?.let{ mapContactEntityToDTO(it) },
             recipient = entity.recipient,
-            printRecipientCountry = !(entity.recipient?.country?.equals("Deutschland", ignoreCase = true)?: false),
+            printRecipientCountry = !(entity.recipient?.country?.
+                equals(userService.getUserCountry(), ignoreCase = true)?: false),
             items = entity.items.withIndex().map { ExportItemDTO(it.value, it.index + 1) },
             createdTimestamp = entity.createdTimestamp.isoFormat(),
             subject = entity.subject,
             headerHTML = entity.headerHTML,
             footerHTML = entity.footerHTML,
             totalPrice = formatCents(entity.calculateTotalCents(), ",", "€"),
-            offerNumber = entity.getOfferNumber()
+            offerNumber = entity.getOfferNumber(),
+            user = userService.getExportUserDTO()
     )
 
     private fun mapItemDTOToEntity(dto: ItemDTO) = OfferItem(

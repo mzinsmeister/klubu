@@ -22,6 +22,7 @@ import dev.zinsmeister.klubu.export.service.ExportService
 import dev.zinsmeister.klubu.offer.domain.OfferId
 import dev.zinsmeister.klubu.offer.dto.OfferIdDTO
 import dev.zinsmeister.klubu.offer.repository.OfferRepository
+import dev.zinsmeister.klubu.user.service.UserService
 import dev.zinsmeister.klubu.util.formatCents
 import dev.zinsmeister.klubu.util.isoFormat
 import org.springframework.beans.factory.annotation.Value
@@ -42,6 +43,7 @@ class InvoiceService(private val repository: InvoiceRepository,
                      private val idGeneratorService: IdGeneratorService,
                      private val documentService: DocumentService,
                      private val exportService: ExportService,
+                     private val userService: UserService,
                      @Value("\${klubu.export.invoice.titlePrefix}") private val exportTitlePrefix: String
                      ) {
 
@@ -186,7 +188,8 @@ class InvoiceService(private val repository: InvoiceRepository,
             title = entity.title,
             customerContact = entity.customerContact?.let{ mapContactEntityToDTO(it) },
             recipient = entity.recipient,
-            printRecipientCountry = !(entity.recipient?.country?.equals("Deutschland", ignoreCase = true)?: false),
+            printRecipientCountry = !(entity.recipient?.country?.
+                equals(userService.getUserCountry(), ignoreCase = true)?: false),
             items = entity.immutableItems.withIndex().map { ExportItemDTO(it.value, it.index + 1) },
             createdTimestamp = entity.createdTimestamp.isoFormat(),
             subject = entity.subject,
@@ -194,6 +197,7 @@ class InvoiceService(private val repository: InvoiceRepository,
             footerHTML = entity.footerHTML,
             totalPrice = formatCents(entity.calculateTotalCents(), ",", "€"),
             invoiceNumber = entity.invoiceNumber!!.toString(),
-            invoiceDate = entity.invoiceDate?.format(DateTimeFormatter.ofPattern("dd.MM.yyyy"))
+            invoiceDate = entity.invoiceDate?.format(DateTimeFormatter.ofPattern("dd.MM.yyyy")),
+            user = userService.getExportUserDTO()
     )
 }

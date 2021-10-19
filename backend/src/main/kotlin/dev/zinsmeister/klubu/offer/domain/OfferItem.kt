@@ -17,10 +17,6 @@ class OfferItem(
     @GeneratedValue
     var id: Int? = null
 
-    override fun calculateTotalCents(): Int {
-        return (quantity * priceCents).roundToInt()
-    }
-
     fun copyToNew() = OfferItem(name, quantity, unit, priceCents)
 
 }
