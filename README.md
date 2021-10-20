@@ -27,3 +27,6 @@ For now there is no access conrol as i want to have a fully functional prototype
 
 # Installation
 Installation is intended to be done with Docker on the Server but this is also still a TODO. The image will then include the Web Frontend, the JVM Backend aswell as the Chromium browser (or a Chromium headless-shell) for generating PDFs so that you will only need to start a database and the Klubu Container
+
+# Screenshots
+<img alt="screen1" src="repo/screen1.png" width="600" />
