@@ -20,7 +20,7 @@ services:
     ports:
       - "8080:8080"
     volumes:
-      - ./backend:/app
+      - ./:/app
       - gradle-cache:/root/.gradle
       - playwright-cache:/root/.cache
     working_dir: /app
