@@ -1,9 +1,15 @@
 <template>
   <div class="sidebar">
-    <b-sidebar position="fixed" :fullheight="true" type="is-light" open>
+    <b-sidebar background="floralwhite" position="fixed" :fullheight="true" type="is-light" open>
+      <div class="logo-head" style="background: white;">
+        <a href="/" class="navbar-brand" style="margin: 5px 20px;">
+          <img alt="KLUBU" src="../assets/logo.png">
+        </a>
+      </div>
+      <div class="logo-head_line" style="background: gray;height: 5px;box-shadow: 0px 3px 8px 2px gray;">
+      </div>
       <div class="p-1">
         <div class="block">
-          <h1 class="title">KLUBU</h1>
         </div>
         <b-menu class="is-custom-mobile">
           <b-menu-list>
