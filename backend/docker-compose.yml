@@ -14,7 +14,7 @@ services:
       - klubu-data:/var/lib/postgresql/data:z
 
   backend:
-    image: amazoncorretto:11.0.12-alpine3.14
+    image: mcr.microsoft.com/playwright/java:v1.15.2-focal
     profiles:
       - backend
     ports:
@@ -22,7 +22,6 @@ services:
     volumes:
       - ./:/app
       - gradle-cache:/root/.gradle
-      - playwright-cache:/root/.cache
     working_dir: /app
     depends_on:
       - db
