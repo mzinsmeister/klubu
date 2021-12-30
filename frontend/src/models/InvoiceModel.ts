@@ -1,11 +1,12 @@
 import { Item, Recipient } from "./CommonModel";
 import { Contact } from "./ContactModel";
+import { Document } from "./DocumentModel";
 
 export interface Invoice {
   id?: number;
   items: Array<Item>;
   createdTimestamp?: Date;
-  codifiedTimestamp?: Date;
+  committedTimestamp?: Date;
   invoiceNumber?: number;
   paidDate?: Date;
   invoiceDate?: Date;
@@ -26,7 +27,7 @@ export interface InvoiceListItem {
   createdTimestamp: Date;
   customerContact?: Contact;
   paidDate?: Date;
-  codified: boolean;
+  committed: boolean;
   invoiceNumber?: number;
   isCanceled: boolean;
   isCancelation: boolean;

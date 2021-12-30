@@ -1,7 +1,7 @@
-package dev.zinsmeister.klubu.document.dto
+package dev.zinsmeister.klubu.documentfile.dto
 
-import dev.zinsmeister.klubu.document.domain.Document
-import dev.zinsmeister.klubu.document.domain.DocumentVersion
+import dev.zinsmeister.klubu.documentfile.domain.Document
+import dev.zinsmeister.klubu.documentfile.domain.DocumentVersion
 import dev.zinsmeister.klubu.util.isoFormat
 
 data class DocumentDTO (

@@ -1,11 +1,8 @@
 package dev.zinsmeister.klubu.offer.controller
 
-import dev.zinsmeister.klubu.document.dto.DocumentDTO
-import dev.zinsmeister.klubu.document.dto.DocumentVersionDTO
-import dev.zinsmeister.klubu.offer.dto.OfferListItemDTO
-import dev.zinsmeister.klubu.offer.dto.RequestOfferDTO
-import dev.zinsmeister.klubu.offer.dto.ResponseOfferDTO
-import dev.zinsmeister.klubu.offer.dto.RevisionListDTO
+import dev.zinsmeister.klubu.documentfile.dto.DocumentVersionDTO
+import dev.zinsmeister.klubu.invoice.dto.ResponseInvoiceCommittedDTO
+import dev.zinsmeister.klubu.offer.dto.*
 import dev.zinsmeister.klubu.offer.service.OfferService
 import org.springframework.data.domain.Page
 import org.springframework.data.domain.Pageable
@@ -13,7 +10,7 @@ import org.springframework.http.HttpStatus
 import org.springframework.web.bind.annotation.*
 
 @RestController
-@RequestMapping("offers")
+@RequestMapping("api/offers")
 class OfferController(val offerService: OfferService) {
 
     @GetMapping("{id}")
@@ -53,6 +50,11 @@ class OfferController(val offerService: OfferService) {
     @GetMapping
     fun listLatestOffers(pageable: Pageable): Page<OfferListItemDTO> {
         return offerService.listLatestOffers(pageable)
+    }
+
+    @PostMapping("{id}/revisions/{revision}/committed")
+    fun commitInvoice(@PathVariable("id") id: Int, @PathVariable("revision") revision: Int): ResponseOfferCommittedDTO {
+        return offerService.commitOffer(id, revision)
     }
 
     @PostMapping("{id}/revisions/{revision}/export")

@@ -33,6 +33,11 @@ const routes: Array<RouteConfig> = [
         component: OfferEditor,
       },
       {
+        path: ":id/revisions/:revision",
+        name: "OfferEditorWithRevision",
+        component: OfferEditor,
+      },
+      {
         path: "",
         name: "Offers",
         component: OffersOverview,

@@ -1,10 +1,10 @@
-package dev.zinsmeister.klubu.document.service
+package dev.zinsmeister.klubu.documentfile.service
 
-import dev.zinsmeister.klubu.document.repository.DocumentRepository
-import dev.zinsmeister.klubu.document.domain.Document
-import dev.zinsmeister.klubu.document.domain.DocumentVersion
-import dev.zinsmeister.klubu.document.dto.DocumentVersionDTO
-import dev.zinsmeister.klubu.document.exception.NoVersionException
+import dev.zinsmeister.klubu.documentfile.repository.DocumentRepository
+import dev.zinsmeister.klubu.documentfile.domain.Document
+import dev.zinsmeister.klubu.documentfile.domain.DocumentVersion
+import dev.zinsmeister.klubu.documentfile.dto.DocumentVersionDTO
+import dev.zinsmeister.klubu.documentfile.exception.NoVersionException
 import dev.zinsmeister.klubu.exception.NotFoundInDBException
 import org.springframework.beans.factory.annotation.Value
 import org.springframework.data.repository.findByIdOrNull
@@ -48,7 +48,7 @@ class DocumentService(@Value("\${klubu.document.storage.path}") private val stor
             document.versions.find { it.version == version }?: throw NotFoundInDBException("DocumentVersion not found")
         }
         val bytes = fetchDocument(documentVersion)
-        return Pair(bytes, MediaType.valueOf(document.mediaType))
+        return Pair(bytes, MediaType.parseMediaType(document.mediaType))
     }
 
     private fun constructPath(documentVersion: DocumentVersion): Path {

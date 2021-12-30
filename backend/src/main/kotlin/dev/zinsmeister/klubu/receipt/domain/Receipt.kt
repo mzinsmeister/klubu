@@ -1,6 +1,6 @@
 package dev.zinsmeister.klubu.receipt.domain
 
-import dev.zinsmeister.klubu.document.domain.Document
+import dev.zinsmeister.klubu.documentfile.domain.Document
 import javax.persistence.*
 
 @Entity

@@ -4,16 +4,25 @@
       <div class="top-buttons">
         <b-button type="is-info" @click="back">Zurück</b-button>
         <b-button type="is-success" @click="save">Speichern</b-button>
-        <b-button v-if="!isCodified" type="is-danger" @click="codify"
+        <b-button v-if="!isCommitted" type="is-danger" @click="commit"
           >Festschreiben</b-button
         >
         <b-button
-          v-if="isCodified"
+          v-if="isCommitted && invoice.document === undefined"
           type="is-warning"
           :loading="isExporting"
           :disabled="invoice.id === undefined"
           @click="tryExport"
           >Exportieren</b-button
+        >
+        <b-button
+          v-if="isCommitted && invoice.document !== undefined"
+          type="is-warning"
+          tag="a"
+          :href="`http://localhost:8081/api/documents/${invoice.document.id}`"
+          target="_blank"
+          :download="`Rechnung ${invoice.invoiceNumber}.pdf`"
+          >PDF Herunterladen</b-button
         >
       </div>
     </div>
@@ -25,20 +34,20 @@
         :contact="
           invoice.customerContact === undefined ? null : invoice.customerContact
         "
-        :disabled="isCodified"
+        :disabled="isCommitted"
         @select="select"
       />
     </b-field>
     <recipient-editor
       @change="change"
-      :disabled="isCodified"
+      :disabled="isCommitted"
       v-model="invoice.recipient"
     />
     <b-field grouped>
       <b-field expanded label="Rechnungsdatum">
         <b-datepicker
           @input="change"
-          :disabled="isCodified"
+          :disabled="isCommitted"
           v-model="invoice.invoiceDate"
         />
         <p class="control">
@@ -48,7 +57,7 @@
               change();
             "
             icon-right="delete"
-            :disabled="invoice.invoiceDate === undefined || isCodified"
+            :disabled="invoice.invoiceDate === undefined || isCommitted"
           />
         </p>
       </b-field>
@@ -69,32 +78,32 @@
     <b-field label="Betreff">
       <b-input
         @input="change"
-        :disabled="isCodified"
+        :disabled="isCommitted"
         v-model="invoice.subject"
       />
     </b-field>
     <b-field label="Einleitungstext">
       <b-input
         @input="change"
-        :disabled="isCodified"
+        :disabled="isCommitted"
         type="textarea"
         v-model="invoice.headerHTML"
       />
     </b-field>
     <items-editor
       @change="change"
-      :disabled="isCodified"
+      :disabled="isCommitted"
       v-model="invoice.items"
     />
+    <p>Gesamt: {{ getTotal() }}</p>
     <b-field label="Fußtext">
       <b-input
         @input="change"
-        :disabled="isCodified"
+        :disabled="isCommitted"
         type="textarea"
         v-model="invoice.footerHTML"
       />
     </b-field>
-    <p>Gesamt: {{ getTotal() }}</p>
   </div>
 </template>
 
@@ -105,7 +114,7 @@ import RecipientEditor from "../common/RecipientEditor.vue";
 import ContactSearch from "../common/ContactSearch.vue";
 import ItemsEditor from "../common/ItemsEditor.vue";
 import {
-  codifyInvoice,
+  commitInvoice,
   createInvoice,
   exportInvoice,
   fetchInvoice,
@@ -134,15 +143,17 @@ export default class InvoiceEditor extends Vue {
     this.changedSinceSave = true;
   }
 
-  private get isCodified(): boolean {
-    return this.invoice?.codifiedTimestamp !== undefined;
+  private get isCommitted(): boolean {
+    return this.invoice?.committedTimestamp !== undefined;
   }
 
-  private codify(): void {
+  private commit(): void {
     if (this.invoice !== null && this.invoice?.id !== undefined) {
-      codifyInvoice(this.invoice.id).then((response) => {
+      commitInvoice(this.invoice.id).then((response) => {
         if (this.invoice !== null) {
-          this.invoice.codifiedTimestamp = parseISO(response.codifiedTimestamp);
+          this.invoice.committedTimestamp = parseISO(
+            response.committedTimestamp
+          );
           this.invoice.invoiceNumber = response.invoiceNumber;
         }
       });
@@ -186,7 +197,10 @@ export default class InvoiceEditor extends Vue {
   private export() {
     if (this.invoice !== null) {
       exportInvoice(this.invoice)
-        .then(() => {
+        .then((r) => {
+          if (this.invoice !== null) {
+            this.invoice.document = r.document;
+          }
           this.isExporting = false;
           this.$buefy.toast.open({
             message: "Export erfolgreich",

@@ -3,7 +3,7 @@ package dev.zinsmeister.klubu.offer.dto
 import dev.zinsmeister.klubu.common.domain.Recipient
 import dev.zinsmeister.klubu.common.dto.ItemDTO
 import dev.zinsmeister.klubu.contact.dto.ContactDTO
-import dev.zinsmeister.klubu.common.dto.MoneyDTO
+import dev.zinsmeister.klubu.documentfile.dto.DocumentDTO
 
 data class OfferIdDTO(val id: Int, val revision: Int)
 
@@ -31,7 +31,9 @@ data class ResponseOfferDTO(
         val validUntilDate: String?,
         val subject: String?,
         val headerHTML: String?,
-        val footerHTML: String?
+        val footerHTML: String?,
+        val document: DocumentDTO?,
+        val committedTimestamp: String?,
 )
 
 data class OfferListItemDTO(
@@ -41,3 +43,5 @@ data class OfferListItemDTO(
         val createdTimestamp: String,
         val customerContact: ContactDTO?
 )
+
+data class ResponseOfferCommittedDTO(val committedTimestamp: String)

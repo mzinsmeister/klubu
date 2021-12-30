@@ -1,10 +1,14 @@
 import {
   ApiPage,
+  documentVerionFromDTO,
+  OfferCommittedDTO,
   OfferListItemDTO,
+  OfferRevisionListDTO,
   RequestOfferDTO,
   ResponseOfferDTO,
 } from "@/models/ApiModel";
-import { Offer, OfferListItem } from "@/models/OfferModel";
+import { DocumentVersion } from "@/models/DocumentModel";
+import { Offer, OfferListItem, OfferRevision } from "@/models/OfferModel";
 import { formatISO, parseISO } from "date-fns";
 import Vue from "vue";
 
@@ -39,6 +43,9 @@ function mapOfferDTOToOffer(dto: ResponseOfferDTO): Offer {
     recipient: dto.recipient,
     items: dto.items,
     createdTimestamp: parseISO(dto.createdTimestamp),
+    committedTimestamp: dto.committedTimestamp
+      ? parseISO(dto.committedTimestamp)
+      : undefined,
     offerDate: dto.offerDate ? parseISO(dto.offerDate) : undefined,
     validUntilDate: dto.validUntilDate
       ? parseISO(dto.validUntilDate)
@@ -46,11 +53,19 @@ function mapOfferDTOToOffer(dto: ResponseOfferDTO): Offer {
     subject: dto.subject,
     headerHTML: dto.headerHTML,
     footerHTML: dto.footerHTML,
+    document: dto.document,
   };
 }
 
-export async function fetchOffer(id: number): Promise<Offer> {
+export async function fetchOfferNewest(id: number): Promise<Offer> {
   const response = await Vue.axios.get<ResponseOfferDTO>("/api/offers/" + id);
+  return mapOfferDTOToOffer(response.data);
+}
+
+export async function fetchOffer(id: number, revision: number): Promise<Offer> {
+  const response = await Vue.axios.get<ResponseOfferDTO>(
+    `/api/offers/${id}/revisions/${revision}`
+  );
   return mapOfferDTOToOffer(response.data);
 }
 
@@ -84,8 +99,39 @@ export async function updateOffer(offer: Offer): Promise<void> {
   );
 }
 
-export async function exportOffer(offer: Offer): Promise<void> {
-  await Vue.axios.post(
+export async function exportOffer(offer: Offer): Promise<DocumentVersion> {
+  const response = await Vue.axios.post(
     `/api/offers/${offer.id}/revisions/${offer.revision}/export`
   );
+  return documentVerionFromDTO(response.data);
+}
+
+export async function commitOffer(
+  offerId: number,
+  revision: number
+): Promise<OfferCommittedDTO> {
+  const response = await Vue.axios.post(
+    `/api/offers/${offerId}/revisions/${revision}/committed`
+  );
+  return response.data;
+}
+
+export async function getOfferRevisions(
+  offerId: number
+): Promise<Array<OfferRevision>> {
+  const response = await Vue.axios.get<OfferRevisionListDTO>(
+    `/api/offers/${offerId}/revisions`
+  );
+  return response.data.revisions.map((r) => ({
+    revisionNumber: r.revisionNumber,
+    creationDate: parseISO(r.createdTimestamp),
+  }));
+}
+
+export async function createRevision(newRevision: Offer): Promise<Offer> {
+  const response = await Vue.axios.post(
+    `/api/offers/${newRevision.id}/revisions`,
+    mapOfferToDTO(newRevision)
+  );
+  return mapOfferDTOToOffer(response.data);
 }

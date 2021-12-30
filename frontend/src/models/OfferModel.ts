@@ -1,5 +1,6 @@
 import { Item, Recipient } from "./CommonModel";
 import { Contact } from "./ContactModel";
+import { Document } from "./DocumentModel";
 
 export interface Offer {
   id?: number;
@@ -11,9 +12,11 @@ export interface Offer {
   recipient?: Recipient;
   items: Array<Item>;
   createdTimestamp?: Date;
+  committedTimestamp?: Date;
   subject?: string;
   headerHTML?: string;
   footerHTML?: string;
+  document?: Document;
 }
 
 export interface OfferListItem {
@@ -22,4 +25,9 @@ export interface OfferListItem {
   title?: string;
   createdTimestamp: Date;
   customerContact?: Contact;
+}
+
+export interface OfferRevision {
+  revisionNumber: number;
+  creationDate: Date;
 }

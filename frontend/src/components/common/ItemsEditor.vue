@@ -6,7 +6,7 @@
         <th>Position</th>
         <th>Menge</th>
         <th>Einheit</th>
-        <th>Einzelpreis</th>
+        <th>Einzelpreis (Cent)</th>
         <th>Betrag</th>
         <th></th>
       </thead>

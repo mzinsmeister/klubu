@@ -13,11 +13,13 @@ import dev.zinsmeister.klubu.offer.dto.*
 import dev.zinsmeister.klubu.offer.repository.OfferRepository
 import dev.zinsmeister.klubu.offer.repository.findLatestByOfferId
 import dev.zinsmeister.klubu.common.dto.ItemDTO
-import dev.zinsmeister.klubu.document.domain.Document
-import dev.zinsmeister.klubu.document.dto.DocumentVersionDTO
-import dev.zinsmeister.klubu.document.service.DocumentService
+import dev.zinsmeister.klubu.documentfile.domain.Document
+import dev.zinsmeister.klubu.documentfile.dto.DocumentDTO
+import dev.zinsmeister.klubu.documentfile.dto.DocumentVersionDTO
+import dev.zinsmeister.klubu.documentfile.service.DocumentService
+import dev.zinsmeister.klubu.exception.IllegalModificationException
+import dev.zinsmeister.klubu.exception.IllegalModificationRequestException
 import dev.zinsmeister.klubu.export.service.ExportService
-import dev.zinsmeister.klubu.user.dto.ExportUserDTO
 import dev.zinsmeister.klubu.user.service.UserService
 import dev.zinsmeister.klubu.util.formatCents
 import dev.zinsmeister.klubu.util.isoFormat
@@ -27,10 +29,9 @@ import org.springframework.data.domain.Pageable
 import org.springframework.data.repository.findByIdOrNull
 import org.springframework.http.MediaType
 import org.springframework.stereotype.Service
-import java.text.DecimalFormat
+import java.time.Instant
 import java.time.LocalDate
 import java.time.format.DateTimeFormatter
-import java.util.*
 import javax.transaction.Transactional
 
 @Service
@@ -101,8 +102,8 @@ class OfferService(private val offerRepository: OfferRepository,
         val revisions = offerRepository.findAllRevisionsById(offerId)
         val revisionsDTOs = revisions.map {
             RevisionDTO(
-                    revisionNumer = it.revision,
-                    creationDate = it.createdTimestamp.isoFormat()
+                    revisionNumber = it.revision,
+                    createdTimestamp = it.createdTimestamp.isoFormat()
             )
         }
         return RevisionListDTO(revisionsDTOs)
@@ -117,7 +118,7 @@ class OfferService(private val offerRepository: OfferRepository,
         }?: throw NotFoundInDBException("Offer not found")
         val newItems = offerDTO.items?.map { mapItemDTOToEntity(it) } ?: mutableListOf()
         offer.replaceItems(newItems)
-        offer.offerDate = offerDTO.offerDate?.let { LocalDate.parse(it) }
+        offer.documentDate = offerDTO.offerDate?.let { LocalDate.parse(it) }
         offer.validUntilDate = offerDTO.validUntilDate?.let { LocalDate.parse(it) }
         offer.subject = offerDTO.subject
         offer.footerHTML = offerDTO.footerHTML
@@ -162,19 +163,35 @@ class OfferService(private val offerRepository: OfferRepository,
         return documentService.storeNewVersion(document, documentBytes)
     }
 
+    @Transactional
+    fun commitOffer(id: Int, revision: Int): ResponseOfferCommittedDTO {
+        //TODO: Check if all required fields are filled
+        val foundEntity = offerRepository.findByIdOrNull(OfferId(id, revision))
+            ?: throw NotFoundInDBException("Invoice not found")
+        try {
+            foundEntity.committedTimestamp = Instant.now()
+        } catch (e: IllegalModificationException) {
+            throw IllegalModificationRequestException(e)
+        }
+        offerRepository.save(foundEntity)
+        return ResponseOfferCommittedDTO(foundEntity.committedTimestamp!!.isoFormat())
+    }
+
     private fun mapOfferEntityToDTO(entity: Offer) = ResponseOfferDTO(
             id = entity.offerId,
             revision = entity.revision,
             title = entity.title,
             customerContact = entity.customerContact?.let{ mapContactEntityToDTO(it) },
             recipient = entity.recipient,
-            items = entity.items.map { ItemDTO(it) },
+            items = entity.immutableItems.map { ItemDTO(it) },
             createdTimestamp = entity.createdTimestamp.isoFormat(),
-            offerDate = entity.offerDate?.format(DateTimeFormatter.ISO_LOCAL_DATE),
+            offerDate = entity.documentDate?.format(DateTimeFormatter.ISO_LOCAL_DATE),
             validUntilDate = entity.validUntilDate?.format(DateTimeFormatter.ISO_LOCAL_DATE),
             subject = entity.subject,
             headerHTML = entity.headerHTML,
-            footerHTML = entity.footerHTML
+            footerHTML = entity.footerHTML,
+            document = entity.document?.let { DocumentDTO(it) },
+            committedTimestamp = entity.committedTimestamp?.isoFormat()
     )
 
     private fun mapOfferEntityToExportDTO(entity: Offer) = ExportOfferDTO(
@@ -185,14 +202,15 @@ class OfferService(private val offerRepository: OfferRepository,
             recipient = entity.recipient,
             printRecipientCountry = !(entity.recipient?.country?.
                 equals(userService.getUserCountry(), ignoreCase = true)?: false),
-            items = entity.items.withIndex().map { ExportItemDTO(it.value, it.index + 1) },
+            items = entity.immutableItems.withIndex().map { ExportItemDTO(it.value, it.index + 1) },
             createdTimestamp = entity.createdTimestamp.isoFormat(),
             subject = entity.subject,
             headerHTML = entity.headerHTML,
             footerHTML = entity.footerHTML,
             totalPrice = formatCents(entity.calculateTotalCents(), ",", "€"),
             offerNumber = entity.getOfferNumber(),
-            user = userService.getExportUserDTO()
+            offerDate = entity.documentDate?.format(DateTimeFormatter.ofPattern("dd.MM.yyyy")),
+            user = userService.getExportUserDTO(),
     )
 
     private fun mapItemDTOToEntity(dto: ItemDTO) = OfferItem(

@@ -5,11 +5,29 @@
         <b-button type="is-info" @click="back">Zurück</b-button>
         <b-button type="is-success" @click="save">Speichern</b-button>
         <b-button
+          v-if="offer.revision !== undefined"
+          @click="openRevisionsModal"
+          >Revisionen</b-button
+        >
+        <b-button v-if="!isCommitted" type="is-danger" @click="commit"
+          >Festschreiben</b-button
+        >
+        <b-button
+          v-if="isCommitted && offer.document === undefined"
           type="is-warning"
           :loading="isExporting"
           :disabled="offer.id === undefined"
           @click="tryExport"
           >Exportieren</b-button
+        >
+        <b-button
+          v-if="isCommitted && offer.document !== undefined"
+          type="is-warning"
+          tag="a"
+          :href="`http://localhost:8081/api/documents/${offer.document.id}`"
+          target="_blank"
+          :download="`Angebot ${offer.id}-${offer.revision}.pdf`"
+          >PDF Herunterladen</b-button
         >
       </div>
     </div>
@@ -21,13 +39,22 @@
         :contact="
           offer.customerContact === undefined ? null : offer.customerContact
         "
+        :disabled="isCommitted"
         @select="select"
       />
     </b-field>
-    <recipient-editor @change="change" v-model="offer.recipient" />
+    <recipient-editor
+      @change="change"
+      :disabled="isCommitted"
+      v-model="offer.recipient"
+    />
     <b-field grouped>
       <b-field expanded label="Angebotsdatum">
-        <b-datepicker @input="change" v-model="offer.offerDate" />
+        <b-datepicker
+          @input="change"
+          :disabled="isCommitted"
+          v-model="offer.offerDate"
+        />
         <p class="control">
           <b-button
             @click="
@@ -35,7 +62,7 @@
               change();
             "
             icon-right="delete"
-            :disabled="offer.offerDate === undefined"
+            :disabled="offer.offerDate === undefined || isCommitted"
           />
         </p>
       </b-field>
@@ -54,16 +81,34 @@
       </b-field>
     </b-field>
     <b-field label="Betreff">
-      <b-input @input="change" v-model="offer.subject" />
+      <b-input
+        @input="change"
+        :disabled="isCommitted"
+        v-model="offer.subject"
+      />
     </b-field>
     <b-field label="Einleitungstext">
-      <b-input @input="change" type="textarea" v-model="offer.headerHTML" />
+      <b-input
+        @input="change"
+        :disabled="isCommitted"
+        type="textarea"
+        v-model="offer.headerHTML"
+      />
     </b-field>
-    <items-editor @change="change" v-model="offer.items" />
-    <b-field label="Fußtext">
-      <b-input @input="change" type="textarea" v-model="offer.footerHTML" />
-    </b-field>
+    <items-editor
+      @change="change"
+      :disabled="isCommitted"
+      v-model="offer.items"
+    />
     <p>Gesamt: {{ getTotal() }}</p>
+    <b-field label="Fußtext">
+      <b-input
+        @input="change"
+        :disabled="isCommitted"
+        type="textarea"
+        v-model="offer.footerHTML"
+      />
+    </b-field>
   </div>
 </template>
 
@@ -74,13 +119,18 @@ import RecipientEditor from "../common/RecipientEditor.vue";
 import ContactSearch from "../common/ContactSearch.vue";
 import ItemsEditor from "../common/ItemsEditor.vue";
 import {
+  commitOffer,
   createOffer,
+  createRevision,
   exportOffer,
   fetchOffer,
+  fetchOfferNewest,
   updateOffer,
 } from "@/services/OffersApiService";
-import { Component, Vue } from "vue-property-decorator";
 import { formatCentsAsMoney } from "@/util/MoneyUtil";
+import { Component, Vue, Watch } from "vue-property-decorator";
+import { parseISO } from "date-fns";
+import RevisionsModal from "./RevisionsModal.vue";
 
 @Component({
   name: "offer-editor",
@@ -101,6 +151,24 @@ export default class OfferEditor extends Vue {
     this.changedSinceSave = true;
   }
 
+  private get isCommitted(): boolean {
+    return this.offer?.committedTimestamp !== undefined;
+  }
+
+  private commit(): void {
+    if (
+      this.offer !== null &&
+      this.offer?.id !== undefined &&
+      this.offer?.revision !== undefined
+    ) {
+      commitOffer(this.offer.id, this.offer.revision).then((response) => {
+        if (this.offer !== null) {
+          this.offer.committedTimestamp = parseISO(response.committedTimestamp);
+        }
+      });
+    }
+  }
+
   private getTotal(): string {
     let total = 0;
     if (this.offer !== null) {
@@ -111,6 +179,10 @@ export default class OfferEditor extends Vue {
       });
     }
     return this.formatCentsAsMoney(total);
+  }
+
+  private formatCentsAsMoney(cents: number): string {
+    return formatCentsAsMoney(cents);
   }
 
   private tryExport() {
@@ -134,7 +206,10 @@ export default class OfferEditor extends Vue {
   private export() {
     if (this.offer !== null) {
       exportOffer(this.offer)
-        .then(() => {
+        .then((r) => {
+          if (this.offer !== null) {
+            this.offer.document = r.document;
+          }
           this.isExporting = false;
           this.$buefy.toast.open({
             message: "Export erfolgreich",
@@ -150,10 +225,6 @@ export default class OfferEditor extends Vue {
         });
       this.isExporting = true;
     }
-  }
-
-  private formatCentsAsMoney(cents: number): string {
-    return formatCentsAsMoney(cents);
   }
 
   private back() {
@@ -197,15 +268,60 @@ export default class OfferEditor extends Vue {
   }
 
   private created(): void {
+    this.fetchOffer();
+  }
+
+  @Watch("$route", { immediate: true, deep: true })
+  private onUrlChange() {
+    this.fetchOffer();
+  }
+
+  private fetchOffer() {
     const id = this.$route.params["id"];
     if (id === "new") {
-      this.offer = { items: [], subject: "Angebot", recipient: { name: "" } };
-    } else {
-      fetchOffer(Number.parseInt(id)).then((v) => {
+      this.offer = {
+        items: [],
+        subject: "Angebot",
+        recipient: { name: "" },
+      };
+    } else if (this.$route.params["revision"] === undefined) {
+      fetchOfferNewest(Number.parseInt(id)).then((v) => {
         if (v.recipient === undefined) {
           v.recipient = { name: "" };
         }
         this.offer = v;
+      });
+    } else {
+      const revision = this.$route.params["revision"];
+      fetchOffer(Number.parseInt(id), Number.parseInt(revision)).then((v) => {
+        if (v.recipient === undefined) {
+          v.recipient = { name: "" };
+        }
+        this.offer = v;
+      });
+    }
+  }
+
+  private openRevisionsModal() {
+    if (this.offer?.id !== undefined) {
+      this.$buefy.modal.open({
+        parent: this,
+        props: {
+          offerId: this.offer.id,
+        },
+        component: RevisionsModal,
+        hasModalCard: true,
+        canCancel: false,
+        trapFocus: true,
+        events: {
+          createRevision: () => {
+            if (this.offer !== null && this.offer.id !== undefined) {
+              createRevision(this.offer).then((o) => {
+                this.$router.push(`/offers/${o.id}/revisions/${o.revision}`);
+              });
+            }
+          },
+        },
       });
     }
   }

@@ -1,4 +1,4 @@
-package dev.zinsmeister.klubu.document.domain
+package dev.zinsmeister.klubu.documentfile.domain
 
 interface DocumentEntity {
     var document: Document?

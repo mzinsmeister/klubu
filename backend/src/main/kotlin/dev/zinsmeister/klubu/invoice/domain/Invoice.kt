@@ -2,139 +2,55 @@ package dev.zinsmeister.klubu.invoice.domain
 
 import dev.zinsmeister.klubu.common.domain.Recipient
 import dev.zinsmeister.klubu.contact.domain.Contact
-import dev.zinsmeister.klubu.document.domain.Document
-import dev.zinsmeister.klubu.document.domain.DocumentEntity
+import dev.zinsmeister.klubu.documentfile.domain.DocumentEntity
 import dev.zinsmeister.klubu.exception.IllegalModificationException
+import dev.zinsmeister.klubu.itemdocument.domain.ItemDocument
 import dev.zinsmeister.klubu.offer.domain.Offer
-import java.time.Instant
 import java.time.LocalDate
 import javax.persistence.*
 
 //TODO: Add last modified date
 @Entity
+@AttributeOverride(name="documentDate", column=Column(name="INVOICE_DATE"))
 class Invoice(
-        contact: Contact?,
+    contact: Contact?,
 
-        recipient: Recipient?,
+    recipient: Recipient?,
 
-        @OneToMany(cascade = [CascadeType.ALL], mappedBy = "invoice", orphanRemoval = true)
-        @OrderColumn(name = "POSITION")
-        private var items: MutableList<InvoiceItem>,
+    items: MutableList<InvoiceItem>,
 
-        @Column
-        var title: String?,
+    title: String?,
 
-        headerHTML: String?,
+    headerHTML: String?,
 
-        footerHTML: String?,
+    footerHTML: String?,
 
-        subject: String?,
+    subject: String?,
 
-        @ManyToOne
+    @ManyToOne
         @JoinColumns(
             JoinColumn(name = "FROM_OFFER_ID", referencedColumnName = "ID"),
             JoinColumn(name = "FROM_OFFER_REVISION", referencedColumnName = "REVISION")
         )
         var offer: Offer? = null,
 
-        invoiceDate: LocalDate? = null,
-
-        @Column
-        var paidDate: LocalDate? = null,
-
-        @Column(name = "CREATED_TIMESTAMP", updatable = false, nullable = false)
-        var createdTimestamp: Instant = Instant.now()
-): DocumentEntity {
-
-    init {
-        items.forEach {
-            it.invoice = this
-        }
-    }
+    invoiceDate: LocalDate? = null,
 
     @Column
-    var headerHTML: String? = headerHTML
-    set(value) {
-        if(value == field) return
-        if(isCodified) {
-            throw IllegalModificationException("Modification of codified invoice not allowed")
-        }
-        field = value
-    }
-
-    @Column
-    var footerHTML: String? = footerHTML
-    set(value) {
-        if(value == field) return
-        if(isCodified) {
-            throw IllegalModificationException("Modification of codified invoice not allowed")
-        }
-        field = value
-    }
-
-    @Column
-    var subject: String? = subject
-    set(value) {
-        if(value == field) return
-        if(isCodified) {
-            throw IllegalModificationException("Modification of codified invoice not allowed")
-        }
-        field = value
-    }
-
-    @Column
-    var invoiceDate: LocalDate? = invoiceDate
-    set(value) {
-        if(value == field) return
-        if(isCodified) {
-            throw IllegalModificationException("Modification of codified invoice not allowed")
-        }
-        field = value
-    }
+    var paidDate: LocalDate? = null,
+): DocumentEntity, ItemDocument<Invoice, InvoiceItem>(contact, recipient, items, title, headerHTML,
+    footerHTML, subject, invoiceDate) {
 
     @Id
     @GeneratedValue
     @Column(name = "ID")
     var invoiceId: Int? = null
 
-    @ManyToOne
-    var customerContact: Contact? = contact
-    set(value) {
-        if(value == field) return
-        if(isCodified) {
-            throw IllegalModificationException("Modification of codified invoice not allowed")
-        }
-        field = value
-    }
-
-    @Embedded
-    var recipient: Recipient? = recipient
-    set(value) {
-        if(value == field) return
-        if(isCodified) {
-            throw IllegalModificationException("Modification of codified invoice not allowed")
-        }
-        field = value
-    }
-
-    var codifiedTimestamp: Instant? = null
-    set(value) {
-        if(!isCodified) {
-            field = value
-        } else {
-            throw IllegalModificationException("Cannot change codified state of Invoice once codified")
-        }
-    }
-
-    val isCodified: Boolean
-    get(): Boolean = codifiedTimestamp != null
-
-
     @Column(unique = true, nullable = true)
     var invoiceNumber: Int? = null
 
-    @OneToOne
-    override var document: Document? = null
+    override val documentNumber
+    get(): String? = invoiceNumber.toString()
 
     var isCanceled: Boolean = false
     set(value) {
@@ -144,12 +60,12 @@ class Invoice(
 
     var isCancelation: Boolean = false
     set(value) {
-        if(!isCodified) {
+        if(!isCommitted) {
             if(value) correctedInvoice?: throw IllegalStateException("can't be cancelation without corrected invoice")
             correctedInvoice?.isCanceled = true
             field = value
         } else {
-            throw IllegalModificationException("Cannot change codified state of Invoice once codified")
+            throw IllegalModificationException("Cannot change committed state of Invoice once committed")
         }
     }
 
@@ -157,11 +73,11 @@ class Invoice(
     @JoinColumn(name = "CORRECTED_INVOICE_ID")
     var correctedInvoice: Invoice? = null
     set(value) {
-        if(!isCodified) {
+        if(!isCommitted) {
             value?.correctedBy = this
             field = value
         } else {
-            throw IllegalModificationException("Cannot change codified state of Invoice once codified")
+            throw IllegalModificationException("Cannot change committed state of Invoice once committed")
         }
     }
 
@@ -173,20 +89,5 @@ class Invoice(
         field = value
     }
 
-    val immutableItems: List<InvoiceItem>
-    get(): List<InvoiceItem> = items
-
-    fun replaceItems(newItems: List<InvoiceItem>) {
-        if(newItems == items) return
-        if(isCodified) {
-            throw IllegalModificationException("Modification of codified invoice not allowed")
-        }
-        this.items.clear()
-        this.items.addAll(newItems)
-        this.items.forEach { it.invoice = this }
-    }
-
-    fun calculateTotalCents(): Int {
-        return this.items.sumOf { it.calculateTotalCents() }
-    }
+    override fun getThis(): Invoice = this
 }

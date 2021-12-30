@@ -1,6 +1,8 @@
 import { Contact } from "./ContactModel";
 import { Recipient } from "./CommonModel";
 import { Item } from "./CommonModel";
+import { Document, DocumentVersion } from "./DocumentModel";
+import { parseISO } from "date-fns";
 
 export interface ApiPage<T> {
   content: Array<T>;
@@ -26,11 +28,17 @@ export interface ResponseOfferDTO {
   recipient?: Recipient;
   items: Array<Item>;
   createdTimestamp: string;
+  committedTimestamp?: string;
   offerDate?: string;
   validUntilDate?: string;
   subject?: string;
   headerHTML?: string;
   footerHTML?: string;
+  document?: Document;
+}
+
+export interface OfferCommittedDTO {
+  committedTimestamp: string;
 }
 
 export interface OfferListItemDTO {
@@ -41,11 +49,20 @@ export interface OfferListItemDTO {
   customerContact: Contact;
 }
 
+export interface OfferRevisionListDTO {
+  revisions: Array<OfferRevisionListItemDTO>;
+}
+
+export interface OfferRevisionListItemDTO {
+  revisionNumber: number;
+  createdTimestamp: string;
+}
+
 export interface ResponseInvoiceDTO {
   id: number;
   items: Array<Item>;
   createdTimestamp: string;
-  codifiedTimestamp?: string;
+  committedTimestamp?: string;
   invoiceNumber?: number;
   paidDate?: string;
   invoiceDate?: string;
@@ -79,13 +96,29 @@ export interface InvoiceListItemDTO {
   createdTimestamp: string;
   customerContact?: Contact;
   paidDate?: string;
-  codified: boolean;
+  committed: boolean;
   invoiceNumber?: number;
   isCanceled: boolean;
   isCancelation: boolean;
 }
 
-export interface InvoiceCodifiedDTO {
+export interface InvoiceCommittedDTO {
   invoiceNumber: number;
-  codifiedTimestamp: string;
+  committedTimestamp: string;
+}
+
+export interface DocumentVersionDTO {
+  document: Document;
+  version: number;
+  createdTimestamp: string;
+}
+
+export function documentVerionFromDTO(
+  dto: DocumentVersionDTO
+): DocumentVersion {
+  return {
+    version: dto.version,
+    createdTimestamp: parseISO(dto.createdTimestamp),
+    document: dto.document,
+  };
 }

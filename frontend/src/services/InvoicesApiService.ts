@@ -1,10 +1,13 @@
 import {
   ApiPage,
-  InvoiceCodifiedDTO,
+  documentVerionFromDTO,
+  DocumentVersionDTO,
+  InvoiceCommittedDTO,
   InvoiceListItemDTO,
   RequestInvoiceDTO,
   ResponseInvoiceDTO,
 } from "@/models/ApiModel";
+import { Document, DocumentVersion } from "@/models/DocumentModel";
 import { Invoice, InvoiceListItem } from "@/models/InvoiceModel";
 import { formatISO, parseISO } from "date-fns";
 import Vue from "vue";
@@ -27,7 +30,7 @@ export async function listInvoices(
     title: dto.title,
     createdTimestamp: parseISO(dto.createdTimestamp),
     customerContact: dto.customerContact,
-    codified: dto.codified,
+    committed: dto.committed,
     isCancelation: dto.isCancelation,
     isCanceled: dto.isCanceled,
     invoiceNumber: dto.invoiceNumber,
@@ -43,8 +46,8 @@ function mapInvoiceDTOToInvoice(dto: ResponseInvoiceDTO): Invoice {
     recipient: dto.recipient,
     items: dto.items,
     createdTimestamp: parseISO(dto.createdTimestamp),
-    codifiedTimestamp: dto.codifiedTimestamp
-      ? parseISO(dto.codifiedTimestamp)
+    committedTimestamp: dto.committedTimestamp
+      ? parseISO(dto.committedTimestamp)
       : undefined,
     invoiceDate: dto.invoiceDate ? parseISO(dto.invoiceDate) : undefined,
     subject: dto.subject,
@@ -52,6 +55,8 @@ function mapInvoiceDTOToInvoice(dto: ResponseInvoiceDTO): Invoice {
     footerHTML: dto.footerHTML,
     isCanceled: dto.isCanceled,
     isCancelation: dto.isCancelation,
+    document: dto.document,
+    invoiceNumber: dto.invoiceNumber,
   };
 }
 
@@ -90,13 +95,18 @@ export async function updateInvoice(invoice: Invoice): Promise<void> {
   await Vue.axios.put(`/api/invoices/${invoice.id}`, mapInvoiceToDTO(invoice));
 }
 
-export async function exportInvoice(invoice: Invoice): Promise<void> {
-  await Vue.axios.post(`/api/invoices/${invoice.id}/export`);
+export async function exportInvoice(
+  invoice: Invoice
+): Promise<DocumentVersion> {
+  const response = await Vue.axios.post<DocumentVersionDTO>(
+    `/api/invoices/${invoice.id}/export`
+  );
+  return documentVerionFromDTO(response.data);
 }
 
-export async function codifyInvoice(
+export async function commitInvoice(
   invoiceId: number
-): Promise<InvoiceCodifiedDTO> {
-  const response = await Vue.axios.post(`/api/invoices/${invoiceId}/codified`);
+): Promise<InvoiceCommittedDTO> {
+  const response = await Vue.axios.post(`/api/invoices/${invoiceId}/committed`);
   return response.data;
 }

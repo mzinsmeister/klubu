@@ -8,7 +8,7 @@ import org.springframework.http.HttpStatus
 import org.springframework.web.bind.annotation.*
 
 @RestController
-@RequestMapping("contacts")
+@RequestMapping("api/contacts")
 class ContactController(val contactService: ContactService) {
 
     @GetMapping("{id}")

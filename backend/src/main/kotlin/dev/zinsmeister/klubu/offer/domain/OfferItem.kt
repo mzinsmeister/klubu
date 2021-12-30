@@ -1,21 +1,16 @@
 package dev.zinsmeister.klubu.offer.domain
 
-import dev.zinsmeister.klubu.common.domain.Item
-import javax.persistence.Entity
-import javax.persistence.GeneratedValue
-import javax.persistence.Id
-import kotlin.math.roundToInt
+import dev.zinsmeister.klubu.itemdocument.domain.ItemDocumentItem
+import javax.persistence.*
 
 @Entity
+@AssociationOverride(name = "itemDocument", joinColumns = [JoinColumn(name="OFFER_ID", referencedColumnName = "ID"), JoinColumn(name="REVISION", referencedColumnName = "REVISION")])
 class OfferItem(
-        override var name: String,
-        override var quantity: Double = 1.0,
-        override var unit: String,
-        override var priceCents: Int
-): Item {
-    @Id
-    @GeneratedValue
-    var id: Int? = null
+        name: String,
+        quantity: Double = 1.0,
+        unit: String,
+        priceCents: Int
+): ItemDocumentItem<OfferItem, Offer>(name, quantity, unit, priceCents) {
 
     fun copyToNew() = OfferItem(name, quantity, unit, priceCents)
 

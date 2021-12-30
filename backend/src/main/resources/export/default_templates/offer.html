@@ -9,15 +9,14 @@
                 font-family: Roboto;
             }
             @page {
-                margin: 0 8mm 0 20mm;
+                margin: 42mm 20mm 40mm 20mm;
                 bleed: 0;
                 size: A4;
             }
             header {
-                height: 42mm;
+                position: running(header);
             }
             .documentHeaderContent {
-                padding-left: 20mm;
                 padding-top: 20mm;
             }
             .address-extra {
@@ -48,6 +47,33 @@
             .item:nth-child(odd) {
                 background: #CCC;
             }
+            footer {
+                width: 100%;
+                text-align: left;
+                font-size: 10pt;
+                position: running(footer);
+            }
+            .footer-flex-container {
+                display: flex;
+            }
+            .footer-left {
+                flex: 10;
+            }
+            .footer-center {
+                flex: 10;
+            }
+            .footer-right {
+                flex: 12;
+            }
+            @page {
+                @bottom-left {
+                    content: element(footer);
+                }
+                @top-left {
+                    content: element(header);
+                    vertical-align: top;
+                }
+            }
         </style>
     </head>
     <body>
@@ -56,6 +82,25 @@
                 TESTGEWERBE
             </div>
         </header>
+        <footer>
+            <div class="footer-flex-container">
+                <div class="footer-cell footer-left">
+                    <div>{{user.name}}</div>
+                    <div>{{user.street}} {{user.houseNumber}}</div>
+                    <div>{{user.zipCode}} {{user.city}}</div>
+                </div>
+                <div class="footer-cell footer-center">
+                    <div>Tel: {{user.phone}}</div>
+                    <div>E-Mail: {{user.email}}</div>
+                    <div>{{user.taxIdName}}: {{user.taxId}}</div>
+                </div>
+                <div class="footer-cell footer-right">
+                    <div>{{user.bank.name}}</div>
+                    <div>IBAN: {{user.bank.iban}}</div>
+                    <div>BIC: {{user.bank.bic}}</div>
+                </div>
+            </div>
+        </footer>
 
         <div class="upper-field">
             <table>
@@ -63,7 +108,7 @@
                     <td class="address-wrapper">
                         <div class="address-extra">
                             <div class="address-extra-content">
-                                <div>{{user.name}} - {{user.street}} {{user.houseNumber}} - {{user.zipCode}} {{user.city}}</div>
+                                <div>{{user.name}} | {{user.street}} {{user.houseNumber}} | {{user.zipCode}} {{user.city}}</div>
                             </div>
                         </div>
                         <div class="address">
@@ -81,11 +126,11 @@
                                 <td>{{customerContact.id}}</td>
                             </tr>
                             <tr>
-                                <td>Rechnungsnummer:</td>
-                                <td>{{offerId}}</td>
+                                <td>Angebotsnummer:</td>
+                                <td>{{offerNumber}}</td>
                             </tr>
                             <tr>
-                                <td>Rechnungsdatum:</td>
+                                <td>Angebotsdatum:</td>
                                 <td>{{offerDate}}</td>
                             </tr>
                         </table>

@@ -1,9 +1,9 @@
 package dev.zinsmeister.klubu.invoice.controller
 
-import dev.zinsmeister.klubu.document.dto.DocumentVersionDTO
+import dev.zinsmeister.klubu.documentfile.dto.DocumentVersionDTO
 import dev.zinsmeister.klubu.invoice.dto.InvoiceMetadataDTO
 import dev.zinsmeister.klubu.invoice.dto.RequestInvoiceDTO
-import dev.zinsmeister.klubu.invoice.dto.ResponseCodifiedDTO
+import dev.zinsmeister.klubu.invoice.dto.ResponseInvoiceCommittedDTO
 import dev.zinsmeister.klubu.invoice.dto.ResponseInvoiceDTO
 import dev.zinsmeister.klubu.invoice.service.InvoiceService
 import org.springframework.data.domain.Page
@@ -11,7 +11,7 @@ import org.springframework.data.domain.Pageable
 import org.springframework.web.bind.annotation.*
 
 @RestController
-@RequestMapping("invoices")
+@RequestMapping("api/invoices")
 class InvoiceController(private val service: InvoiceService) {
 
     @GetMapping("{id}")
@@ -34,9 +34,9 @@ class InvoiceController(private val service: InvoiceService) {
         service.updateInvoice(id, invoiceDTO)
     }
 
-    @PostMapping("{id}/codified")
-    fun codifyInvoice(@PathVariable("id") id: Int): ResponseCodifiedDTO {
-        return service.codifyInfoice(id)
+    @PostMapping("{id}/committed")
+    fun commitInvoice(@PathVariable("id") id: Int): ResponseInvoiceCommittedDTO {
+        return service.commitInvoice(id)
     }
 
     @PostMapping("/{id}/export")

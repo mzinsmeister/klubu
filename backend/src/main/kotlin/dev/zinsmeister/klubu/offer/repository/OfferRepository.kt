@@ -14,7 +14,7 @@ interface OfferRepository: JpaRepository<Offer, OfferId> {
 
     fun findByOfferId(offerId: Int, pageable: Pageable): List<Offer>
 
-    @Query("SELECT q FROM Offer q WHERE q.id = :id")
+    @Query("SELECT q FROM Offer q WHERE q.offerId = :id")
     fun findAllRevisionsById(@Param("id") id: Int): List<Offer>
 
     @Query("SELECT q FROM Offer q " +

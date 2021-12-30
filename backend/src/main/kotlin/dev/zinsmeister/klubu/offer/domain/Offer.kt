@@ -2,8 +2,10 @@ package dev.zinsmeister.klubu.offer.domain
 
 import dev.zinsmeister.klubu.common.domain.Recipient
 import dev.zinsmeister.klubu.contact.domain.Contact
-import dev.zinsmeister.klubu.document.domain.Document
-import dev.zinsmeister.klubu.document.domain.DocumentEntity
+import dev.zinsmeister.klubu.documentfile.domain.Document
+import dev.zinsmeister.klubu.documentfile.domain.DocumentEntity
+import dev.zinsmeister.klubu.invoice.domain.InvoiceItem
+import dev.zinsmeister.klubu.itemdocument.domain.ItemDocument
 import java.io.Serializable
 import java.time.Instant
 import java.time.LocalDate
@@ -14,58 +16,38 @@ data class OfferId(var offerId: Int? = null, var revision: Int? = null): Seriali
 @Entity
 @IdClass(OfferId::class)
 class Offer(
-        @Id
-        @Column(name = "ID")
-        var offerId: Int,
+    @Id
+    @Column(name = "ID")
+    var offerId: Int,
 
-        @Column(name = "title")
-        var title: String?,
+    title: String?,
 
-        @ManyToOne
-        @JoinColumn(name = "CUSTOMER_ID", referencedColumnName = "ID")
-        var customerContact: Contact?,
+    items: MutableList<OfferItem>,
 
-        @Embedded
-        var recipient: Recipient?,
+    customerContact: Contact?,
 
-        @OneToMany(cascade = [CascadeType.ALL], orphanRemoval = true)
-        @OrderColumn(name = "POSITION")
-        @JoinColumns(
-                JoinColumn(name = "OFFER_ID", referencedColumnName = "ID"),
-                JoinColumn(name = "REVISION", referencedColumnName = "REVISION"))
-        var items: MutableList<OfferItem>,
+    recipient: Recipient?,
 
-        @Id
-        @Column(name = "REVISION", updatable = false)
-        var revision: Int = 1,
+    @Id
+    @Column(name = "REVISION", updatable = false)
+    var revision: Int = 1,
 
-        @Column(name = "OFFER_DATE")
-        var offerDate: LocalDate?,
+    offerDate: LocalDate?,
 
-        @Column(name = "VALID_UNTIL_DATE")
+    @Column(name = "VALID_UNTIL_DATE")
         var validUntilDate: LocalDate?,
 
-        @Column(name = "HEADER_HTML")
-        var headerHTML: String?,
+    headerHTML: String?,
 
-        @Column(name = "FOOTER_HTML")
-        var footerHTML: String?,
+    footerHTML: String?,
 
-        @Column(name = "SUBJECT")
-        var subject: String?,
+    subject: String?,
+        ): DocumentEntity, ItemDocument<Offer, OfferItem>(customerContact, recipient, items, title, headerHTML, footerHTML,
+    subject, offerDate) {
 
-        @Column(name = "CREATED_TIMESTAMP", updatable = false, nullable = false)
-        var createdTimestamp: Instant = Instant.now()
-): DocumentEntity {
-    @OneToOne(optional = true)
-    override var document: Document? = null
-
-    fun replaceItems(newItems: List<OfferItem>) {
-        items.clear()
-        items.addAll(newItems)
-    }
-
-    fun calculateTotalCents() = items.sumOf { it.calculateTotalCents() }
+    override val documentNumber: String?
+    get(): String? = getOfferNumber()
 
     fun getOfferNumber(): String = "$offerId-$revision"
+    override fun getThis(): Offer = this
 }

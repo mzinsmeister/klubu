@@ -1,6 +1,6 @@
-package dev.zinsmeister.klubu.document.controller
+package dev.zinsmeister.klubu.documentfile.controller
 
-import dev.zinsmeister.klubu.document.service.DocumentService
+import dev.zinsmeister.klubu.documentfile.service.DocumentService
 import org.springframework.http.ResponseEntity
 import org.springframework.web.bind.annotation.GetMapping
 import org.springframework.web.bind.annotation.PathVariable
@@ -8,7 +8,7 @@ import org.springframework.web.bind.annotation.RequestMapping
 import org.springframework.web.bind.annotation.RestController
 
 @RestController
-@RequestMapping("documents")
+@RequestMapping("api/documents")
 class DocumentController(private val documentService: DocumentService) {
 
     @GetMapping("{id}/versions/{version}")
@@ -22,9 +22,7 @@ class DocumentController(private val documentService: DocumentService) {
     @GetMapping("{id}")
     fun getLatestDocument(@PathVariable("id") id: Int): ResponseEntity<ByteArray> {
         val document = documentService.fetchDocument(id)
-        val response = ResponseEntity.ok(document.first)
-        response.headers.contentType = document.second
-        return response
+        return ResponseEntity.ok().contentType(document.second).body(document.first)
     }
 
 }

@@ -3,15 +3,14 @@ package dev.zinsmeister.klubu.invoice.dto
 import dev.zinsmeister.klubu.common.domain.Recipient
 import dev.zinsmeister.klubu.common.dto.ItemDTO
 import dev.zinsmeister.klubu.contact.dto.ContactDTO
-import dev.zinsmeister.klubu.common.dto.MoneyDTO
-import dev.zinsmeister.klubu.document.dto.DocumentDTO
+import dev.zinsmeister.klubu.documentfile.dto.DocumentDTO
 import dev.zinsmeister.klubu.offer.dto.OfferIdDTO
 
 data class ResponseInvoiceDTO(
         val id: Int,
         val items: List<ItemDTO>,
         val createdTimestamp: String,
-        val codifiedTimestamp: String?,
+        val committedTimestamp: String?,
         val invoiceNumber: Int?,
         val paidDate: String?,
         val invoiceDate: String?,
@@ -50,13 +49,13 @@ data class InvoiceMetadataDTO(
         val createdTimestamp: String,
         val customerContact: ContactDTO?,
         val paidDate: String?,
-        val codified: Boolean,
+        val committed: Boolean,
         val invoiceNumber: Int?,
         val isCanceled: Boolean,
         val isCancelation: Boolean,
 )
 
-data class ResponseCodifiedDTO(
+data class ResponseInvoiceCommittedDTO(
         val invoiceNumber: Int,
-        val codifiedTimestamp: String
+        val committedTimestamp: String
 )
