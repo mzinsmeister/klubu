@@ -22,4 +22,11 @@ class Document(
         versions.add(version)
         return version
     }
+
+    fun delete(): DocumentVersion {
+        val versionNumber = versions.lastOrNull()?.version?.let { it + 1 }?: 1
+        val version = DocumentVersion(versionNumber, this,  null, Instant.now(), true)
+        versions.add(version)
+        return version
+    }
 }

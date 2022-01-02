@@ -24,7 +24,7 @@
           v-if="isCommitted && offer.document !== undefined"
           type="is-warning"
           tag="a"
-          :href="`http://localhost:8081/api/documents/${offer.document.id}`"
+          :href="`/api/documents/${offer.document.id}`"
           target="_blank"
           :download="`Angebot ${offer.id}-${offer.revision}.pdf`"
           >PDF Herunterladen</b-button

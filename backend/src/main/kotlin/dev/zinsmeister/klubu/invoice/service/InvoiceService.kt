@@ -82,6 +82,9 @@ class InvoiceService(private val repository: InvoiceRepository,
                 foundEntity.correctedInvoice = dto.correctedInvoiceId?.let { repository.findByIdOrNull(it)
                         ?: throw NotFoundInDBException("Corrected Invoice not found") }
                 foundEntity.isCancelation = dto.isCancelation?: false
+                if(foundEntity.isCancelation) {
+                    foundEntity.correctedInvoice?.isCanceled = true
+                }
                 foundEntity.replaceItems(dto.items.map { mapInvoiceItemDTOToEntity(it) })
             } catch (e: IllegalModificationException) {
                 throw IllegalModificationRequestException(e) //TODO: basically useless
@@ -127,7 +130,7 @@ class InvoiceService(private val repository: InvoiceRepository,
         }
         val title = "$exportTitlePrefix ${invoice.invoiceNumber}"
         val documentBytes = exportService.exportToPDFA("invoice.html", mapInvoiceEntityToExportDTO(invoice), title)
-        return documentService.storeNewVersion(document, documentBytes)
+        return documentService.storeNewVersion(document, documentBytes).documentVersionDTO
     }
 
     private fun mapInvoiceEntityToDTO(entity: Invoice) = ResponseInvoiceDTO(
@@ -163,6 +166,7 @@ class InvoiceService(private val repository: InvoiceRepository,
             footerHTML = dto.footerHTML,
             title = dto.title,
             subject = dto.subject
+    // TODO: Add cancelation/correction stuff here
     )
 
     private fun mapInvoiceItemDTOToEntity(dto: ItemDTO) = InvoiceItem(

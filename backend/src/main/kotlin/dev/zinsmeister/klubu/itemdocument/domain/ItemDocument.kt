@@ -137,5 +137,5 @@ abstract class ItemDocument<Self: ItemDocument<Self, Item>, Item: ItemDocumentIt
         return this.items.sumOf { it.calculateTotalCents() }
     }
 
-    abstract fun getThis(): Self
+    protected abstract fun getThis(): Self
 }

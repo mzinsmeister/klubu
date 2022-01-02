@@ -160,7 +160,7 @@ class OfferService(private val offerRepository: OfferRepository,
         }
         val title = "$exportTitlePrefix ${offer.offerId}"
         val documentBytes = exportService.exportToPDFA("offer.html", mapOfferEntityToExportDTO(offer), title)
-        return documentService.storeNewVersion(document, documentBytes)
+        return documentService.storeNewVersion(document, documentBytes).documentVersionDTO
     }
 
     @Transactional

@@ -69,7 +69,7 @@ class Invoice(
         }
     }
 
-    @OneToOne(optional = true)
+    @OneToOne(optional = true, cascade = [CascadeType.REFRESH, CascadeType.MERGE])
     @JoinColumn(name = "CORRECTED_INVOICE_ID")
     var correctedInvoice: Invoice? = null
     set(value) {

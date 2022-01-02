@@ -9,6 +9,8 @@ import Offers from "../views/Offers.vue";
 import OffersOverview from "../components/offers/OffersOverview.vue";
 import OfferEditor from "../components/offers/OfferEditor.vue";
 import Receipts from "../views/Receipts.vue";
+import ReceiptsOverview from "../components/receipts/ReceiptsOverview.vue";
+import ReceiptEditor from "../components/receipts/ReceiptEditor.vue";
 import Reporting from "../views/Reporting.vue";
 
 Vue.use(VueRouter);
@@ -63,7 +65,18 @@ const routes: Array<RouteConfig> = [
   },
   {
     path: "/receipts",
-    name: "Receipts",
+    children: [
+      {
+        path: ":id",
+        name: "ReceiptEditor",
+        component: ReceiptEditor,
+      },
+      {
+        path: "",
+        name: "Receipts",
+        component: ReceiptsOverview,
+      },
+    ],
     component: Receipts,
   },
   {

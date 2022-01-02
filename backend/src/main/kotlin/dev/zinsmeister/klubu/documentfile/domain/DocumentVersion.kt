@@ -15,8 +15,9 @@ class DocumentVersion(
         @ManyToOne(optional = false)
         @JoinColumn(name = "DOCUMENT_ID")
         var document: Document,
-        var checksum: ByteArray,
-        var createdTimestamp: Instant
+        var checksum: ByteArray?,
+        var createdTimestamp: Instant,
+        var isTombstone: Boolean = false
 ) {
     fun getKey() = "${document.storageKeyPrefix}/$version${document.extension}"
 }

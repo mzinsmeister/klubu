@@ -9,3 +9,8 @@ export interface Document {
   lastVersion: number;
   mediaType: string;
 }
+
+export interface DocumentData {
+  data: Uint8Array;
+  mediaType: string;
+}

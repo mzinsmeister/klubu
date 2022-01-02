@@ -19,13 +19,26 @@ import java.security.MessageDigest
 class DocumentService(@Value("\${klubu.document.storage.path}") private val storagePath: String,
                       private val documentRepository: DocumentRepository) {
 
-    fun storeNewVersion(document: Document, documentBytes: ByteArray): DocumentVersionDTO {
+    data class NewDocumentVersion(val document: Document, val documentVersionDTO: DocumentVersionDTO)
+
+    fun storeNewVersion(document: Document, documentBytes: ByteArray?): NewDocumentVersion {
+        val newVersion = if(documentBytes != null) {
+            val digest = MessageDigest.getInstance("SHA-256")
+            val checksum = digest.digest(documentBytes)
+            val newVersion = document.addVersion(checksum)
+            this.storeVersion(newVersion, documentBytes)
+            newVersion
+        } else {
+            document.delete()
+        }
+        val documentSaved = documentRepository.save(document)
+        return NewDocumentVersion(documentSaved, DocumentVersionDTO(newVersion))
+    }
+
+    fun contentEquals(documentVersion: DocumentVersion, documentBytes: ByteArray): Boolean {
         val digest = MessageDigest.getInstance("SHA-256")
         val checksum = digest.digest(documentBytes)
-        val newVersion = document.addVersion(checksum)
-        this.storeVersion(newVersion, documentBytes)
-        documentRepository.save(document)
-        return DocumentVersionDTO(newVersion)
+        return checksum.contentEquals(documentVersion.checksum)
     }
 
     private fun storeVersion(documentVersion: DocumentVersion, documentBytes: ByteArray) {
@@ -35,17 +48,21 @@ class DocumentService(@Value("\${klubu.document.storage.path}") private val stor
     }
 
     fun fetchDocument(documentVersion: DocumentVersion): ByteArray {
+        //TODO: Handle Tombstones
         val path = constructPath(documentVersion)
         return Files.readAllBytes(path)
     }
 
-    fun fetchDocument(id: Int, version: Int? = null): Pair<ByteArray, MediaType> {
+    fun fetchDocument(id: Int, version: Int? = null): Pair<ByteArray, MediaType>? {
         val document = documentRepository.findByIdOrNull(id)?: throw NotFoundInDBException("Document not found")
         if(document.versions.isEmpty()) throw NoVersionException()
         val documentVersion = if(version == null) {
             document.versions.lastOrNull()?: throw NoVersionException()
         } else {
             document.versions.find { it.version == version }?: throw NotFoundInDBException("DocumentVersion not found")
+        }
+        if(documentVersion.isTombstone) {
+            return null
         }
         val bytes = fetchDocument(documentVersion)
         return Pair(bytes, MediaType.parseMediaType(document.mediaType))

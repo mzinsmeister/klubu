@@ -3,6 +3,7 @@ import { Recipient } from "./CommonModel";
 import { Item } from "./CommonModel";
 import { Document, DocumentVersion } from "./DocumentModel";
 import { parseISO } from "date-fns";
+import { ReceiptItem } from "./ReceiptModel";
 
 export interface ApiPage<T> {
   content: Array<T>;
@@ -121,4 +122,47 @@ export function documentVerionFromDTO(
     createdTimestamp: parseISO(dto.createdTimestamp),
     document: dto.document,
   };
+}
+
+export interface ReceiptListItemDTO {
+  id: number;
+  createdTimestamp: string;
+  supplierContact?: Contact;
+  paidDate?: string;
+  dueDate?: string;
+  receiptDate?: string;
+  committed: boolean;
+  receiptNumber?: string;
+}
+
+export interface ResponseReceiptDTO {
+  id: number;
+  items: Array<ReceiptItem>;
+  createdTimestamp: string;
+  committedTimestamp?: string;
+  receiptNumber?: string;
+  paidDate?: string;
+  receiptDate?: string;
+  dueDate?: string;
+  supplierContact?: Contact;
+  document?: Document;
+}
+
+export interface RequestReceiptDTO {
+  receiptNumber: string;
+  items: Array<ReceiptItem>;
+  supplierContactId?: number;
+  paidDate?: string;
+  receiptDate?: string;
+  dueDate?: string;
+  document?: RequestReceiptDocumentDTO;
+}
+
+export interface RequestReceiptDocumentDTO {
+  data: string;
+  mediaType: string;
+}
+
+export interface ReceiptCommittedDTO {
+  committedTimestamp: string;
 }

@@ -21,3 +21,11 @@ data class DocumentVersionDTO (
     constructor(documentVersion: DocumentVersion): this(DocumentDTO(documentVersion.document),
             documentVersion.version, documentVersion.createdTimestamp.isoFormat())
 }
+
+fun documentVersionToDocumentVersionDTO(documentVersion: DocumentVersion): DocumentVersionDTO? {
+        return if(documentVersion.isTombstone) {
+                null
+        } else {
+                DocumentVersionDTO(documentVersion)
+        }
+}
