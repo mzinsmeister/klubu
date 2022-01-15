@@ -20,6 +20,8 @@ data class UserProperties(
     val bank: BankProperties,
     val taxIdName: String,
     val taxId: String,
+    val documents: DocumentsProperties
 ) {
     data class BankProperties (val name: String, val iban: String, val bic: String)
+    data class DocumentsProperties (val headerName: String)
 }

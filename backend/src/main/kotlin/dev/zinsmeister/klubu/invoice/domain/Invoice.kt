@@ -5,6 +5,7 @@ import dev.zinsmeister.klubu.contact.domain.Contact
 import dev.zinsmeister.klubu.documentfile.domain.DocumentEntity
 import dev.zinsmeister.klubu.exception.IllegalModificationException
 import dev.zinsmeister.klubu.itemdocument.domain.ItemDocument
+import dev.zinsmeister.klubu.itemdocument.domain.ItemDocumentItem
 import dev.zinsmeister.klubu.offer.domain.Offer
 import java.time.LocalDate
 import javax.persistence.*
@@ -12,6 +13,8 @@ import javax.persistence.*
 //TODO: Add last modified date
 @Entity
 @AttributeOverride(name="documentDate", column=Column(name="INVOICE_DATE"))
+@AssociationOverride(name = "items", joinTable = JoinTable(name = "INVOICE_ITEM"),
+    joinColumns = [JoinColumn(name = "INVOICE_ID", referencedColumnName = "ID")])
 class Invoice(
     contact: Contact?,
 
@@ -38,7 +41,7 @@ class Invoice(
 
     @Column
     var paidDate: LocalDate? = null,
-): DocumentEntity, ItemDocument<Invoice, InvoiceItem>(contact, recipient, items, title, headerHTML,
+): DocumentEntity, ItemDocument<InvoiceItem>(contact, recipient, items, title, headerHTML,
     footerHTML, subject, invoiceDate) {
 
     @Id
@@ -88,6 +91,4 @@ class Invoice(
         value?.correctedInvoice = this
         field = value
     }
-
-    override fun getThis(): Invoice = this
 }

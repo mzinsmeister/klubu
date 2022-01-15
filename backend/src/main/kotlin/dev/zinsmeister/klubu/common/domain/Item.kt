@@ -1,13 +1,9 @@
 package dev.zinsmeister.klubu.common.domain
 
-import kotlin.math.roundToInt
 
-interface Item {
-    var name: String
-    var quantity: Double
-    var unit: String
-    var priceCents: Int
-    fun calculateTotalCents(): Int {
-        return (quantity * priceCents).roundToInt()
-    }
+interface Item: ImmutableItem {
+    override var name: String
+    override var quantity: Double
+    override var unit: String
+    override var priceCents: Int
 }

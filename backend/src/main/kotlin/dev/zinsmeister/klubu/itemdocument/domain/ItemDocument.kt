@@ -1,24 +1,25 @@
 package dev.zinsmeister.klubu.itemdocument.domain
 
+import dev.zinsmeister.klubu.common.domain.ImmutableItem
 import dev.zinsmeister.klubu.common.domain.Recipient
 import dev.zinsmeister.klubu.contact.domain.Contact
 import dev.zinsmeister.klubu.documentfile.domain.Document
 import dev.zinsmeister.klubu.documentfile.domain.DocumentEntity
 import dev.zinsmeister.klubu.exception.IllegalModificationException
-import dev.zinsmeister.klubu.offer.domain.Offer
 import java.time.Instant
 import java.time.LocalDate
 import javax.persistence.*
 
 //TODO: Add last modified date
 @MappedSuperclass
-abstract class ItemDocument<Self: ItemDocument<Self, Item>, Item: ItemDocumentItem<Item, Self>> (
+abstract class ItemDocument<Item: ItemDocumentItem> (
     contact: Contact?,
 
     recipient: Recipient?,
 
-    @OneToMany(cascade = [CascadeType.ALL], mappedBy = "itemDocument", orphanRemoval = true)
+    @OneToMany(cascade = [CascadeType.ALL], orphanRemoval = false)
     @OrderColumn(name = "POSITION")
+    @JoinColumn(name = "DOCUMENT_ID")
     private var items: MutableList<Item>,
 
     @Column
@@ -36,19 +37,11 @@ abstract class ItemDocument<Self: ItemDocument<Self, Item>, Item: ItemDocumentIt
     var createdTimestamp: Instant = Instant.now()
 ): DocumentEntity {
 
-    init {
-        items.forEach {
-            it.itemDocument = getThis()
-        }
-    }
-
     @Column
     var headerHTML: String? = headerHTML
     set(value) {
         if(value == field) return
-        if(isCommitted) {
-            throw IllegalModificationException("Modification of committed document not allowed")
-        }
+        checkCommitted()
         field = value
     }
 
@@ -56,9 +49,7 @@ abstract class ItemDocument<Self: ItemDocument<Self, Item>, Item: ItemDocumentIt
     var footerHTML: String? = footerHTML
     set(value) {
         if(value == field) return
-        if(isCommitted) {
-            throw IllegalModificationException("Modification of committed document not allowed")
-        }
+        checkCommitted()
         field = value
     }
 
@@ -66,9 +57,7 @@ abstract class ItemDocument<Self: ItemDocument<Self, Item>, Item: ItemDocumentIt
     var subject: String? = subject
     set(value) {
         if(value == field) return
-        if(isCommitted) {
-            throw IllegalModificationException("Modification of committed document not allowed")
-        }
+        checkCommitted()
         field = value
     }
 
@@ -76,9 +65,7 @@ abstract class ItemDocument<Self: ItemDocument<Self, Item>, Item: ItemDocumentIt
     var documentDate: LocalDate? = documentDate
     set(value) {
         if(value == field) return
-        if(isCommitted) {
-            throw IllegalModificationException("Modification of committed document not allowed")
-        }
+        checkCommitted()
         field = value
     }
 
@@ -86,9 +73,7 @@ abstract class ItemDocument<Self: ItemDocument<Self, Item>, Item: ItemDocumentIt
     var customerContact: Contact? = contact
     set(value) {
         if(value == field) return
-        if(isCommitted) {
-            throw IllegalModificationException("Modification of committed document not allowed")
-        }
+        checkCommitted()
         field = value
     }
 
@@ -96,9 +81,7 @@ abstract class ItemDocument<Self: ItemDocument<Self, Item>, Item: ItemDocumentIt
     var recipient: Recipient? = recipient
     set(value) {
         if(value == field) return
-        if(isCommitted) {
-            throw IllegalModificationException("Modification of committed document not allowed")
-        }
+        checkCommitted()
         field = value
     }
 
@@ -119,23 +102,25 @@ abstract class ItemDocument<Self: ItemDocument<Self, Item>, Item: ItemDocumentIt
     @OneToOne(cascade = [CascadeType.PERSIST])
     override var document: Document? = null
 
-    val immutableItems: List<Item>
-    get(): List<Item> = items
+    val itemsImmutable: List<ImmutableItem>
+    get(): List<ImmutableItem> = items
 
     //TODO: Check which items need to be replaced and just replace those
     fun replaceItems(newItems: List<Item>) {
         if(newItems == items) return
-        if(isCommitted) {
-            throw IllegalModificationException("Modification of committed document not allowed")
-        }
+        checkCommitted()
         this.items.clear()
         this.items.addAll(newItems)
-        this.items.forEach { it.itemDocument = getThis()}
     }
 
     fun calculateTotalCents(): Int {
         return this.items.sumOf { it.calculateTotalCents() }
     }
 
-    protected abstract fun getThis(): Self
+    private fun checkCommitted() {
+        if(isCommitted) {
+            throw IllegalModificationException("Modification of committed document not allowed")
+        }
+    }
+
 }

@@ -8,7 +8,6 @@ import dev.zinsmeister.klubu.idgenerator.domain.IdType
 import dev.zinsmeister.klubu.idgenerator.service.IdGeneratorService
 import dev.zinsmeister.klubu.offer.domain.Offer
 import dev.zinsmeister.klubu.offer.domain.OfferId
-import dev.zinsmeister.klubu.offer.domain.OfferItem
 import dev.zinsmeister.klubu.offer.dto.*
 import dev.zinsmeister.klubu.offer.repository.OfferRepository
 import dev.zinsmeister.klubu.offer.repository.findLatestByOfferId
@@ -20,6 +19,7 @@ import dev.zinsmeister.klubu.documentfile.service.DocumentService
 import dev.zinsmeister.klubu.exception.IllegalModificationException
 import dev.zinsmeister.klubu.exception.IllegalModificationRequestException
 import dev.zinsmeister.klubu.export.service.ExportService
+import dev.zinsmeister.klubu.offer.domain.OfferItem
 import dev.zinsmeister.klubu.user.service.UserService
 import dev.zinsmeister.klubu.util.formatCents
 import dev.zinsmeister.klubu.util.isoFormat
@@ -183,7 +183,7 @@ class OfferService(private val offerRepository: OfferRepository,
             title = entity.title,
             customerContact = entity.customerContact?.let{ mapContactEntityToDTO(it) },
             recipient = entity.recipient,
-            items = entity.immutableItems.map { ItemDTO(it) },
+            items = entity.itemsImmutable.map { ItemDTO(it) },
             createdTimestamp = entity.createdTimestamp.isoFormat(),
             offerDate = entity.documentDate?.format(DateTimeFormatter.ISO_LOCAL_DATE),
             validUntilDate = entity.validUntilDate?.format(DateTimeFormatter.ISO_LOCAL_DATE),
@@ -202,7 +202,7 @@ class OfferService(private val offerRepository: OfferRepository,
             recipient = entity.recipient,
             printRecipientCountry = !(entity.recipient?.country?.
                 equals(userService.getUserCountry(), ignoreCase = true)?: false),
-            items = entity.immutableItems.withIndex().map { ExportItemDTO(it.value, it.index + 1) },
+            items = entity.itemsImmutable.withIndex().map { ExportItemDTO(it.value, it.index + 1) },
             createdTimestamp = entity.createdTimestamp.isoFormat(),
             subject = entity.subject,
             headerHTML = entity.headerHTML,

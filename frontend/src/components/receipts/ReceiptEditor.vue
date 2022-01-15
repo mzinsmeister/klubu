@@ -41,7 +41,7 @@
           </section>
         </b-upload>
       </div>
-      <div class="column">
+      <div class="column inputcolumn">
         <b-field label="Belegnummer">
           <b-input v-model="receipt.receiptNumber" :disabled="isCommitted" />
         </b-field>
@@ -279,7 +279,10 @@ export default class ReceiptEditor extends Vue {
 .receipt-editor {
   margin-left: 2%;
   margin-right: 2%;
-  height: 100vh;
+}
+.inputcolumn {
+  height: 75vh;
+  overflow-y: scroll;
 }
 .position-input {
   margin-left: auto;

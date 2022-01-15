@@ -4,8 +4,8 @@ import dev.zinsmeister.klubu.common.domain.Recipient
 import dev.zinsmeister.klubu.contact.domain.Contact
 import dev.zinsmeister.klubu.documentfile.domain.Document
 import dev.zinsmeister.klubu.documentfile.domain.DocumentEntity
-import dev.zinsmeister.klubu.invoice.domain.InvoiceItem
 import dev.zinsmeister.klubu.itemdocument.domain.ItemDocument
+import dev.zinsmeister.klubu.itemdocument.domain.ItemDocumentItem
 import java.io.Serializable
 import java.time.Instant
 import java.time.LocalDate
@@ -15,6 +15,9 @@ data class OfferId(var offerId: Int? = null, var revision: Int? = null): Seriali
 
 @Entity
 @IdClass(OfferId::class)
+@AssociationOverride(name = "items", joinTable = JoinTable(name = "OFFER_ITEM"),
+    joinColumns = [JoinColumn(name = "OFFER_ID", referencedColumnName = "ID"),
+        JoinColumn(name = "OFFER_REVISION", referencedColumnName = "REVISION")])
 class Offer(
     @Id
     @Column(name = "ID")
@@ -42,12 +45,11 @@ class Offer(
     footerHTML: String?,
 
     subject: String?,
-        ): DocumentEntity, ItemDocument<Offer, OfferItem>(customerContact, recipient, items, title, headerHTML, footerHTML,
+        ): DocumentEntity, ItemDocument<OfferItem>(customerContact, recipient, items, title, headerHTML, footerHTML,
     subject, offerDate) {
 
     override val documentNumber: String?
     get(): String? = getOfferNumber()
 
     fun getOfferNumber(): String = "$offerId-$revision"
-    override fun getThis(): Offer = this
 }

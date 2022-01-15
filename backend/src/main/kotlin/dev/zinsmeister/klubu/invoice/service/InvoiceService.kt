@@ -9,7 +9,6 @@ import dev.zinsmeister.klubu.exception.NotFoundInDBException
 import dev.zinsmeister.klubu.idgenerator.domain.IdType
 import dev.zinsmeister.klubu.idgenerator.service.IdGeneratorService
 import dev.zinsmeister.klubu.invoice.domain.Invoice
-import dev.zinsmeister.klubu.invoice.domain.InvoiceItem
 import dev.zinsmeister.klubu.invoice.dto.*
 import dev.zinsmeister.klubu.invoice.repository.InvoiceRepository
 import dev.zinsmeister.klubu.common.dto.ItemDTO
@@ -19,6 +18,7 @@ import dev.zinsmeister.klubu.documentfile.dto.DocumentVersionDTO
 import dev.zinsmeister.klubu.documentfile.service.DocumentService
 import dev.zinsmeister.klubu.exception.NotCommittedException
 import dev.zinsmeister.klubu.export.service.ExportService
+import dev.zinsmeister.klubu.invoice.domain.InvoiceItem
 import dev.zinsmeister.klubu.offer.domain.OfferId
 import dev.zinsmeister.klubu.offer.dto.OfferIdDTO
 import dev.zinsmeister.klubu.offer.repository.OfferRepository
@@ -144,7 +144,7 @@ class InvoiceService(private val repository: InvoiceRepository,
             createdTimestamp = entity.createdTimestamp.isoFormat(),
             isCancelation = entity.isCancelation,
             isCanceled = entity.isCanceled,
-            items = entity.immutableItems.map { ItemDTO(it) },
+            items = entity.itemsImmutable.map { ItemDTO(it) },
             document = entity.document?.let { DocumentDTO(it) },
             customerContact = entity.customerContact?.let { mapContactEntityToDTO(it) },
             recipient = entity.recipient,
@@ -170,7 +170,7 @@ class InvoiceService(private val repository: InvoiceRepository,
     )
 
     private fun mapInvoiceItemDTOToEntity(dto: ItemDTO) = InvoiceItem(
-            itemName = dto.item,
+            name = dto.item,
             quantity = dto.quantity,
             unit = dto.unit,
             priceCents = dto.price.amountCents
@@ -195,7 +195,7 @@ class InvoiceService(private val repository: InvoiceRepository,
             recipient = entity.recipient,
             printRecipientCountry = !(entity.recipient?.country?.
                 equals(userService.getUserCountry(), ignoreCase = true)?: false),
-            items = entity.immutableItems.withIndex().map { ExportItemDTO(it.value, it.index + 1) },
+            items = entity.itemsImmutable.withIndex().map { ExportItemDTO(it.value, it.index + 1) },
             createdTimestamp = entity.createdTimestamp.isoFormat(),
             subject = entity.subject,
             headerHTML = entity.headerHTML,
