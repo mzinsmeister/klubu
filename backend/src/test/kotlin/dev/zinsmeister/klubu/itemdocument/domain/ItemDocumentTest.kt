@@ -5,18 +5,18 @@ import dev.zinsmeister.klubu.common.domain.Recipient
 import dev.zinsmeister.klubu.contact.domain.Contact
 import dev.zinsmeister.klubu.exception.IllegalModificationException
 import io.kotest.assertions.throwables.shouldThrowExactlyUnit
-import io.kotest.core.spec.style.WordSpec
+import io.kotest.core.spec.style.wordSpec
 import io.kotest.matchers.collections.shouldContainInOrder
 import io.kotest.matchers.shouldBe
 import io.kotest.matchers.types.shouldBeSameInstanceAs
 import java.time.Instant
 import java.time.LocalDate
 
-abstract class ItemDocumentTest<Item: ItemDocumentItem>(factory: (contact: Contact?, recipient: Recipient?, items: MutableList<Item>,
-                                                                  title: String?, headerHTML: String?, footerHTML: String?,
-                                                                  subject: String?, documentDate: LocalDate?, ) -> ItemDocument<Item>,
-                                                        itemFactory: (name: String, quantity: Double, unit: String, priceCents: Int) -> Item
-                                ): WordSpec({
+fun <Document: ItemDocument<Item>, Item: ItemDocumentItem> testItemDocument(factory: (contact: Contact?, recipient: Recipient?, items: MutableList<Item>,
+                                                        title: String?, headerHTML: String?, footerHTML: String?,
+                                                        subject: String?, documentDate: LocalDate?, ) -> Document,
+                                              itemFactory: (name: String, quantity: Double, unit: String, priceCents: Int) -> Item
+                                ) = wordSpec {
 
     fun makeDocument(contact: Contact? = null,
                      recipient: Recipient? = null,
@@ -25,13 +25,13 @@ abstract class ItemDocumentTest<Item: ItemDocumentItem>(factory: (contact: Conta
                      headerHTML: String? = null,
                      footerHTML: String? = null,
                      subject: String? = null,
-                     documentDate: LocalDate? = null): ItemDocument<Item> =
+                     documentDate: LocalDate? = null): Document =
         factory(contact, recipient, items, title, headerHTML, footerHTML, subject, documentDate)
 
     fun makeItem(name: String, quantity: Double = 1.0, unit: String, priceCents: Int) =
         itemFactory(name, quantity, unit, priceCents)
 
-    "Modyfing customer contact" When {
+    "Modifying customer contact" When {
         val newCustomer = Contact(
             123, null, null, "testuser", null,
             Address(null, null, null, null, null),
@@ -49,6 +49,27 @@ abstract class ItemDocumentTest<Item: ItemDocumentItem>(factory: (contact: Conta
             "throw IllegalModificationException" {
                 shouldThrowExactlyUnit<IllegalModificationException> {
                     document.customerContact = newCustomer
+                }
+            }
+        }
+    }
+
+    "Modifying recipient" When {
+        val newRecipient = Recipient("Herr", "Dr.", "Testo", "Testis",
+            "Teststr.", "22a", "12334", "testcity", "germanix")
+        "document is not commited" should {
+            val document = makeDocument()
+            document.recipient = newRecipient
+            "modify" {
+                document.recipient shouldBe newRecipient
+            }
+        }
+        "document is commited" should {
+            val document = makeDocument()
+            document.committedTimestamp = Instant.now()
+            "throw IllegalModificationException" {
+                shouldThrowExactlyUnit<IllegalModificationException> {
+                    document.recipient = newRecipient
                 }
             }
         }
@@ -189,4 +210,14 @@ abstract class ItemDocumentTest<Item: ItemDocumentItem>(factory: (contact: Conta
             }
         }
     }
-})
+
+    "calculateTotalCents" should {
+        val document = makeDocument(items=mutableListOf(
+                        makeItem("testitem1", 1.0, "testunit", 222),
+                        makeItem("testitem2", 2.5, "testunit", 1234)
+                    ))
+        "add up totals from all items" {
+            document.calculateTotalCents() shouldBe 3307.0
+        }
+    }
+}

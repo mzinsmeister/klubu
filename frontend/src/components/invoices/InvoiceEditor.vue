@@ -196,9 +196,10 @@ export default class InvoiceEditor extends Vue {
 
   private export() {
     if (this.invoice !== null) {
+      const startInvoiceId = this.invoice.id;
       exportInvoice(this.invoice)
         .then((r) => {
-          if (this.invoice !== null) {
+          if (this.invoice !== null && this.invoice?.id === startInvoiceId) {
             this.invoice.document = r.document;
           }
           this.isExporting = false;

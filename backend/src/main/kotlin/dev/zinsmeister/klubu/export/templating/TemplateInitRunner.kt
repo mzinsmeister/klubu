@@ -3,7 +3,6 @@ package dev.zinsmeister.klubu.export.templating
 import org.slf4j.LoggerFactory
 import org.springframework.beans.factory.annotation.Value
 import org.springframework.boot.CommandLineRunner
-import org.springframework.core.io.ClassPathResource
 import org.springframework.stereotype.Component
 import java.io.File
 import java.nio.file.Path
@@ -18,11 +17,15 @@ class TemplateInitRunner(
     override fun run(vararg args: String?) {
         val destination = Path.of(templatesPath).toFile()
         destination.mkdirs()
-        ClassPathResource("export/default_templates").file.walk().forEach {
-            val file = File(destination, it.name)
-            if(!file.exists() && it.isFile) {
-                logger.info("Copying template ${it.name} from default templates")
-                it.copyTo(file, overwrite = false)
+        ClassLoader.getSystemResources("export/default_templates").iterator().forEach {
+            val urlString = it.path
+            val fileName: String = urlString.substring(urlString.lastIndexOf('/') + 1)
+            val file = File(destination, fileName)
+            if(!file.exists()) {
+                logger.info("Copying template $fileName from default templates")
+                it.openStream().use { inputStream ->
+                    file.outputStream().use { inputStream.copyTo(it) }
+                }
             }
         }
     }

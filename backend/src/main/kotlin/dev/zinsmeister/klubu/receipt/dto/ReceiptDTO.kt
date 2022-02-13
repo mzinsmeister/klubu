@@ -40,7 +40,7 @@ val item: String,
 val price: MoneyDTO
 ) {
     constructor(itemEntity: ReceiptItem) : this(
-        item = itemEntity.name,
+        item = itemEntity.itemName,
         price = MoneyDTO(
             amountCents = itemEntity.priceCents,
             currency = CurrencyDTO("EUR", "€")

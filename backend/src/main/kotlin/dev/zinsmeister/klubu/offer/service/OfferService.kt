@@ -152,7 +152,7 @@ class OfferService(private val offerRepository: OfferRepository,
             offer.document!!
         } else {
             val newDocument = Document(
-                storageKeyPrefix = "offers/$id",
+                storageKeyPrefix = "offers/$id-$revision",
                 extension = "pdf",
                 mediaType = MediaType.APPLICATION_PDF_VALUE)
             offer.document = newDocument

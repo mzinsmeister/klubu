@@ -34,7 +34,7 @@ abstract class ItemDocument<Item: ItemDocumentItem> (
     documentDate: LocalDate? = null,
 
     @Column(name = "CREATED_TIMESTAMP", updatable = false, nullable = false)
-    var createdTimestamp: Instant = Instant.now()
+    val createdTimestamp: Instant = Instant.now()
 ): DocumentEntity {
 
     @Column
@@ -117,7 +117,7 @@ abstract class ItemDocument<Item: ItemDocumentItem> (
         return this.items.sumOf { it.calculateTotalCents() }
     }
 
-    private fun checkCommitted() {
+    protected fun checkCommitted() {
         if(isCommitted) {
             throw IllegalModificationException("Modification of committed document not allowed")
         }

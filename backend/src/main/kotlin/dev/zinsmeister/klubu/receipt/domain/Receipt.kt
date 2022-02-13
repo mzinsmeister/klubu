@@ -12,8 +12,9 @@ import javax.persistence.*
 class Receipt(
     receiptNumber: String,
 
-    @OneToMany(cascade = [CascadeType.ALL], orphanRemoval = true, mappedBy = "receipt")
+    @OneToMany(cascade = [CascadeType.ALL], orphanRemoval = true)
     @OrderColumn(name = "POSITION")
+    @JoinColumn(name = "RECEIPT_ID")
     private var items: MutableList<ReceiptItem>,
 
     supplierContact: Contact?,
@@ -28,17 +29,11 @@ class Receipt(
     var paidDate: LocalDate? = null,
 
     @Column(name = "CREATED_TIMESTAMP", updatable = false, nullable = false)
-    var createdTimestamp: Instant = Instant.now(),
+    val createdTimestamp: Instant = Instant.now(),
 ): DocumentEntity {
     @Id
     @GeneratedValue
     var id: Int? = null
-
-    init {
-        items.forEach {
-            it.receipt = this
-        }
-    }
 
     @Column
     var receiptDate: LocalDate? = receiptDate
@@ -112,7 +107,6 @@ class Receipt(
         }
         this.items.clear()
         this.items.addAll(newItems)
-        this.items.forEach { it.receipt = this }
     }
 
     fun calculateTotalCents(): Int {

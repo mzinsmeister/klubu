@@ -58,7 +58,9 @@ export default class RevisionsModal extends Vue {
 
   private created() {
     getOfferRevisions(this.offerId).then((r) => {
-      this.revisions = r.reverse();
+      this.revisions = r.sort(
+        (a, b) => b.creationDate.getTime() - a.creationDate.getTime()
+      );
     });
   }
 

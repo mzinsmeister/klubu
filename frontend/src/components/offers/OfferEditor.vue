@@ -205,9 +205,15 @@ export default class OfferEditor extends Vue {
 
   private export() {
     if (this.offer !== null) {
+      const startOfferId = this.offer.id;
+      const startOfferRevision = this.offer.revision;
       exportOffer(this.offer)
         .then((r) => {
-          if (this.offer !== null) {
+          if (
+            this.offer !== null &&
+            this.offer?.id === startOfferId &&
+            this.offer?.revision === startOfferRevision
+          ) {
             this.offer.document = r.document;
           }
           this.isExporting = false;

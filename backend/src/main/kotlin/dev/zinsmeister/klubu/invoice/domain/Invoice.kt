@@ -55,6 +55,7 @@ class Invoice(
     override val documentNumber
     get(): String? = invoiceNumber.toString()
 
+    //TODO: Write unit tests for this stuff once it's actually used
     var isCanceled: Boolean = false
     set(value) {
         correctedBy?: throw IllegalStateException("Can't be cancelled without corrected by")

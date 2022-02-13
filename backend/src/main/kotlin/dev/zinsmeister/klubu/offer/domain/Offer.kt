@@ -4,6 +4,7 @@ import dev.zinsmeister.klubu.common.domain.Recipient
 import dev.zinsmeister.klubu.contact.domain.Contact
 import dev.zinsmeister.klubu.documentfile.domain.Document
 import dev.zinsmeister.klubu.documentfile.domain.DocumentEntity
+import dev.zinsmeister.klubu.exception.IllegalModificationException
 import dev.zinsmeister.klubu.itemdocument.domain.ItemDocument
 import dev.zinsmeister.klubu.itemdocument.domain.ItemDocumentItem
 import java.io.Serializable
@@ -33,12 +34,11 @@ class Offer(
 
     @Id
     @Column(name = "REVISION", updatable = false)
-    var revision: Int = 1,
+    val revision: Int = 1,
 
     offerDate: LocalDate?,
 
-    @Column(name = "VALID_UNTIL_DATE")
-        var validUntilDate: LocalDate?,
+    validUntilDate: LocalDate?,
 
     headerHTML: String?,
 
@@ -48,8 +48,15 @@ class Offer(
         ): DocumentEntity, ItemDocument<OfferItem>(customerContact, recipient, items, title, headerHTML, footerHTML,
     subject, offerDate) {
 
-    override val documentNumber: String?
-    get(): String? = getOfferNumber()
+    override val documentNumber: String
+    get(): String = getOfferNumber()
+
+    @Column(name = "VALID_UNTIL_DATE")
+    var validUntilDate: LocalDate? = validUntilDate
+    set(value: LocalDate?) {
+        checkCommitted()
+        field = value
+    }
 
     fun getOfferNumber(): String = "$offerId-$revision"
 }
