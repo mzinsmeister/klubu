@@ -8,7 +8,7 @@ import org.springframework.web.bind.annotation.ResponseStatus
  * is in a state that doesn't allow the requested modification to be made.
  * It does specifically return an internal server error because in all cases where it is expected
  * that the user can try to modify a resource they are not allowed to modify this should be caught
- * and rethrown as an IllegalModificationException.
+ * and rethrown as an IllegalModificationRequestException.
  *
  * I'm not sure whether this is the way to go but that's the way it is for now.
  */

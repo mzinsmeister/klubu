@@ -116,19 +116,23 @@ class OfferService(private val offerRepository: OfferRepository,
         } else {
             offerRepository.findByIdOrNull(OfferId(offerId, revision))
         }?: throw NotFoundInDBException("Offer not found")
-        val newItems = offerDTO.items?.map { mapItemDTOToEntity(it) } ?: mutableListOf()
-        offer.replaceItems(newItems)
-        offer.documentDate = offerDTO.offerDate?.let { LocalDate.parse(it) }
-        offer.validUntilDate = offerDTO.validUntilDate?.let { LocalDate.parse(it) }
-        offer.subject = offerDTO.subject
-        offer.footerHTML = offerDTO.footerHTML
-        offer.headerHTML = offerDTO.headerHTML
-        offer.recipient = offerDTO.recipient
-        offer.title = offerDTO.title
-        if(offer.customerContact?.contactId != offerDTO.customerContactId) {
-            val newContact = offerDTO.customerContactId?.let{ contactRepository.findByIdOrNull(it)
-                    ?: throw NotFoundInDBException("Contact not found") }
-            offer.customerContact = newContact
+        if(!offer.isCommitted) { // TODO: Is silently not updating the other fields correct behaviour here?
+            val newItems = offerDTO.items?.map { mapItemDTOToEntity(it) } ?: mutableListOf()
+            offer.replaceItems(newItems)
+            offer.documentDate = offerDTO.offerDate?.let { LocalDate.parse(it) }
+            offer.validUntilDate = offerDTO.validUntilDate?.let { LocalDate.parse(it) }
+            offer.subject = offerDTO.subject
+            offer.footerHTML = offerDTO.footerHTML
+            offer.headerHTML = offerDTO.headerHTML
+            offer.recipient = offerDTO.recipient
+            offer.title = offerDTO.title
+            if (offer.customerContact?.contactId != offerDTO.customerContactId) {
+                val newContact = offerDTO.customerContactId?.let {
+                    contactRepository.findByIdOrNull(it)
+                        ?: throw NotFoundInDBException("Contact not found")
+                }
+                offer.customerContact = newContact
+            }
         }
     }
 

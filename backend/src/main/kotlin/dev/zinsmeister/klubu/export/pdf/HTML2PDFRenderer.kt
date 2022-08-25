@@ -24,12 +24,12 @@ import kotlin.io.path.absolutePathString
 @Service
 class HTML2PDFRenderer(
     @Value("\${klubu.export.chromium.path:#{null}}") private val chromiumPath: String?,
-    @Value("\${klubu.export.chromedriver.path:#{null}}") chromedriverPath: String?,
-    @Value("\${klubu.export.chromium.dataPath:#{null}}") private val chromiumDataPath: String?
-    ) {
+    @Value("\${klubu.export.chromedriver.path:#{null}}") private val chromedriverPath: String?,
+    @Value("\${klubu.export.chromium.dataPath:#{null}}") private val chromiumDataPath: String?,
+) {
 
     init {
-        if(chromedriverPath != null) {
+        if(!chromedriverPath.isNullOrEmpty()) {
             System.setProperty("webdriver.chrome.driver", File(chromedriverPath).canonicalPath)
         }
     }
@@ -42,27 +42,37 @@ class HTML2PDFRenderer(
               you can't get the mutex)...
      */
     fun render(html: String): ByteArray {
+        logger.debug("Starting Chromedriver: chromiumDataPath=\"$chromiumDataPath\", " +
+                "chromiumPath=\"$chromiumPath\", chromedriverPath=\"$chromedriverPath\"")
         val startTime = System.currentTimeMillis()
 
         // It's a lot uglier than with Playwright but better in a few other ways
 
         val chromeOptions = ChromeOptions()
-            .setBinary(chromiumPath)
             .setHeadless(true)
-            .addArguments("--disable-gpu --disable-software-rasterizer")
+            .addArguments("--disable-gpu", "--disable-software-rasterizer", "--no-sandbox", "--disable-dev-shm-usage")
             .setLogLevel(ChromeDriverLogLevel.SEVERE)
 
-        if(chromiumDataPath != null) {
+        if(!chromiumPath.isNullOrEmpty()) {
+            chromeOptions.setBinary(chromiumPath)
+        }
+
+        if(!chromiumDataPath.isNullOrEmpty()) {
             val absolutePath = Path.of(chromiumDataPath).absolutePathString()
-            chromeOptions.addArguments("--user-data-dir='$absolutePath'")
+                .replace(" ", "\\ ")
+                .replace("\\", "\\\\")
+            chromeOptions.addArguments("--user-data-dir=$absolutePath")
         }
 
         val chromeDriver = ChromeDriver(chromeOptions)
+        logger.debug("Started Chromium")
 
         try {
             chromeDriver.executeScript("document.documentElement.innerHTML = arguments[0]", html)
+            logger.debug("Set Content of Chromium document")
 
             applyPagedPolyfills(chromeDriver)
+            logger.debug("Applied Paged.js Polyfills")
 
             // We have to do it this way since the actual print Method of the "PrintsPage"
             // Interface doesn't support "preferCSSPageSize and "isHeaderFooterEnabled" attributes
@@ -82,7 +92,7 @@ class HTML2PDFRenderer(
     }
 
     fun applyPagedPolyfills(driver: ChromeDriver) {
-        val pagedPolyfills = ClassPathResource("export/paged.polyfill.js").file.readText()
+        val pagedPolyfills = ClassPathResource("export/paged.polyfill.js").inputStream.bufferedReader().readText()
         driver.executeScript("let scriptElement = document.createElement('script');" +
                 "scriptElement.text = arguments[0]; document.head.appendChild(scriptElement)", pagedPolyfills)
         WebDriverWait(driver, Duration.ofSeconds(30), Duration.ofMillis(100))

@@ -4,12 +4,14 @@ import dev.zinsmeister.klubu.documentfile.repository.DocumentRepository
 import dev.zinsmeister.klubu.documentfile.domain.Document
 import dev.zinsmeister.klubu.documentfile.domain.DocumentVersion
 import dev.zinsmeister.klubu.documentfile.dto.DocumentVersionDTO
+import dev.zinsmeister.klubu.documentfile.exception.DocumentStorageException
 import dev.zinsmeister.klubu.documentfile.exception.NoVersionException
 import dev.zinsmeister.klubu.exception.NotFoundInDBException
 import org.springframework.beans.factory.annotation.Value
 import org.springframework.data.repository.findByIdOrNull
 import org.springframework.http.MediaType
 import org.springframework.stereotype.Service
+import java.lang.Exception
 import java.nio.file.Files
 import java.nio.file.Path
 import java.nio.file.StandardOpenOption
@@ -22,20 +24,24 @@ class DocumentService(@Value("\${klubu.document.storage.path}") private val stor
     data class NewDocumentVersion(val document: Document, val documentVersionDTO: DocumentVersionDTO)
 
     fun storeNewVersion(document: Document, documentBytes: ByteArray?): NewDocumentVersion {
-        val newVersion = if(documentBytes != null) {
-            val digest = MessageDigest.getInstance("SHA-256")
-            val checksum = digest.digest(documentBytes)
-            val newVersion = document.addVersion(checksum)
-            this.storeVersion(newVersion, documentBytes)
-            newVersion
-        } else {
-            document.delete()
+        try {
+            val newVersion = if(documentBytes != null) {
+                val digest = MessageDigest.getInstance("SHA-256")
+                val checksum = digest.digest(documentBytes)
+                val newVersion = document.addVersion(checksum)
+                this.storeVersion(newVersion, documentBytes)
+                newVersion
+            } else {
+                document.delete()
+            }
+            val documentSaved = documentRepository.save(document)
+            return NewDocumentVersion(documentSaved, DocumentVersionDTO(newVersion))
+        } catch (e: Exception) {
+            throw DocumentStorageException(e)
         }
-        val documentSaved = documentRepository.save(document)
-        return NewDocumentVersion(documentSaved, DocumentVersionDTO(newVersion))
     }
 
-    fun contentEquals(documentVersion: DocumentVersion, documentBytes: ByteArray): Boolean {
+    fun contentChecksumEquals(documentVersion: DocumentVersion, documentBytes: ByteArray): Boolean {
         val digest = MessageDigest.getInstance("SHA-256")
         val checksum = digest.digest(documentBytes)
         return checksum.contentEquals(documentVersion.checksum)
@@ -45,12 +51,6 @@ class DocumentService(@Value("\${klubu.document.storage.path}") private val stor
         val path = constructPath(documentVersion)
         path.parent.toFile().mkdirs()
         Files.write(path, documentBytes, StandardOpenOption.CREATE_NEW)
-    }
-
-    fun fetchDocument(documentVersion: DocumentVersion): ByteArray {
-        //TODO: Handle Tombstones
-        val path = constructPath(documentVersion)
-        return Files.readAllBytes(path)
     }
 
     fun fetchDocument(id: Int, version: Int? = null): Pair<ByteArray, MediaType>? {
@@ -66,6 +66,16 @@ class DocumentService(@Value("\${klubu.document.storage.path}") private val stor
         }
         val bytes = fetchDocument(documentVersion)
         return Pair(bytes, MediaType.parseMediaType(document.mediaType))
+    }
+
+    fun fetchDocument(documentVersion: DocumentVersion): ByteArray {
+        //TODO: Handle Tombstones
+        try {
+            val path = constructPath(documentVersion)
+            return Files.readAllBytes(path)
+        } catch(e: Exception) {
+            throw DocumentStorageException(e)
+        }
     }
 
     private fun constructPath(documentVersion: DocumentVersion): Path {

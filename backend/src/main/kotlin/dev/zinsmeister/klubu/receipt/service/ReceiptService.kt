@@ -1,6 +1,5 @@
 package dev.zinsmeister.klubu.receipt.service
 
-import dev.zinsmeister.klubu.common.dto.ItemDTO
 import dev.zinsmeister.klubu.contact.repository.ContactRepository
 import dev.zinsmeister.klubu.contact.service.mapContactEntityToDTO
 import dev.zinsmeister.klubu.documentfile.domain.Document
@@ -73,7 +72,7 @@ class ReceiptService(
                     if(dto.documentData != null) {
                         val newDocumentBytes = Base64.decodeBase64(dto.documentData.data)
                         if(foundEntity.document == null
-                            || !documentService.contentEquals(foundEntity.document!!.versions.last(), newDocumentBytes)) {
+                            || !documentService.contentChecksumEquals(foundEntity.document!!.versions.last(), newDocumentBytes)) {
                             val document = foundEntity.document?: Document(
                                 storageKeyPrefix = "receipts/${foundEntity.id}",
                                 extension = "pdf",

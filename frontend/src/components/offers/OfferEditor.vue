@@ -75,7 +75,7 @@
               change();
             "
             icon-right="delete"
-            :disabled="offer.validUntilDate === undefined"
+            :disabled="offer.validUntilDate === undefined || isCommitted"
           />
         </p>
       </b-field>

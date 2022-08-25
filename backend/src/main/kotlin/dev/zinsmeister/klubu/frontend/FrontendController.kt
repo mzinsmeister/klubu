@@ -5,6 +5,6 @@ import org.springframework.web.bind.annotation.GetMapping
 
 @Controller
 class FrontendController {
-    @GetMapping("/{path:^(?!api\\/).*}/**")
+ //   @GetMapping("/{path:^(?!api\\/).*}/**")
     fun catchAllFrontend() = "forward:/"
 }

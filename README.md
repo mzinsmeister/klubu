@@ -19,13 +19,79 @@ A basic overview of the architecutre is the following:
 
 It's designed as a webapp that should later also be useable as a standalone Desktop App through Electron.
 
-The frontend is in Typescript with Vue, the Backend is in Kotlin with Spring Boot. The Server version (the only one for now) is designed to be used with Postgres. The Desktopapp will use SQLite later. Spring Data JPA is used for Persistence/ORM. 
+The frontend is in Typescript with Vue, the Backend is in Kotlin with Spring Boot. The Server version (the only one for 
+now) is designed to be used with Postgres. The Desktopapp will use SQLite later. Spring Data JPA is used for 
+Persistence/ORM. 
 
-PDFs are rendered from HTML/CSS/JS with a Headless Chromium and paged.js through Playwright. This uses a lot of space and takes rather long to render compared to the alternatives like Flyingsaucer (which could still rather easily be swapped in) but imo that tradeoff is worth it because this way you'll be able to use a modern HTML/CSS renderer and you'll be able to use JS with probably the most advanced JS engine out there (V8) and with paged.js you'll be able to use basically all of the CSS paged media standards even those which are still working drafts. Mustache is used for creating HTML Document templates. Since for now the software is basically intended to be used by a single (obviously not mallicious) person, the HTML inserted into the documents by the client is assumed not to be mallicious but a TODO would be to sanitize HTML like that using the OWASP HTML Sanitizer for Java. Since Documents need to be in PDF/A Format for GoBD compliance the generated PDF documents are then converted to PDF/A with the Apache PDFBox library. The european standard for electronic invoices ZUGFeRD/Factur-X which is also based on PDF/A is also a nice to have for the future which could be achived using the Mustang library.
+PDFs are rendered from HTML/CSS/JS with a Headless Chromium and paged.js through Selenium. This uses a lot of 
+space and takes rather long to render compared to the alternatives like Flyingsaucer (which could still rather 
+easily be swapped in) but imo that tradeoff is worth it because this way you'll be able to use a modern 
+HTML/CSS renderer and you'll be able to use JS with probably the most advanced JS engine out there (V8) and with 
+paged.js you'll be able to use basically all of the CSS paged media standards even those which are still working 
+drafts. Mustache is used for creating HTML Document templates. Since for now the software is basically intended 
+to be used by a single (obviously not mallicious) person, the HTML inserted into the documents by the client 
+is assumed not to be mallicious but a TODO would be to sanitize HTML like that using the OWASP HTML Sanitizer 
+for Java. Since Documents need to be in PDF/A Format for GoBD compliance the generated PDF documents are then 
+converted to PDF/A with the Apache PDFBox library. The european standard for electronic invoices 
+ZUGFeRD/Factur-X which is also based on PDF/A is also a nice to have for the future which could be achived using 
+the Mustang library.
 
-For now there is no access conrol as i want to have a fully functional prototype first. As long as it's not part of the application, HTTP basic auth or something else could be used by using a reverse proxy in front of the backend and frontend. But building actual authentication into the application itself is a high priority TODO right after fininshing the core functinality. It will then be done using Spring Security.
+For now there is no access conrol as I want to have a fully functional prototype first. As long as it's not part 
+of the application, HTTP basic auth or something else could be used by using a reverse proxy in front of the 
+backend and frontend. But building actual authentication into the application itself is a high priority TODO right
+after fininshing the core functinality. It will then be done using Spring Security.
 
-There's also currently no setup for the main organisation/freelancer data (name, address, payment details, ...). This data, for now, is configured in a config file on the server. This is obviously not ideal but it will do for now.
+There's also currently no setup for the main organisation/freelancer data (name, address, payment details, ...). 
+This data, for now, is configured in a config file on the server. This is obviously not ideal but it will do for now.
+
+# Development
+You will need a JDK 11 or higher and npm (latest lts should work). For development of the webapp use
+```    
+npm run serve
+```
+and for development of the Kotlin backend use
+```
+./gradlew bootRun
+```
+To quickly start a development database, you can use the docker-compose.yml file inside the backend directory.
 
 # Installation
-Installation is intended to be done with Docker on the Server but this is also still a TODO. The image will then include the Web Frontend, the JVM Backend aswell as the Chromium browser (or a Chromium headless-shell) for generating PDFs so that you will only need to start a database and the Klubu Container
+Linux is the only inteded environment for production. Theoretically windows should also work 
+(it does work for development) but might take some fiddling. A Docker image can be built and used 
+(Is currently not available in any docker repository but might be uploaded to DockerHub once the project is more 
+stable) with the Dockerfile in the root directory of the repository. Otherwise if you really want to you can run 
+it without docker but I don't think this kind of deployment will ever be oficially supported.You will need to install 
+Chrom(ium/e) and a chrom(ium/e)driver that works with the installed version of Chrom(ium/e). Just try installing 
+Chromium and the driver through the package manager of your distribution. You will then also need a JRE or JDK 11 
+or higher, try something like Eclipse Temurin or alternatively use whatever OpenJDK variant your package manager 
+provides you with. Then you will need to build the webapp by calling
+```
+npm run build
+```
+inside the frontend directory (make sure you have npm installed). After that build the FatJar with
+```
+./gradlew bootJar
+```
+which should download the correct version of Gradle aswell as all dependencies and build the jar package 
+inside the backend/build/libs directory as klubu-[version].jar. You can then run that with
+```
+java -jar klubu-[version].jar
+```
+For configuration you can either create a config directory and then look at the application-dev.properties 
+and the other config files  configuration and create an application-prod.properties file or you can use 
+environment variables or system properties using the same properies used in that file. Then all that's 
+left to do is installing a Postgres database (ideally through docker too) and configuring the connection 
+to that and creating a templates folder and mounting that into the container and putting your personal/company 
+information into a user.properties file or using environment variables for that too (this config file is more 
+of a hack btw.). You can have a look at the Spring Boot docs for all the different ways you can use for 
+configuration. In general look at the development config under backend/main/resources/config for reference.
+
+If you quickly want to have an instance up and running for testing purposes there's a docker-compose.yml 
+file in the root directory that allows you to do that. Just call
+```    
+docker compose up
+```
+in the root directory and a docker image should be built and run in combination with a postgres database.
+
+For production use, you can create a docker-compose.yml file similar to that one. In general the whole installation
+experience still needs some work because the Dockerfile should also generally add a config directory to the classpath.

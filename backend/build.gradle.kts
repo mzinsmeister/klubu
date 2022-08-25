@@ -1,20 +1,21 @@
 import org.jetbrains.kotlin.gradle.tasks.KotlinCompile
 import org.gradle.nativeplatform.platform.internal.DefaultNativePlatform
+import org.springframework.boot.gradle.tasks.bundling.BootJar
 
 plugins {
-	id("org.springframework.boot") version "2.6.2"
+	id("org.springframework.boot") version "2.7.3"
 	id("io.spring.dependency-management") version "1.0.11.RELEASE"
 	id("de.undercouch.download") version "4.1.2"
-	kotlin("jvm") version "1.6.10"
-	kotlin("plugin.spring") version "1.6.10"
-	kotlin("plugin.jpa") version "1.6.10"
+	kotlin("jvm") version "1.7.10"
+	kotlin("plugin.spring") version "1.7.10"
+	kotlin("plugin.jpa") version "1.7.10"
 }
 
 group = "dev.zinsmeister"
 version = "0.0.1-SNAPSHOT"
 java.sourceCompatibility = JavaVersion.VERSION_11
 
-val kotestVersion = "5.0.3"
+val kotestVersion = "5.4.2"
 
 repositories {
 	mavenCentral()
@@ -52,6 +53,10 @@ dependencies {
 	testImplementation("io.kotest:kotest-property:$kotestVersion")
 
 	testRuntimeOnly("com.h2database:h2:2.0.206")
+}
+
+springBoot {
+	mainClass.set("dev.zinsmeister.klubu.KlubuApplicationKt")
 }
 
 tasks.withType<KotlinCompile> {
@@ -154,7 +159,8 @@ tasks.withType<org.springframework.boot.gradle.tasks.run.BootRun> {
 
 //TODO: Build frontend and backend in one Gradle build
 
-tasks.withType<org.springframework.boot.gradle.tasks.bundling.BootJar> {
+tasks.withType<BootJar> {
+	exclude("static", "config")
 	from("../frontend/dist") {
 		into("static")
 	}

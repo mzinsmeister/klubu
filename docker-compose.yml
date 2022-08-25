@@ -1,0 +1,33 @@
+version: "3"
+services:
+  db:
+    image: postgres:latest
+    environment:
+      - POSTGRES_DB=klubu
+      - POSTGRES_USER=klubu
+      - POSTGRES_PASSWORD=klubu-test
+      - POSTGRES_ROOT_PASSWORD=abc123testroot
+    volumes:
+      - klubu-data:/var/lib/postgresql/data:z
+
+  backend:
+    image: klubu:test
+    build: .
+    shm_size: '2gb'
+    ports:
+      - "8080:8080"
+    depends_on:
+      - db
+    volumes:
+      - ./templates:/templates
+      - ./config:/config
+      - klubu-chromedata:/chromedata
+    user: 1000:1000
+    environment:
+      - SPRING_PROFILES_ACTIVE=dev
+      - SPRING_DATASOURCE_URL=jdbc:postgresql://db:5432/klubu
+      - KLUBU_EXPORT_TEMPLATES_PATH=/templates
+      - KLUBU_EXPORT_CHROMIUM_DATAPATH=/chromedata
+volumes:
+  klubu-data:
+  klubu-chromedata:

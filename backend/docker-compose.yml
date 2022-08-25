@@ -13,20 +13,5 @@ services:
     volumes:
       - klubu-data:/var/lib/postgresql/data:z
 
-  backend:
-    image: mcr.microsoft.com/playwright/java:v1.15.2-focal
-    profiles:
-      - backend
-    ports:
-      - "8080:8080"
-    volumes:
-      - ./:/app
-      - gradle-cache:/root/.gradle
-    working_dir: /app
-    depends_on:
-      - db
-    command: ./gradlew bootRun --args="--spring.profiles.active=int --spring.datasource.url=jdbc:postgresql://db:5432/klubu"
 volumes:
   klubu-data:
-  gradle-cache:
-  playwright-cache:
