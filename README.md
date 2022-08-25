@@ -44,7 +44,11 @@ after fininshing the core functinality. It will then be done using Spring Securi
 There's also currently no setup for the main organisation/freelancer data (name, address, payment details, ...). 
 This data, for now, is configured in a config file on the server. This is obviously not ideal but it will do for now.
 
-# Development
+## Licence
+For now KluBu is available under the GNU Affero Gneral Public Licence (AGPL). This is mostly a default to one of
+the most restrictive licences to give me more time to think about the lincence I actually want to use long term.
+
+## Development
 You will need a JDK 11 or higher and npm (latest lts should work). For development of the webapp use
 ```    
 npm run serve
@@ -55,7 +59,7 @@ and for development of the Kotlin backend use
 ```
 To quickly start a development database, you can use the docker-compose.yml file inside the backend directory.
 
-# Installation
+## Installation
 Linux is the only inteded environment for production. Theoretically windows should also work 
 (it does work for development) but might take some fiddling. A Docker image can be built and used 
 (Is currently not available in any docker repository but might be uploaded to DockerHub once the project is more 
