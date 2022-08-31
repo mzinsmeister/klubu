@@ -10,7 +10,9 @@ import dev.zinsmeister.klubu.exception.IllegalModificationRequestException
 import dev.zinsmeister.klubu.exception.NotFoundInDBException
 import dev.zinsmeister.klubu.receipt.domain.Receipt
 import dev.zinsmeister.klubu.receipt.domain.ReceiptItem
+import dev.zinsmeister.klubu.receipt.domain.ReceiptItemCategory
 import dev.zinsmeister.klubu.receipt.dto.*
+import dev.zinsmeister.klubu.receipt.repository.ReceiptItemCategoryRepository
 import dev.zinsmeister.klubu.receipt.repository.ReceiptRepository
 import dev.zinsmeister.klubu.util.isoFormat
 import org.apache.tomcat.util.codec.binary.Base64
@@ -28,6 +30,7 @@ import javax.transaction.Transactional
 class ReceiptService(
     private val repository: ReceiptRepository,
     private val contactRepository: ContactRepository,
+    private val categoryRepository: ReceiptItemCategoryRepository,
     private val documentService: DocumentService
 ) {
     fun fetchReceipt(id: Int): ResponseReceiptDTO {
@@ -60,7 +63,6 @@ class ReceiptService(
     fun updateReceipt(id: Int, dto: RequestReceiptDTO, updateDocument: Boolean) {
         val foundEntity = repository.findByIdOrNull(id)
             ?: throw NotFoundInDBException("Receipt not found")
-        foundEntity.paidDate = dto.paidDate?.let { LocalDate.parse(it) }
         if(!foundEntity.isCommitted) { // TODO: Is silently not updating the other fields correct behaviour here?
             try {
                 if(foundEntity.supplierContact?.contactId != dto.supplierContactId) {
@@ -68,6 +70,7 @@ class ReceiptService(
                         ?: throw NotFoundInDBException("Contact not found")
                 }
                 foundEntity.receiptDate = dto.receiptDate?.let { LocalDate.parse(it) }
+                foundEntity.dueDate = dto.dueDate.let { LocalDate.parse(it) }
                 if(updateDocument) {
                     if(dto.documentData != null) {
                         val newDocumentBytes = Base64.decodeBase64(dto.documentData.data)
@@ -109,15 +112,18 @@ class ReceiptService(
         return ResponseReceiptCommittedDTO(foundEntity.committedTimestamp!!.isoFormat())
     }
 
+    fun fetchItemCategories(): List<ReceiptItemCategoryDTO> =
+        categoryRepository.findAll().map { mapReceiptItemCategoryToDTO(it) }
+
     private fun mapReceiptEntityToDTO(entity: Receipt) = ResponseReceiptDTO(
         id = entity.id!!,
         receiptNumber = entity.receiptNumber,
-        paidDate = entity.paidDate?.format(DateTimeFormatter.ISO_LOCAL_DATE),
         receiptDate = entity.receiptDate?.format(DateTimeFormatter.ISO_LOCAL_DATE),
         dueDate = entity.dueDate?.format(DateTimeFormatter.ISO_LOCAL_DATE),
+        paidDate = null, //TODO: Replace by payments
         committedTimestamp = entity.committedTimestamp?.isoFormat(),
         createdTimestamp = entity.createdTimestamp.isoFormat(),
-        items = entity.immutableItems.map { ReceiptItemDTO(it) },
+        items = entity.immutableItems.map { ResponseReceiptItemDTO(it) },
         document = entity.document?.let { DocumentDTO(it) },
         supplierContact = entity.supplierContact?.let { mapContactEntityToDTO(it) },
     )
@@ -126,15 +132,18 @@ class ReceiptService(
         supplierContact = dto.supplierContactId?.let { contactRepository.findByIdOrNull(it)
             ?: throw NotFoundInDBException("Contact not found") },
         items = dto.items.map { mapReceiptItemDTOToEntity(it) }.toMutableList(),
-        paidDate = dto.paidDate?.let { LocalDate.parse(it) },
         receiptDate = dto.receiptDate?.let { LocalDate.parse(it) },
         dueDate = dto.dueDate?.let { LocalDate.parse(it) },
         receiptNumber = dto.receiptNumber,
     )
 
-    private fun mapReceiptItemDTOToEntity(dto: ReceiptItemDTO) = ReceiptItem(
+    private fun mapReceiptItemDTOToEntity(dto: RequestReceiptItemDTO) = ReceiptItem(
         itemName = dto.item,
-        priceCents = dto.price.amountCents
+        priceCents = dto.price.amountCents,
+        category = dto.categoryId.let { categoryRepository.findByIdOrNull(it)
+            ?: throw NotFoundInDBException("Category not found") },
+        isAsset = dto.isAsset?: false,
+        useTimeYears = dto.useTimeYears
     )
 
     private fun mapReceiptEntityToMetadataDTO(entity: Receipt) = ReceiptMetadataDTO(
@@ -143,8 +152,14 @@ class ReceiptService(
         supplierContact = entity.supplierContact?.let { mapContactEntityToDTO(it) },
         committed = entity.isCommitted,
         createdTimestamp = entity.createdTimestamp.isoFormat(),
-        paidDate = entity.paidDate?.format(DateTimeFormatter.ISO_LOCAL_DATE),
+        paidDate = null, //TODO: Replace by payments
         dueDate = entity.dueDate?.format(DateTimeFormatter.ISO_LOCAL_DATE),
         receiptDate = entity.receiptDate?.format(DateTimeFormatter.ISO_LOCAL_DATE),
+    )
+
+    private fun mapReceiptItemCategoryToDTO(entity: ReceiptItemCategory) = ReceiptItemCategoryDTO(
+        id = entity.id,
+        name = entity.name,
+        categoryType = ReceiptItemCategoryTypeDTO(entity.categoryType.id, entity.categoryType.name)
     )
 }

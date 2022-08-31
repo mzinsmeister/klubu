@@ -21,12 +21,18 @@ class Receipt(
 
     receiptDate: LocalDate?,
 
-    dueDate: LocalDate?,
+    dueDate: LocalDate? = null,
+
+    deliveryDate: LocalDate? = null,
 
     document: Document? = null,
 
-    @Column
-    var paidDate: LocalDate? = null,
+    @OneToMany
+    @JoinTable(name="INVOICE_PAYMENT",
+        joinColumns = [JoinColumn(name = "INVOICE_ID", referencedColumnName = "ID")],
+        inverseJoinColumns = [JoinColumn(name = "PAYMENT_ID", referencedColumnName = "ID")],
+        indexes = [Index(columnList="INVOICE_ID"), Index(columnList="PAYMENT_ID")])
+    var payments: LocalDate? = null,
 
     @Column(name = "CREATED_TIMESTAMP", updatable = false, nullable = false)
     val createdTimestamp: Instant = Instant.now(),
@@ -44,6 +50,16 @@ class Receipt(
         }
         field = value
     }
+
+    @Column
+    var deliveryDate: LocalDate? = deliveryDate
+        set(value) {
+            if(value == field) return
+            if(isCommitted) {
+                throw IllegalModificationException("Modification of committed document not allowed")
+            }
+            field = value
+        }
 
     @Column
     var dueDate: LocalDate? = dueDate

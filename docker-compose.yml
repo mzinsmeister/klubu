@@ -20,7 +20,7 @@ services:
       - db
     volumes:
       - ./templates:/templates
-      - ./config:/config
+      - ./config:/app/config
       - klubu-chromedata:/chromedata
     user: 1000:1000
     environment:

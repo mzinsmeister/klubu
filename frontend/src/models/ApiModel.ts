@@ -1,5 +1,5 @@
 import { Contact } from "./ContactModel";
-import { Recipient } from "./CommonModel";
+import { Money, Recipient } from "./CommonModel";
 import { Item } from "./CommonModel";
 import { Document, DocumentVersion } from "./DocumentModel";
 import { parseISO } from "date-fns";
@@ -156,6 +156,12 @@ export interface RequestReceiptDTO {
   receiptDate?: string;
   dueDate?: string;
   document?: RequestReceiptDocumentDTO;
+}
+
+export interface RequestReceiptItemDTO {
+  item: string;
+  price: Money;
+  categoryId: number
 }
 
 export interface RequestReceiptDocumentDTO {

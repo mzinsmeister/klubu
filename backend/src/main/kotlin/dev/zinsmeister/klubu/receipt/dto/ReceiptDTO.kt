@@ -5,10 +5,12 @@ import dev.zinsmeister.klubu.common.dto.MoneyDTO
 import dev.zinsmeister.klubu.contact.dto.ContactDTO
 import dev.zinsmeister.klubu.documentfile.dto.DocumentDTO
 import dev.zinsmeister.klubu.receipt.domain.ReceiptItem
+import dev.zinsmeister.klubu.receipt.domain.ReceiptItemCategory
+import dev.zinsmeister.klubu.receipt.domain.ReceiptItemCategoryType
 
 data class ResponseReceiptDTO(
     val id: Int,
-    val items: List<ReceiptItemDTO>,
+    val items: List<ResponseReceiptItemDTO>,
     val createdTimestamp: String,
     val committedTimestamp: String?,
     val receiptNumber: String?,
@@ -21,7 +23,7 @@ data class ResponseReceiptDTO(
 
 data class RequestReceiptDTO(
     val receiptNumber: String,
-    val items: List<ReceiptItemDTO>,
+    val items: List<RequestReceiptItemDTO>,
     val supplierContactId: Int?,
     val paidDate: String?,
     val receiptDate: String?,
@@ -35,16 +37,30 @@ data class RequestReceiptDocumentDataDTO(
     val mediaType: String,
 )
 
-data class ReceiptItemDTO(
-val item: String,
-val price: MoneyDTO
-) {
+data class RequestReceiptItemDTO(
+    val item: String,
+    val price: MoneyDTO,
+    val categoryId: Int,
+    val isAsset: Boolean?,
+    val useTimeYears: Int?
+)
+
+data class ResponseReceiptItemDTO(
+    val item: String,
+    val price: MoneyDTO,
+    val category: ReceiptItemCategoryDTO,
+    val isAsset: Boolean?,
+    val useTimeYears: Int?
+    ) {
     constructor(itemEntity: ReceiptItem) : this(
         item = itemEntity.itemName,
         price = MoneyDTO(
             amountCents = itemEntity.priceCents,
             currency = CurrencyDTO("EUR", "€")
-        )
+        ),
+        category = ReceiptItemCategoryDTO(itemEntity.category),
+        isAsset = itemEntity.isAsset,
+        useTimeYears = itemEntity.useTimeYears
     )
 }
 
@@ -62,3 +78,25 @@ data class ReceiptMetadataDTO(
 data class ResponseReceiptCommittedDTO(
     val committedTimestamp: String
 )
+
+data class ReceiptItemCategoryDTO(
+    val id: Int?,
+    val name: String,
+    val categoryType: ReceiptItemCategoryTypeDTO
+) {
+    constructor(entity: ReceiptItemCategory) : this(
+        id = entity.id,
+        name = entity.name,
+        categoryType = ReceiptItemCategoryTypeDTO(entity.categoryType)
+    )
+}
+
+data class ReceiptItemCategoryTypeDTO(
+    val id: Int?,
+    val name: String
+) {
+    constructor(entity: ReceiptItemCategoryType) : this(
+        id = entity.id,
+        name = entity.name
+    )
+}

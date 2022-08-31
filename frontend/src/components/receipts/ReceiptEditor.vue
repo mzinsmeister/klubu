@@ -110,6 +110,7 @@
             />
           </p>
         </b-field>
+        <div style="height:10px; border-bottom: 1px solid black" />
         <receipt-items-editor
           @change="change"
           :disabled="isCommitted"
@@ -230,6 +231,13 @@ export default class ReceiptEditor extends Vue {
   }
 
   private save(): void {
+    if (this.receipt?.items.some(it => it.category === undefined)) {
+      this.$buefy.toast.open({
+            message: "Bitte für alle Positionen Kategorien auswählen",
+            type: "is-danger",
+          });
+      return;
+    }
     if (this.receipt !== null && this.receipt?.id === undefined) {
       createReceipt(this.receipt).then((result) => {
         history.replaceState(

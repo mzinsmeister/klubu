@@ -27,6 +27,8 @@ dependencies {
 	implementation("org.springframework.boot:spring-boot-starter-web")
 	implementation("com.fasterxml.jackson.module:jackson-module-kotlin")
 
+	implementation("org.liquibase:liquibase-core")
+
 	implementation("com.googlecode.owasp-java-html-sanitizer:owasp-java-html-sanitizer:1.1")
 	implementation("com.github.spullara.mustache.java:compiler:0.9.10")
 	// New Docker baseimage should be built when a new playwright verson is for a new chromium version
@@ -160,7 +162,7 @@ tasks.withType<org.springframework.boot.gradle.tasks.run.BootRun> {
 //TODO: Build frontend and backend in one Gradle build
 
 tasks.withType<BootJar> {
-	exclude("static", "config")
+	exclude("static", "config/user.properties")
 	from("../frontend/dist") {
 		into("static")
 	}

@@ -29,4 +29,16 @@ export interface ReceiptListItem {
 export interface ReceiptItem {
   item: string;
   price: Money;
+  category?: ReceiptItemCategory
+}
+
+export interface ReceiptItemCategory {
+  id: number,
+  name: string,
+  categoryType: ReceiptItemCategoryType
+}
+
+export interface ReceiptItemCategoryType {
+  id: number,
+  name: string
 }

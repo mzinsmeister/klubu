@@ -4,10 +4,11 @@ import {
   ReceiptListItemDTO,
   RequestReceiptDocumentDTO,
   RequestReceiptDTO,
+  RequestReceiptItemDTO,
   ResponseReceiptDTO,
 } from "@/models/ApiModel";
 import { DocumentData } from "@/models/DocumentModel";
-import { Receipt, ReceiptListItem } from "@/models/ReceiptModel";
+import { Receipt, ReceiptItem, ReceiptItemCategory, ReceiptListItem } from "@/models/ReceiptModel";
 import { formatISO, parseISO } from "date-fns";
 import Vue from "vue";
 import { fromUint8Array } from "js-base64";
@@ -75,13 +76,23 @@ function mapDocumentDataToDTO(
   }
 }
 
+function mapReceiptItemToTO(
+  receiptItem: ReceiptItem
+): RequestReceiptItemDTO {
+  return {
+    item: receiptItem.item,
+    price: receiptItem.price,
+    categoryId: receiptItem.category!.id
+  }
+}
+
 function mapReceiptToDTO(
   receipt: Receipt,
   addData: boolean
 ): RequestReceiptDTO {
   const val = {
     supplierContactId: receipt.supplierContact?.id,
-    items: receipt.items,
+    items: receipt.items.map(it => mapReceiptItemToTO(it)),
     receiptDate: receipt.receiptDate
       ? formatISO(receipt.receiptDate, { representation: "date" })
       : undefined,
@@ -121,5 +132,10 @@ export async function commitReceipt(
   receiptId: number
 ): Promise<ReceiptCommittedDTO> {
   const response = await Vue.axios.post(`/api/receipts/${receiptId}/committed`);
+  return response.data;
+}
+
+export async function fetchReceiptItemCategories(): Promise<Array<ReceiptItemCategory>>  {
+  const response = await Vue.axios.get("/api/receipts/itemcategories")
   return response.data;
 }

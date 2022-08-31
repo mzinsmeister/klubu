@@ -39,8 +39,12 @@ class Invoice(
 
     invoiceDate: LocalDate? = null,
 
-    @Column
-    var paidDate: LocalDate? = null,
+    @OneToMany
+    @JoinTable(name="INVOICE_PAYMENT",
+        joinColumns = [JoinColumn(name = "INVOICE_ID", referencedColumnName = "ID")],
+        inverseJoinColumns = [JoinColumn(name = "PAYMENT_ID", referencedColumnName = "ID")],
+        indexes = [Index(columnList="INVOICE_ID"), Index(columnList="PAYMENT_ID")])
+    var payments: LocalDate? = null,
 ): DocumentEntity, ItemDocument<InvoiceItem>(contact, recipient, items, title, headerHTML,
     footerHTML, subject, invoiceDate) {
 
