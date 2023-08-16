@@ -70,6 +70,7 @@ class ReceiptService(
                         ?: throw NotFoundInDBException("Contact not found")
                 }
                 foundEntity.receiptDate = dto.receiptDate?.let { LocalDate.parse(it) }
+                foundEntity.deliveryDate = dto.deliveryDate?.let { LocalDate.parse(it) }
                 foundEntity.dueDate = dto.dueDate.let { LocalDate.parse(it) }
                 if(updateDocument) {
                     if(dto.documentData != null) {
@@ -121,6 +122,7 @@ class ReceiptService(
         receiptDate = entity.receiptDate?.format(DateTimeFormatter.ISO_LOCAL_DATE),
         dueDate = entity.dueDate?.format(DateTimeFormatter.ISO_LOCAL_DATE),
         paidDate = null, //TODO: Replace by payments
+        deliveryDate = entity.deliveryDate?.format(DateTimeFormatter.ISO_LOCAL_DATE),
         committedTimestamp = entity.committedTimestamp?.isoFormat(),
         createdTimestamp = entity.createdTimestamp.isoFormat(),
         items = entity.immutableItems.map { ResponseReceiptItemDTO(it) },

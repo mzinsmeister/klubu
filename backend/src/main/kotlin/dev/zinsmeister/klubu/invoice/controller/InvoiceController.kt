@@ -44,4 +44,6 @@ class InvoiceController(private val service: InvoiceService) {
         return service.export(id)
     }
 
+    @PostMapping("/{id}/payments/")
+
 }

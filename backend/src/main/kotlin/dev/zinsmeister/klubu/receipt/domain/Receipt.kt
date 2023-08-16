@@ -27,12 +27,9 @@ class Receipt(
 
     document: Document? = null,
 
-    @OneToMany
-    @JoinTable(name="INVOICE_PAYMENT",
-        joinColumns = [JoinColumn(name = "INVOICE_ID", referencedColumnName = "ID")],
-        inverseJoinColumns = [JoinColumn(name = "PAYMENT_ID", referencedColumnName = "ID")],
-        indexes = [Index(columnList="INVOICE_ID"), Index(columnList="PAYMENT_ID")])
-    var payments: LocalDate? = null,
+    @OneToMany(orphanRemoval = true)
+    @JoinColumn(name = "RECEIPT_ID")
+    val payments: MutableSet<ReceiptPayment> = mutableSetOf(),
 
     @Column(name = "CREATED_TIMESTAMP", updatable = false, nullable = false)
     val createdTimestamp: Instant = Instant.now(),

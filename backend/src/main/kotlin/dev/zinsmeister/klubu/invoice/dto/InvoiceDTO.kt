@@ -12,7 +12,6 @@ data class ResponseInvoiceDTO(
         val createdTimestamp: String,
         val committedTimestamp: String?,
         val invoiceNumber: Int?,
-        val paidDate: String?,
         val invoiceDate: String?,
         val isCanceled: Boolean,
         val isCancelation: Boolean,
@@ -26,12 +25,12 @@ data class ResponseInvoiceDTO(
         val title: String?,
         val subject: String?,
         val fromOffer: OfferIdDTO?,
+        val payments: PaymentDTO
         )
 
 data class RequestInvoiceDTO(
         val items: List<ItemDTO>,
         val customerContactId: Int?,
-        val paidDate: String?,
         val invoiceDate: String?,
         val recipient: Recipient?,
         val headerHTML: String?,
@@ -48,7 +47,6 @@ data class InvoiceMetadataDTO(
         val title: String?,
         val createdTimestamp: String,
         val customerContact: ContactDTO?,
-        val paidDate: String?,
         val committed: Boolean,
         val invoiceNumber: Int?,
         val isCanceled: Boolean,
