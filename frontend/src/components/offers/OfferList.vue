@@ -1,6 +1,6 @@
 <template>
   <div class="offer-list" >
-    <b-table
+    <o-table
       v-if="offers !== null"
       :data="offers"
       :backend-pagination="true"
@@ -9,7 +9,7 @@
       aria-page-label="Page"
       aria-current-label="Current page"
     >
-      <b-table-column
+      <o-table-column
         field="id"
         label="Angebotsnr."
         width="20"
@@ -17,81 +17,72 @@
         v-slot="props"
       >
         {{ props.row.id }}
-      </b-table-column>
-      <b-table-column field="title" label="Titel" width="200" v-slot="props">
+      </o-table-column>
+      <o-table-column field="title" label="Titel" width="200" v-slot="props">
         {{ props.row.title }}
-      </b-table-column>
-      <b-table-column
+      </o-table-column>
+      <o-table-column
         field="customerContact.name"
         label="Kunde"
         width="200"
         v-slot="props"
       >
         {{ getCustomerName(props.row.customerContact) }}
-      </b-table-column>
-      <b-table-column custom-key="actions" v-slot="props">
+      </o-table-column>
+      <o-table-column custom-key="actions" v-slot="props">
         <button class="button is-small is-light" @click="view(props.row.id)">
           Öffnen
         </button>
-      </b-table-column>
-    </b-table>
+      </o-table-column>
+    </o-table>
   </div>
 </template>
 
-<script lang="ts">
-import { Contact } from "@/models/ContactModel";
-import { OfferListItem } from "@/models/OfferModel";
+<script setup lang="ts">
+
+import { getCurrentInstance, ref, type Ref } from "vue";
+import { type Contact } from "@/models/ContactModel";
 import { listOffers } from "@/services/OffersApiService";
-import { Component, Vue } from "vue-property-decorator";
+import { type OfferListItem } from "@/models/OfferModel";
+import { useRoute, useRouter } from "vue-router";
 
+
+
+const route = useRoute();
+const router = useRouter();
 const PAGE_SIZE = 100000;
+let pagesCache: Map<number, Array<OfferListItem>> = new Map();
+const offers: Ref<Array<OfferListItem> | null> = ref(null);
+const created = (): void => {
+  pageChange(0);
+}
 
-@Component({
-  name: "offer-list",
-})
-export default class OfferList extends Vue {
-  private pagesCache: Map<number, Array<OfferListItem>> = new Map();
-  private offers: Array<OfferListItem> | null = null;
-
-  private created(): void {
-    this.pageChange(0);
-  }
-
-  private activated(): void {
-    if (this.$route.query["forceRefresh"] === "true") {
-      this.clearCache();
-      this.reload();
-    }
-  }
-
-  private view(id: number): void {
-    this.$router.push(`/offers/${id}`);
-  }
-
-  private getCustomerName(customerContact: Contact | undefined): string {
-    return customerContact?.name ?? "";
-  }
-
-  clearCache(): void {
-    this.pagesCache = new Map();
-  }
-
-  reload(): void {
-    this.pageChange(0);
-  }
-
-  private pageChange(page: number): void {
-    this.offers = this.pagesCache.get(page) ?? null;
-    if (this.offers === null) {
-      listOffers(page, PAGE_SIZE).then((v) => {
-        this.offers = v;
-        this.pagesCache.set(page, v);
-      });
-    }
+const view = (id: number): void => {
+  router.value.push(`/offers/${id}`);
+}
+const getCustomerName = (customerContact: Contact | undefined): string => {
+  return customerContact?.name ?? "";
+}
+const clearCache = (): void => {
+  pagesCache = new Map();
+}
+const reload = (): void => {
+  pageChange(0);
+}
+if (route.query["forceRefresh"] === "true") {
+  clearCache();
+  reload();
+}
+const pageChange = (page: number): void => {
+  offers.value = pagesCache.get(page) ?? null;
+  if (offers.value === null) {
+    listOffers(page, PAGE_SIZE).then((v) => {
+      offers.value = v;
+      pagesCache.set(page, v);
+    });
   }
 }
 </script>
-
 <!-- Add "scoped" attribute to limit CSS to this component only -->
 <style scoped lang="scss">
 h3 {

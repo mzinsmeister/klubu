@@ -1,0 +1,761 @@
+databaseChangeLog:
+- changeSet:
+    id: 1693925214072-1
+    author: michi (generated)
+    changes:
+    - createTable:
+        columns:
+        - column:
+            constraints:
+              nullable: false
+              primaryKey: true
+              primaryKeyName: invoice_pkey
+            name: id
+            type: INTEGER
+        - column:
+            name: committed_timestamp
+            type: TIMESTAMP WITHOUT TIME ZONE
+        - column:
+            constraints:
+              nullable: false
+            name: created_timestamp
+            type: TIMESTAMP WITHOUT TIME ZONE
+        - column:
+            name: invoice_date
+            type: date
+        - column:
+            name: footerhtml
+            type: VARCHAR(255)
+        - column:
+            name: headerhtml
+            type: VARCHAR(255)
+        - column:
+            name: city
+            type: VARCHAR(255)
+        - column:
+            name: country
+            type: VARCHAR(255)
+        - column:
+            name: recipient_first_name
+            type: VARCHAR(255)
+        - column:
+            name: recipient_form_of_address
+            type: VARCHAR(255)
+        - column:
+            name: house_number
+            type: VARCHAR(255)
+        - column:
+            constraints:
+              nullable: false
+            name: recipient_name
+            type: VARCHAR(255)
+        - column:
+            name: street
+            type: VARCHAR(255)
+        - column:
+            name: recipient_title
+            type: VARCHAR(255)
+        - column:
+            name: zip_code
+            type: VARCHAR(255)
+        - column:
+            name: subject
+            type: VARCHAR(255)
+        - column:
+            name: title
+            type: VARCHAR(255)
+        - column:
+            name: invoice_number
+            type: INTEGER
+        - column:
+            constraints:
+              nullable: false
+            name: is_cancelation
+            type: BOOLEAN
+        - column:
+            constraints:
+              nullable: false
+            name: is_canceled
+            type: BOOLEAN
+        - column:
+            name: paid_date
+            type: date
+        - column:
+            name: customer_contact_id
+            type: INTEGER
+        - column:
+            name: document_id
+            type: INTEGER
+        - column:
+            name: corrected_by_invoice_id
+            type: INTEGER
+        - column:
+            name: corrected_invoice_id
+            type: INTEGER
+        - column:
+            name: from_offer_id
+            type: INTEGER
+        - column:
+            name: from_offer_revision
+            type: INTEGER
+        tableName: invoice
+- changeSet:
+    id: 1693925214072-2
+    author: michi (generated)
+    changes:
+    - addUniqueConstraint:
+        columnNames: invoice_number
+        constraintName: uk_t6xkdjx1qtd5whp2iljdfn2yj
+        tableName: invoice
+- changeSet:
+    id: 1693925214072-3
+    author: michi (generated)
+    changes:
+    - createSequence:
+        cacheSize: 1
+        cycle: false
+        dataType: bigint
+        incrementBy: 1
+        maxValue: 9223372036854775807
+        minValue: 1
+        sequenceName: hibernate_sequence
+        startValue: 1
+- changeSet:
+    id: 1693925214072-4
+    author: michi (generated)
+    changes:
+    - createTable:
+        columns:
+        - column:
+            constraints:
+              nullable: false
+              primaryKey: true
+              primaryKeyName: contact_pkey
+            name: id
+            type: INTEGER
+        - column:
+            name: city
+            type: VARCHAR(255)
+        - column:
+            name: country
+            type: VARCHAR(255)
+        - column:
+            name: house_number
+            type: VARCHAR(255)
+        - column:
+            name: street
+            type: VARCHAR(255)
+        - column:
+            name: zip_code
+            type: VARCHAR(255)
+        - column:
+            constraints:
+              nullable: false
+            name: created_date
+            type: TIMESTAMP WITHOUT TIME ZONE
+        - column:
+            name: first_name
+            type: VARCHAR(255)
+        - column:
+            name: form_of_address
+            type: VARCHAR(255)
+        - column:
+            constraints:
+              nullable: false
+            name: is_person
+            type: BOOLEAN
+        - column:
+            constraints:
+              nullable: false
+            name: name
+            type: VARCHAR(255)
+        - column:
+            name: phone
+            type: VARCHAR(255)
+        - column:
+            name: title
+            type: VARCHAR(255)
+        tableName: contact
+- changeSet:
+    id: 1693925214072-5
+    author: michi (generated)
+    changes:
+    - createTable:
+        columns:
+        - column:
+            constraints:
+              nullable: false
+              primaryKey: true
+              primaryKeyName: document_pkey
+            name: id
+            type: INTEGER
+        - column:
+            name: extension
+            type: VARCHAR(255)
+        - column:
+            name: media_type
+            type: VARCHAR(255)
+        - column:
+            name: storage_key_prefix
+            type: VARCHAR(255)
+        tableName: document
+- changeSet:
+    id: 1693925214072-6
+    author: michi (generated)
+    changes:
+    - createTable:
+        columns:
+        - column:
+            constraints:
+              nullable: false
+              primaryKey: true
+              primaryKeyName: document_version_pkey
+            name: document_id
+            type: INTEGER
+        - column:
+            constraints:
+              nullable: false
+              primaryKey: true
+              primaryKeyName: document_version_pkey
+            name: version
+            type: INTEGER
+        - column:
+            name: checksum
+            type: BYTEA
+        - column:
+            name: created_timestamp
+            type: TIMESTAMP WITHOUT TIME ZONE
+        - column:
+            constraints:
+              nullable: false
+            name: is_tombstone
+            type: BOOLEAN
+        tableName: document_version
+- changeSet:
+    id: 1693925214072-7
+    author: michi (generated)
+    changes:
+    - createTable:
+        columns:
+        - column:
+            constraints:
+              nullable: false
+              primaryKey: true
+              primaryKeyName: id_generator_pkey
+            name: id_type
+            type: VARCHAR(255)
+        - column:
+            constraints:
+              nullable: false
+            name: next_value
+            type: INTEGER
+        tableName: id_generator
+- changeSet:
+    id: 1693925214072-8
+    author: michi (generated)
+    changes:
+    - createTable:
+        columns:
+        - column:
+            constraints:
+              nullable: false
+              primaryKey: true
+              primaryKeyName: invoice_item_pkey
+            name: id
+            type: INTEGER
+        - column:
+            name: name
+            type: VARCHAR(255)
+        - column:
+            constraints:
+              nullable: false
+            name: price_cents
+            type: INTEGER
+        - column:
+            constraints:
+              nullable: false
+            name: quantity
+            type: FLOAT8
+        - column:
+            name: unit
+            type: VARCHAR(255)
+        - column:
+            name: invoice_id
+            type: INTEGER
+        - column:
+            name: position
+            type: INTEGER
+        tableName: invoice_item
+- changeSet:
+    id: 1693925214072-9
+    author: michi (generated)
+    changes:
+    - createTable:
+        columns:
+        - column:
+            constraints:
+              nullable: false
+              primaryKey: true
+              primaryKeyName: offer_pkey
+            name: id
+            type: INTEGER
+        - column:
+            constraints:
+              nullable: false
+              primaryKey: true
+              primaryKeyName: offer_pkey
+            name: revision
+            type: INTEGER
+        - column:
+            name: committed_timestamp
+            type: TIMESTAMP WITHOUT TIME ZONE
+        - column:
+            constraints:
+              nullable: false
+            name: created_timestamp
+            type: TIMESTAMP WITHOUT TIME ZONE
+        - column:
+            name: document_date
+            type: date
+        - column:
+            name: footerhtml
+            type: VARCHAR(255)
+        - column:
+            name: headerhtml
+            type: VARCHAR(255)
+        - column:
+            name: city
+            type: VARCHAR(255)
+        - column:
+            name: country
+            type: VARCHAR(255)
+        - column:
+            name: recipient_first_name
+            type: VARCHAR(255)
+        - column:
+            name: recipient_form_of_address
+            type: VARCHAR(255)
+        - column:
+            name: house_number
+            type: VARCHAR(255)
+        - column:
+            constraints:
+              nullable: false
+            name: recipient_name
+            type: VARCHAR(255)
+        - column:
+            name: street
+            type: VARCHAR(255)
+        - column:
+            name: recipient_title
+            type: VARCHAR(255)
+        - column:
+            name: zip_code
+            type: VARCHAR(255)
+        - column:
+            name: subject
+            type: VARCHAR(255)
+        - column:
+            name: title
+            type: VARCHAR(255)
+        - column:
+            name: valid_until_date
+            type: date
+        - column:
+            name: customer_contact_id
+            type: INTEGER
+        - column:
+            name: document_id
+            type: INTEGER
+        tableName: offer
+- changeSet:
+    id: 1693925214072-10
+    author: michi (generated)
+    changes:
+    - createTable:
+        columns:
+        - column:
+            constraints:
+              nullable: false
+              primaryKey: true
+              primaryKeyName: offer_item_pkey
+            name: id
+            type: INTEGER
+        - column:
+            name: name
+            type: VARCHAR(255)
+        - column:
+            constraints:
+              nullable: false
+            name: price_cents
+            type: INTEGER
+        - column:
+            constraints:
+              nullable: false
+            name: quantity
+            type: FLOAT8
+        - column:
+            name: unit
+            type: VARCHAR(255)
+        - column:
+            name: offer_id
+            type: INTEGER
+        - column:
+            name: offer_revision
+            type: INTEGER
+        - column:
+            name: position
+            type: INTEGER
+        tableName: offer_item
+- changeSet:
+    id: 1693925214072-11
+    author: michi (generated)
+    changes:
+    - createTable:
+        columns:
+        - column:
+            constraints:
+              nullable: false
+              primaryKey: true
+              primaryKeyName: receipt_pkey
+            name: id
+            type: INTEGER
+        - column:
+            name: committed_timestamp
+            type: TIMESTAMP WITHOUT TIME ZONE
+        - column:
+            constraints:
+              nullable: false
+            name: created_timestamp
+            type: TIMESTAMP WITHOUT TIME ZONE
+        - column:
+            name: due_date
+            type: date
+        - column:
+            name: paid_date
+            type: date
+        - column:
+            name: receipt_date
+            type: date
+        - column:
+            name: receipt_number
+            type: VARCHAR(255)
+        - column:
+            name: document_id
+            type: INTEGER
+        - column:
+            name: supplier_contact_id
+            type: INTEGER
+        - column:
+            name: delivery_date
+            type: date
+        tableName: receipt
+- changeSet:
+    id: 1693925214072-12
+    author: michi (generated)
+    changes:
+    - createTable:
+        columns:
+        - column:
+            constraints:
+              nullable: false
+              primaryKey: true
+              primaryKeyName: receipt_item_pkey
+            name: id
+            type: INTEGER
+        - column:
+            name: item_name
+            type: VARCHAR(255)
+        - column:
+            constraints:
+              nullable: false
+            name: price_cents
+            type: INTEGER
+        - column:
+            name: receipt_id
+            type: INTEGER
+        - column:
+            name: position
+            type: INTEGER
+        - column:
+            constraints:
+              nullable: false
+            name: is_asset
+            type: BOOLEAN
+        - column:
+            name: use_time_years
+            type: INTEGER
+        - column:
+            constraints:
+              nullable: false
+            name: category_id
+            type: INTEGER
+        tableName: receipt_item
+- changeSet:
+    id: 1693925214072-13
+    author: michi (generated)
+    changes:
+    - createTable:
+        columns:
+        - column:
+            constraints:
+              nullable: false
+              primaryKey: true
+              primaryKeyName: receipt_item_category_pkey
+            name: id
+            type: INTEGER
+        - column:
+            name: name
+            type: VARCHAR(255)
+        - column:
+            constraints:
+              nullable: false
+            name: category_type_id
+            type: INTEGER
+        tableName: receipt_item_category
+- changeSet:
+    id: 1693925214072-14
+    author: michi (generated)
+    changes:
+    - createTable:
+        columns:
+        - column:
+            constraints:
+              nullable: false
+              primaryKey: true
+              primaryKeyName: receipt_item_category_type_pkey
+            name: id
+            type: INTEGER
+        - column:
+            name: name
+            type: VARCHAR(255)
+        tableName: receipt_item_category_type
+- changeSet:
+    id: 1693925214072-15
+    author: michi (generated)
+    changes:
+    - addForeignKeyConstraint:
+        baseColumnNames: customer_contact_id
+        baseTableName: offer
+        constraintName: fk152m4cxvcw5ignx10mcwj3rks
+        deferrable: false
+        initiallyDeferred: false
+        onDelete: NO ACTION
+        onUpdate: NO ACTION
+        referencedColumnNames: id
+        referencedTableName: contact
+        validate: true
+- changeSet:
+    id: 1693925214072-16
+    author: michi (generated)
+    changes:
+    - addForeignKeyConstraint:
+        baseColumnNames: corrected_by_invoice_id
+        baseTableName: invoice
+        constraintName: fk1cjp212o2uwhe9s68ixo7vlx
+        deferrable: false
+        initiallyDeferred: false
+        onDelete: NO ACTION
+        onUpdate: NO ACTION
+        referencedColumnNames: id
+        referencedTableName: invoice
+        validate: true
+- changeSet:
+    id: 1693925214072-17
+    author: michi (generated)
+    changes:
+    - addForeignKeyConstraint:
+        baseColumnNames: offer_id,offer_revision
+        baseTableName: offer_item
+        constraintName: fk28rxl474xxuda3vfdrt1qfdna
+        deferrable: false
+        initiallyDeferred: false
+        onDelete: NO ACTION
+        onUpdate: NO ACTION
+        referencedColumnNames: id,revision
+        referencedTableName: offer
+        validate: true
+- changeSet:
+    id: 1693925214072-18
+    author: michi (generated)
+    changes:
+    - addForeignKeyConstraint:
+        baseColumnNames: category_type_id
+        baseTableName: receipt_item_category
+        constraintName: fk65qg6uqwbytlqlcn15thhyfg
+        deferrable: false
+        initiallyDeferred: false
+        onDelete: NO ACTION
+        onUpdate: NO ACTION
+        referencedColumnNames: id
+        referencedTableName: receipt_item_category_type
+        validate: true
+- changeSet:
+    id: 1693925214072-19
+    author: michi (generated)
+    changes:
+    - addForeignKeyConstraint:
+        baseColumnNames: category_id
+        baseTableName: receipt_item
+        constraintName: fkawjv3ho7ci1d0r6yq2sch9ip7
+        deferrable: false
+        initiallyDeferred: false
+        onDelete: NO ACTION
+        onUpdate: NO ACTION
+        referencedColumnNames: id
+        referencedTableName: receipt_item_category
+        validate: true
+- changeSet:
+    id: 1693925214072-20
+    author: michi (generated)
+    changes:
+    - addForeignKeyConstraint:
+        baseColumnNames: document_id
+        baseTableName: offer
+        constraintName: fkbcgw3ubsvrfmadqylks8hj5x
+        deferrable: false
+        initiallyDeferred: false
+        onDelete: NO ACTION
+        onUpdate: NO ACTION
+        referencedColumnNames: id
+        referencedTableName: document
+        validate: true
+- changeSet:
+    id: 1693925214072-21
+    author: michi (generated)
+    changes:
+    - addForeignKeyConstraint:
+        baseColumnNames: invoice_id
+        baseTableName: invoice_item
+        constraintName: fkbu6tmpd0mtgu9wrw5bj5uv09v
+        deferrable: false
+        initiallyDeferred: false
+        onDelete: NO ACTION
+        onUpdate: NO ACTION
+        referencedColumnNames: id
+        referencedTableName: invoice
+        validate: true
+- changeSet:
+    id: 1693925214072-22
+    author: michi (generated)
+    changes:
+    - addForeignKeyConstraint:
+        baseColumnNames: document_id
+        baseTableName: receipt
+        constraintName: fkd8wr057f5emie64b4ik9mo03y
+        deferrable: false
+        initiallyDeferred: false
+        onDelete: NO ACTION
+        onUpdate: NO ACTION
+        referencedColumnNames: id
+        referencedTableName: document
+        validate: true
+- changeSet:
+    id: 1693925214072-23
+    author: michi (generated)
+    changes:
+    - addForeignKeyConstraint:
+        baseColumnNames: from_offer_id,from_offer_revision
+        baseTableName: invoice
+        constraintName: fkds469e7gjckm7e4mqu3lsvo03
+        deferrable: false
+        initiallyDeferred: false
+        onDelete: NO ACTION
+        onUpdate: NO ACTION
+        referencedColumnNames: id,revision
+        referencedTableName: offer
+        validate: true
+- changeSet:
+    id: 1693925214072-24
+    author: michi (generated)
+    changes:
+    - addForeignKeyConstraint:
+        baseColumnNames: supplier_contact_id
+        baseTableName: receipt
+        constraintName: fkhbv4qxrndd5uc4p2h46b47ogw
+        deferrable: false
+        initiallyDeferred: false
+        onDelete: NO ACTION
+        onUpdate: NO ACTION
+        referencedColumnNames: id
+        referencedTableName: contact
+        validate: true
+- changeSet:
+    id: 1693925214072-25
+    author: michi (generated)
+    changes:
+    - addForeignKeyConstraint:
+        baseColumnNames: customer_contact_id
+        baseTableName: invoice
+        constraintName: fkiw07i8oypf04nraedpf0njcxt
+        deferrable: false
+        initiallyDeferred: false
+        onDelete: NO ACTION
+        onUpdate: NO ACTION
+        referencedColumnNames: id
+        referencedTableName: contact
+        validate: true
+- changeSet:
+    id: 1693925214072-26
+    author: michi (generated)
+    changes:
+    - addForeignKeyConstraint:
+        baseColumnNames: corrected_invoice_id
+        baseTableName: invoice
+        constraintName: fkj47oofpuymnok1chw5hr549bo
+        deferrable: false
+        initiallyDeferred: false
+        onDelete: NO ACTION
+        onUpdate: NO ACTION
+        referencedColumnNames: id
+        referencedTableName: invoice
+        validate: true
+- changeSet:
+    id: 1693925214072-27
+    author: michi (generated)
+    changes:
+    - addForeignKeyConstraint:
+        baseColumnNames: document_id
+        baseTableName: invoice
+        constraintName: fklfg15ua84dxsm8u47mnd7e0bc
+        deferrable: false
+        initiallyDeferred: false
+        onDelete: NO ACTION
+        onUpdate: NO ACTION
+        referencedColumnNames: id
+        referencedTableName: document
+        validate: true
+- changeSet:
+    id: 1693925214072-28
+    author: michi (generated)
+    changes:
+    - addForeignKeyConstraint:
+        baseColumnNames: document_id
+        baseTableName: document_version
+        constraintName: fknvpdtplqabenasvgs0q5e3db4
+        deferrable: false
+        initiallyDeferred: false
+        onDelete: NO ACTION
+        onUpdate: NO ACTION
+        referencedColumnNames: id
+        referencedTableName: document
+        validate: true
+- changeSet:
+    id: 1693925214072-29
+    author: michi (generated)
+    changes:
+    - addForeignKeyConstraint:
+        baseColumnNames: receipt_id
+        baseTableName: receipt_item
+        constraintName: fksohgmt8ntavcgj10ha2duc8la
+        deferrable: false
+        initiallyDeferred: false
+        onDelete: NO ACTION
+        onUpdate: NO ACTION
+        referencedColumnNames: id
+        referencedTableName: receipt
+        validate: true
+
+- include:
+      file: db.changelog-001.yaml
+      relativeToChangelogFile: true

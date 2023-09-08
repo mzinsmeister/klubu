@@ -1,6 +1,6 @@
-import { Money } from "./CommonModel";
-import { Contact } from "./ContactModel";
-import { Document, DocumentData } from "./DocumentModel";
+import { type Money } from "./CommonModel";
+import type { Contact } from "./ContactModel";
+import type { Document, DocumentData } from "./DocumentModel";
 
 export interface Receipt {
   id?: number;

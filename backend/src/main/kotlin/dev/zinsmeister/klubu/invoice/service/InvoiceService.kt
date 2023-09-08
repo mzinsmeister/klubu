@@ -12,6 +12,7 @@ import dev.zinsmeister.klubu.invoice.domain.Invoice
 import dev.zinsmeister.klubu.invoice.dto.*
 import dev.zinsmeister.klubu.invoice.repository.InvoiceRepository
 import dev.zinsmeister.klubu.common.dto.ItemDTO
+import dev.zinsmeister.klubu.common.dto.PaymentDTO
 import dev.zinsmeister.klubu.documentfile.domain.Document
 import dev.zinsmeister.klubu.documentfile.dto.DocumentDTO
 import dev.zinsmeister.klubu.documentfile.dto.DocumentVersionDTO
@@ -150,7 +151,8 @@ class InvoiceService(private val repository: InvoiceRepository,
             footerHTML = entity.footerHTML,
             title = entity.title,
             subject = entity.subject,
-            fromOffer = entity.offer?.let { OfferIdDTO(it.offerId, it.revision) }
+            fromOffer = entity.offer?.let { OfferIdDTO(it.offerId, it.revision) },
+            payments = entity.payments.map { PaymentDTO(it) }
     )
 
     private fun mapInvoiceDTOToEntity(dto: RequestInvoiceDTO) = Invoice(

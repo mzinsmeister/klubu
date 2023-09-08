@@ -1,4 +1,4 @@
-import {
+import type {
   ApiPage,
   ReceiptCommittedDTO,
   ReceiptListItemDTO,
@@ -7,17 +7,17 @@ import {
   RequestReceiptItemDTO,
   ResponseReceiptDTO,
 } from "@/models/ApiModel";
-import { DocumentData } from "@/models/DocumentModel";
-import { Receipt, ReceiptItem, ReceiptItemCategory, ReceiptListItem } from "@/models/ReceiptModel";
+import { type DocumentData } from "@/models/DocumentModel";
+import type { Receipt, ReceiptItem, ReceiptItemCategory, ReceiptListItem } from "@/models/ReceiptModel";
 import { formatISO, parseISO } from "date-fns";
-import Vue from "vue";
 import { fromUint8Array } from "js-base64";
+import axios from "axios";
 
 export async function listReceipts(
   page: number,
   pageSize: number
 ): Promise<Array<ReceiptListItem>> {
-  const response = await Vue.axios.get<ApiPage<ReceiptListItemDTO>>(
+  const response = await axios.get<ApiPage<ReceiptListItemDTO>>(
     "/api/receipts",
     {
       params: {
@@ -57,7 +57,7 @@ function mapReceiptDTOToReceipt(dto: ResponseReceiptDTO): Receipt {
 }
 
 export async function fetchReceipt(id: number): Promise<Receipt> {
-  const response = await Vue.axios.get<ResponseReceiptDTO>(
+  const response = await axios.get<ResponseReceiptDTO>(
     "/api/receipts/" + id
   );
   return mapReceiptDTOToReceipt(response.data);
@@ -111,7 +111,7 @@ function mapReceiptToDTO(
 }
 
 export async function createReceipt(receipt: Receipt): Promise<Receipt> {
-  const response = await Vue.axios.post(
+  const response = await axios.post(
     "/api/receipts",
     mapReceiptToDTO(receipt, true)
   );
@@ -122,7 +122,7 @@ export async function updateReceipt(
   receipt: Receipt,
   updateDocument: boolean
 ): Promise<void> {
-  await Vue.axios.put(
+  await axios.put(
     `/api/receipts/${receipt.id}?updateDocument=${updateDocument}`,
     mapReceiptToDTO(receipt, updateDocument)
   );
@@ -131,11 +131,11 @@ export async function updateReceipt(
 export async function commitReceipt(
   receiptId: number
 ): Promise<ReceiptCommittedDTO> {
-  const response = await Vue.axios.post(`/api/receipts/${receiptId}/committed`);
+  const response = await axios.post(`/api/receipts/${receiptId}/committed`);
   return response.data;
 }
 
 export async function fetchReceiptItemCategories(): Promise<Array<ReceiptItemCategory>>  {
-  const response = await Vue.axios.get("/api/receipts/itemcategories")
+  const response = await axios.get("/api/receipts/itemcategories")
   return response.data;
 }

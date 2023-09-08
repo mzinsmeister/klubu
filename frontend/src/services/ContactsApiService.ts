@@ -1,13 +1,13 @@
-import { ApiPage } from "@/models/ApiModel";
-import { Contact } from "@/models/ContactModel";
-import Vue from "vue";
+import { type ApiPage } from "@/models/ApiModel";
+import { type Contact } from "@/models/ContactModel";
+import axios from "axios";
 
 export async function listContacts(
   page: number,
   pageSize: number,
   name?: string
 ): Promise<Array<Contact>> {
-  const response = await Vue.axios.get<ApiPage<Contact>>("/api/contacts", {
+  const response = await axios.get<ApiPage<Contact>>("/api/contacts", {
     params: {
       page: page,
       size: pageSize,
@@ -18,7 +18,7 @@ export async function listContacts(
 }
 
 export async function createContact(contact: Contact): Promise<Contact> {
-  const response = await Vue.axios.post("/api/contacts", contact);
+  const response = await axios.post("/api/contacts", contact);
   return response.data;
 }
 
@@ -26,5 +26,5 @@ export async function updateContact(contact: Contact): Promise<void> {
   if (contact.id === undefined) {
     throw Error("trying to update new contact" + JSON.stringify(contact));
   }
-  await Vue.axios.put("/api/contacts/" + contact.id, contact);
+  await axios.put("/api/contacts/" + contact.id, contact);
 }

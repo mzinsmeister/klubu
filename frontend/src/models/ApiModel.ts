@@ -1,9 +1,9 @@
-import { Contact } from "./ContactModel";
-import { Money, Recipient } from "./CommonModel";
-import { Item } from "./CommonModel";
-import { Document, DocumentVersion } from "./DocumentModel";
+import type { Contact } from "./ContactModel";
+import type { Money, Recipient } from "./CommonModel";
+import type { Item } from "./CommonModel";
+import type { Document, DocumentVersion } from "./DocumentModel";
 import { parseISO } from "date-fns";
-import { ReceiptItem } from "./ReceiptModel";
+import type { ReceiptItem } from "./ReceiptModel";
 
 export interface ApiPage<T> {
   content: Array<T>;

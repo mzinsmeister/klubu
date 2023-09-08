@@ -2,75 +2,75 @@
   <div class="contact-form modal-card">
     <header class="modal-card-head">
       <p class="modal-card-title">Neuen Kontakt erstellen</p>
-      <button type="button" class="delete" @click="$emit('close')" />
+      <button type="button" class="delete" @click="emit('close')" />
     </header>
     <section class="modal-card-body">
-      <b-field label="Name*">
-        <b-input
+      <o-field label="Name*">
+        <o-input
           v-model="editedContact.name"
           placeholder="Name(Firma) oder Nachname(Privat)"
           required
         >
-        </b-input>
-      </b-field>
+        </o-input>
+      </o-field>
 
-      <b-field label="Titel">
-        <b-input v-model="editedContact.title" placeholder="Titel"></b-input>
-      </b-field>
+      <o-field label="Titel">
+        <o-input v-model="editedContact.title" placeholder="Titel"></o-input>
+      </o-field>
 
-      <b-field label="Anrede">
-        <b-input
+      <o-field label="Anrede">
+        <o-input
           v-model="editedContact.formOfAddress"
           placeholder="Anrede"
-        ></b-input>
-      </b-field>
+        ></o-input>
+      </o-field>
 
-      <b-field label="Vorname">
-        <b-input
+      <o-field label="Vorname">
+        <o-input
           v-model="editedContact.firstName"
           placeholder="Vorname"
-        ></b-input>
-      </b-field>
+        ></o-input>
+      </o-field>
 
-      <b-field label="Straße">
-        <b-input v-model="editedContact.street" placeholder="Straße"></b-input>
-      </b-field>
+      <o-field label="Straße">
+        <o-input v-model="editedContact.street" placeholder="Straße"></o-input>
+      </o-field>
 
-      <b-field label="Hausnummer">
-        <b-input
+      <o-field label="Hausnummer">
+        <o-input
           v-model="editedContact.houseNumber"
           placeholder="Hausnummer"
-        ></b-input>
-      </b-field>
+        ></o-input>
+      </o-field>
 
-      <b-field label="Postleitzahl">
-        <b-input
+      <o-field label="Postleitzahl">
+        <o-input
           v-model="editedContact.zipCode"
           placeholder="Postleitzahl"
-        ></b-input>
-      </b-field>
+        ></o-input>
+      </o-field>
 
-      <b-field label="Stadt">
-        <b-input v-model="editedContact.city" placeholder="Stadt"></b-input>
-      </b-field>
+      <o-field label="Stadt">
+        <o-input v-model="editedContact.city" placeholder="Stadt"></o-input>
+      </o-field>
 
-      <b-field label="Land">
-        <b-input v-model="editedContact.country" placeholder="Land"></b-input>
-      </b-field>
+      <o-field label="Land">
+        <o-input v-model="editedContact.country" placeholder="Land"></o-input>
+      </o-field>
 
-      <b-field label="Telefonnummer">
-        <b-input
+      <o-field label="Telefonnummer">
+        <o-input
           v-model="editedContact.phone"
           placeholder="Telefonnummer"
-        ></b-input>
-      </b-field>
+        ></o-input>
+      </o-field>
 
-      <b-field label="Person?">
-        <b-switch v-model="editedContact.isPerson" />
-      </b-field>
+      <o-field label="Person?">
+        <o-switch v-model="editedContact.isPerson" />
+      </o-field>
     </section>
     <footer class="modal-card-foot">
-      <b-button
+      <o-button
         :label="isNew ? 'Erstellen' : 'Speichern'"
         type="is-primary"
         :disabled="editedContact.name.length === 0"
@@ -81,50 +81,51 @@
   </div>
 </template>
 
-<script lang="ts">
-import { Contact } from "@/models/ContactModel";
+<script setup lang="ts">
+
+import { ref, computed } from "vue";
+import { type Contact } from "@/models/ContactModel";
 import { createContact, updateContact } from "@/services/ContactsApiService";
-import { Component, Prop, Vue } from "vue-property-decorator";
 
-@Component
-export default class ContactFormModal extends Vue {
-  @Prop({ required: false }) private contact?: Contact;
 
-  private editedContact: Contact = this.getEditedContact();
-  private saving = false;
 
-  private get isNew(): boolean {
-    return this.editedContact.id === undefined;
-  }
+const emit = defineEmits(["change", "close"]);
+const { contact } = defineProps<{ contact?: Contact }>();
 
-  private getEditedContact(): Contact {
-    if (this.contact === undefined) {
-      return {
-        name: "",
-        country: "Deutschland",
-        isPerson: false,
-      };
-    } else {
-      return JSON.parse(JSON.stringify(this.contact));
-    }
-  }
-
-  save(): void {
-    if (this.editedContact.id === undefined) {
-      createContact(this.editedContact).then(() => {
-        this.$emit("change");
-        this.$emit("close");
-      });
-    } else {
-      updateContact(this.editedContact).then(() => {
-        this.$emit("change");
-        this.$emit("close");
-      });
-    }
-    this.saving = true;
+const getEditedContact = (): Contact => {
+  if (contact === undefined) {
+    return {
+      name: "",
+      country: "Deutschland",
+      isPerson: false,
+    };
+  } else {
+    return JSON.parse(JSON.stringify(contact));
   }
 }
-</script>
 
+const editedContact = ref<Contact>(getEditedContact());
+const saving = ref(false);
+
+const isNew = computed((): boolean => {
+  return editedContact.value.id === undefined;
+});
+
+const save = (): void => {
+  if (editedContact.value.id === undefined) {
+    createContact(editedContact.value).then(() => {
+      emit("change");
+      emit("close");
+    });
+  } else {
+    updateContact(editedContact.value).then(() => {
+      emit("change");
+      emit("close");
+    });
+  }
+
+  saving.value = true;
+}
+</script>
 <!-- Add "scoped" attribute to limit CSS to this component only -->
 <style scoped lang="scss"></style>

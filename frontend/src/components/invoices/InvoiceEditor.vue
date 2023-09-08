@@ -2,34 +2,34 @@
   <div class="invoice-editor" v-if="invoice !== null">
     <div>
       <div class="top-buttons">
-        <b-button type="is-info" @click="back">Zurück</b-button>
-        <b-button type="is-success" @click="save">Speichern</b-button>
-        <b-button v-if="!isCommitted" type="is-danger" @click="commit"
-          >Festschreiben</b-button
+        <o-button type="is-info" @click="back">Zurück</o-button>
+        <o-button type="is-success" @click="save">Speichern</o-button>
+        <o-button v-if="!isCommitted" type="is-danger" @click="commit"
+          >Festschreiben</o-button
         >
-        <b-button
+        <o-button
           v-if="isCommitted && invoice.document === undefined"
           type="is-warning"
           :loading="isExporting"
           :disabled="invoice.id === undefined"
           @click="tryExport"
-          >Exportieren</b-button
+          >Exportieren</o-button
         >
-        <b-button
+        <o-button
           v-if="isCommitted && invoice.document !== undefined"
           type="is-warning"
           tag="a"
-          :href="`http://localhost:8081/api/documents/${invoice.document.id}`"
+          :href="`/api/documents/${invoice.document.id}`"
           target="_blank"
           :download="`Rechnung ${invoice.invoiceNumber}.pdf`"
-          >PDF Herunterladen</b-button
+          >PDF Herunterladen</o-button
         >
       </div>
     </div>
-    <b-field label="Titel">
-      <b-input @input="change" v-model="invoice.title" />
-    </b-field>
-    <b-field label="Kunde">
+    <o-field label="Titel">
+      <o-input @input="change" v-model="invoice.title" />
+    </o-field>
+    <o-field label="Kunde">
       <contact-search
         :contact="
           invoice.customerContact === undefined ? null : invoice.customerContact
@@ -37,21 +37,21 @@
         :disabled="isCommitted"
         @select="select"
       />
-    </b-field>
+    </o-field>
     <recipient-editor
       @change="change"
       :disabled="isCommitted"
       v-model="invoice.recipient"
     />
-    <b-field grouped>
-      <b-field expanded label="Rechnungsdatum">
-        <b-datepicker
+    <o-field grouped>
+      <o-field expanded label="Rechnungsdatum">
+        <o-datepicker
           @input="change"
           :disabled="isCommitted"
           v-model="invoice.invoiceDate"
         />
         <p class="control">
-          <b-button
+          <o-button
             @click="
               invoice.invoiceDate = undefined;
               change();
@@ -60,11 +60,11 @@
             :disabled="invoice.invoiceDate === undefined || isCommitted"
           />
         </p>
-      </b-field>
-      <b-field expanded label="Bezahlt am">
-        <b-datepicker @input="change" v-model="invoice.paidDate" />
+      </o-field>
+      <o-field expanded label="Bezahlt am">
+        <o-datepicker @input="change" v-model="invoice.paidDate" />
         <p class="control">
-          <b-button
+          <o-button
             @click="
               invoice.paidDate = undefined;
               change();
@@ -73,46 +73,43 @@
             :disabled="invoice.paidDate === undefined"
           />
         </p>
-      </b-field>
-    </b-field>
-    <b-field label="Betreff">
-      <b-input
+      </o-field>
+    </o-field>
+    <o-field label="Betreff">
+      <o-input
         @input="change"
         :disabled="isCommitted"
         v-model="invoice.subject"
       />
-    </b-field>
-    <b-field label="Einleitungstext">
-      <b-input
+    </o-field>
+    <o-field label="Einleitungstext">
+      <o-input
         @input="change"
         :disabled="isCommitted"
         type="textarea"
         v-model="invoice.headerHTML"
       />
-    </b-field>
+    </o-field>
     <items-editor
       @change="change"
       :disabled="isCommitted"
       v-model="invoice.items"
     />
     <p>Gesamt: {{ getTotal() }}</p>
-    <b-field label="Fußtext">
-      <b-input
+    <o-field label="Fußtext">
+      <o-input
         @input="change"
         :disabled="isCommitted"
         type="textarea"
         v-model="invoice.footerHTML"
       />
-    </b-field>
+    </o-field>
   </div>
 </template>
 
-<script lang="ts">
-import { Contact } from "@/models/ContactModel";
-import { Invoice } from "@/models/InvoiceModel";
-import RecipientEditor from "../common/RecipientEditor.vue";
-import ContactSearch from "../common/ContactSearch.vue";
-import ItemsEditor from "../common/ItemsEditor.vue";
+<script setup lang="ts">
+
+import { ref, computed } from "vue";
 import {
   commitInvoice,
   createInvoice,
@@ -120,149 +117,137 @@ import {
   fetchInvoice,
   updateInvoice,
 } from "@/services/InvoicesApiService";
+import { type Contact } from "@/models/ContactModel";
 import { formatCentsAsMoney } from "@/util/MoneyUtil";
-import { Component, Vue } from "vue-property-decorator";
+import { type Invoice } from "@/models/InvoiceModel";
 import { parseISO } from "date-fns";
+import ContactSearch from "../common/ContactSearch.vue";
+import ItemsEditor from "../common/ItemsEditor.vue";
+import RecipientEditor from "../common/RecipientEditor.vue";
+import { useRoute, useRouter } from "vue-router";
+import { useProgrammatic } from "@oruga-ui/oruga-next";
 
-@Component({
-  name: "invoice-editor",
-  components: {
-    RecipientEditor,
-    ContactSearch,
-    ItemsEditor,
-  },
-})
-export default class InvoiceEditor extends Vue {
-  private invoice: Invoice | null = null;
-  private changed = false; //TODO: Warn if exporting with unsaved changes
-  private changedSinceSave = false;
 
-  private isExporting = false;
+const { oruga } = useProgrammatic();
 
-  private change() {
-    this.changedSinceSave = true;
+  const route = useRoute();
+  const router = useRouter();
+  const invoice = ref<Invoice | null>(null);
+  const changed = ref(false); //TODO: Warn if exporting with unsaved changes
+  const changedSinceSave = ref(false);
+  const isExporting = ref(false);
+  const change = ()  => {
+    changedSinceSave.value = true;
   }
-
-  private get isCommitted(): boolean {
-    return this.invoice?.committedTimestamp !== undefined;
-  }
-
-  private commit(): void {
-    if (this.invoice !== null && this.invoice?.id !== undefined) {
-      commitInvoice(this.invoice.id).then((response) => {
-        if (this.invoice !== null) {
-          this.invoice.committedTimestamp = parseISO(
+  const isCommitted = computed((): boolean => {
+    return invoice.value?.committedTimestamp !== undefined;
+  });
+  const commit = (): void => {
+    if (invoice.value !== null && invoice.value?.id !== undefined) {
+      commitInvoice(invoice.value.id).then((response) => {
+        if (invoice.value !== null) {
+          invoice.value.committedTimestamp = parseISO(
             response.committedTimestamp
           );
-          this.invoice.invoiceNumber = response.invoiceNumber;
+          invoice.value.invoiceNumber = response.invoiceNumber;
         }
       });
     }
   }
-
-  private getTotal(): string {
+  const getTotal = (): string => {
     let total = 0;
-    if (this.invoice !== null) {
-      this.invoice.items.forEach((item) => {
+    if (invoice.value !== null) {
+      invoice.value.items.forEach((item) => {
         total += Number.parseInt(
           (item.price.amountCents * item.quantity).toFixed(0)
         );
       });
     }
-    return this.formatCentsAsMoney(total);
+    return formatCentsAsMoney(total);
   }
-
-  private formatCentsAsMoney(cents: number): string {
-    return formatCentsAsMoney(cents);
+  const exportDocument = ()  => {
+    if (invoice.value !== null) {
+      const startInvoiceId = invoice.value.id;
+      exportInvoice(invoice.value)
+        .then((r) => {
+          if (invoice.value !== null && invoice.value?.id === startInvoiceId) {
+            invoice.value.document = r.document;
+          }
+          isExporting.value = false;
+          oruga.toast.open({
+            message: "Export erfolgreich",
+            type: "is-success",
+          });
+        })
+        .catch(() => {
+          isExporting.value = false;
+          oruga.toast.open({
+            message: "Fehler beim Export",
+            type: "is-danger",
+          });
+        });
+      isExporting.value = true;
+    }
   }
-
-  private tryExport() {
-    if (this.changedSinceSave) {
-      this.$buefy.dialog.confirm({
+  const tryExport = ()  => {
+    if (changedSinceSave.value) {
+      oruga.dialog.confirm({
         message:
           "Die Rechnung enthält ungespeicherte Änderungen!\n" +
           "Trotzdem exportieren (ohne ungespeicherte Änderungen)?",
         title: "Ungespeicherte Änderungen",
-        onConfirm: this.export,
+        onConfirm: exportDocument,
         trapFocus: true,
         canCancel: true,
         confirmText: "Ja",
         cancelText: "Abbrechen",
       });
     } else {
-      this.export();
+      exportDocument();
     }
-  }
-
-  private export() {
-    if (this.invoice !== null) {
-      const startInvoiceId = this.invoice.id;
-      exportInvoice(this.invoice)
-        .then((r) => {
-          if (this.invoice !== null && this.invoice?.id === startInvoiceId) {
-            this.invoice.document = r.document;
-          }
-          this.isExporting = false;
-          this.$buefy.toast.open({
-            message: "Export erfolgreich",
-            type: "is-success",
-          });
-        })
-        .catch(() => {
-          this.isExporting = false;
-          this.$buefy.toast.open({
-            message: "Fehler beim Export",
-            type: "is-danger",
-          });
-        });
-      this.isExporting = true;
-    }
-  }
-
-  private back() {
-    this.$router.push({
+  };
+  
+  const back = ()  => {
+    router.push({
       path: "/invoices",
-      query: { forceRefresh: this.changed.toString() },
+      query: { forceRefresh: changed.value.toString() },
     });
   }
-
-  private select(option: Contact) {
-    if (this.invoice !== null) {
-      this.invoice.customerContact = option;
-      this.invoice.recipient!.formOfAddress = option.formOfAddress;
-      this.invoice.recipient!.title = option.title;
-      this.invoice.recipient!.name = option.name;
-      this.invoice.recipient!.firstName = option.firstName;
-      this.invoice.recipient!.street = option.street;
-      this.invoice.recipient!.zipCode = option.zipCode;
-      this.invoice.recipient!.city = option.city;
-      this.invoice.recipient!.houseNumber = option.houseNumber;
-      this.invoice.recipient!.country = option.country;
+  const select = (option: Contact)  => {
+    if (invoice.value !== null) {
+      invoice.value.customerContact = option;
+      invoice.value.recipient!.formOfAddress = option.formOfAddress;
+      invoice.value.recipient!.title = option.title;
+      invoice.value.recipient!.name = option.name;
+      invoice.value.recipient!.firstName = option.firstName;
+      invoice.value.recipient!.street = option.street;
+      invoice.value.recipient!.zipCode = option.zipCode;
+      invoice.value.recipient!.city = option.city;
+      invoice.value.recipient!.houseNumber = option.houseNumber;
+      invoice.value.recipient!.country = option.country;
     }
-    this.change();
+    change();
   }
-
-  private save(): void {
-    if (this.invoice !== null && this.invoice?.id === undefined) {
-      createInvoice(this.invoice).then((result) => {
+  const save = (): void => {
+    if (invoice.value !== null && invoice.value?.id === undefined) {
+      createInvoice(invoice.value).then((result) => {
         history.replaceState(
           history.state,
           document.title,
           "/invoices/" + result.id
         );
-        this.invoice = result;
-        this.changedSinceSave = false;
+        invoice.value = result;
+        changedSinceSave.value = false;
       });
-    } else if (this.invoice !== null) {
-      updateInvoice(this.invoice).then(() => (this.changedSinceSave = false));
+    } else if (invoice.value !== null) {
+      updateInvoice(invoice.value).then(() => (changedSinceSave.value = false));
     }
-    this.changed = true;
+    changed.value = true;
   }
-
-  private created(): void {
-    const id = this.$route.params["id"];
+  const created = (): void => {
+    const id = route.params["id"] as string;
     if (id === "new") {
-      this.invoice = {
+      invoice.value = {
         items: [],
         subject: "Rechnung",
         isCanceled: false,
@@ -274,13 +259,12 @@ export default class InvoiceEditor extends Vue {
         if (v.recipient === undefined) {
           v.recipient = { name: "" };
         }
-        this.invoice = v;
+        invoice.value = v;
       });
     }
   }
-}
+  void created();
 </script>
-
 <style scoped lang="scss">
 .position-input {
   margin-left: auto;

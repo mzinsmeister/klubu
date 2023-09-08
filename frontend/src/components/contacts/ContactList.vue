@@ -1,6 +1,6 @@
 <template>
   <div class="contact-list" v-if="contacts !== null">
-    <b-table
+    <o-table
       :data="contacts"
       :backend-pagination="true"
       aria-next-label="Next page"
@@ -8,78 +8,71 @@
       aria-page-label="Page"
       aria-current-label="Current page"
     >
-      <b-table-column field="id" label="ID" width="20" numeric v-slot="props">
+      <o-table-column field="id" label="ID" width="20" numeric v-slot="props">
         {{ props.row.id }}
-      </b-table-column>
-      <b-table-column field="name" label="Name" width="200" v-slot="props">
+      </o-table-column>
+      <o-table-column field="name" label="Name" width="200" v-slot="props">
         {{ props.row.name }}
-      </b-table-column>
-      <b-table-column custom-key="actions" v-slot="props">
+      </o-table-column>
+      <o-table-column custom-key="actions" v-slot="props">
         <button class="button is-small is-light" @click="view(props.row)">
           Öffnen
         </button>
-      </b-table-column>
-    </b-table>
+      </o-table-column>
+    </o-table>
   </div>
 </template>
 
-<script lang="ts">
-import { Contact } from "@/models/ContactModel";
+<script setup lang="ts">
+
+import { type Contact } from "@/models/ContactModel";
 import { listContacts } from "@/services/ContactsApiService";
-import { Component, Vue } from "vue-property-decorator";
 import ContactForm from "./ContactFormModal.vue";
+import { ref, type Ref } from "vue";
+import { useProgrammatic } from "@oruga-ui/oruga-next";
 
-@Component
-export default class ContactList extends Vue {
-  private contactsCache: Map<number, Array<Contact>> = new Map();
-  private contacts: Array<Contact> | null = null;
+const { oruga } = useProgrammatic();
 
-  private created(): void {
-    listContacts(0, 100000).then((v) => {
-      this.contacts = v;
-      this.contactsCache.set(0, v);
-    });
-  }
-
-  private view(contact: Contact) {
-    this.$buefy.modal.open({
-      parent: this,
-      props: {
-        contact: contact,
+let contactsCache: Map<number, Array<Contact>> = new Map();
+const contacts: Ref<Array<Contact> | null> = ref(null);
+const view = (contact: Contact)  => {
+  oruga.modal.open({
+    parent: this,
+    props: {
+      contact: contact,
+    },
+    component: ContactForm,
+    hasModalCard: true,
+    canCancel: false,
+    trapFocus: true,
+    events: {
+      change: () => {
+        clearCache();
+        reload;
       },
-      component: ContactForm,
-      hasModalCard: true,
-      canCancel: false,
-      trapFocus: true,
-      events: {
-        change: () => {
-          this.clearCache();
-          this.reload;
-        },
-      },
+    },
+  });
+}
+const clearCache = (): void => {
+  contactsCache = new Map();
+}
+const reload = (): void => {
+  pageChange(0);
+}
+const pageChange = (page: number): void => {
+  contacts.value = contactsCache.get(page) ?? null;
+  if (contacts.value === null) {
+    listContacts(page, 50).then((v) => {
+      contacts.value = v;
+      contactsCache.set(page, v);
     });
-  }
-
-  clearCache(): void {
-    this.contactsCache = new Map();
-  }
-
-  reload(): void {
-    this.pageChange(0);
-  }
-
-  private pageChange(page: number): void {
-    this.contacts = this.contactsCache.get(page) ?? null;
-    if (this.contacts === null) {
-      listContacts(page, 50).then((v) => {
-        this.contacts = v;
-        this.contactsCache.set(page, v);
-      });
-    }
   }
 }
+listContacts(0, 100000).then((v) => {
+    contacts.value = v;
+    contactsCache.set(0, v);
+  });
 </script>
-
 <!-- Add "scoped" attribute to limit CSS to this component only -->
 <style scoped lang="scss">
 h3 {

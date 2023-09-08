@@ -1,22 +1,22 @@
 import {
-  ApiPage,
+  type ApiPage,
   documentVerionFromDTO,
-  DocumentVersionDTO,
-  InvoiceCommittedDTO,
-  InvoiceListItemDTO,
-  RequestInvoiceDTO,
-  ResponseInvoiceDTO,
+  type DocumentVersionDTO,
+  type InvoiceCommittedDTO,
+  type InvoiceListItemDTO,
+  type RequestInvoiceDTO,
+  type ResponseInvoiceDTO,
 } from "@/models/ApiModel";
-import { Document, DocumentVersion } from "@/models/DocumentModel";
-import { Invoice, InvoiceListItem } from "@/models/InvoiceModel";
+import type { DocumentVersion } from "@/models/DocumentModel";
+import type { Invoice, InvoiceListItem } from "@/models/InvoiceModel";
+import axios from "axios";
 import { formatISO, parseISO } from "date-fns";
-import Vue from "vue";
 
 export async function listInvoices(
   page: number,
   pageSize: number
 ): Promise<Array<InvoiceListItem>> {
-  const response = await Vue.axios.get<ApiPage<InvoiceListItemDTO>>(
+  const response = await axios.get<ApiPage<InvoiceListItemDTO>>(
     "/api/invoices",
     {
       params: {
@@ -61,7 +61,7 @@ function mapInvoiceDTOToInvoice(dto: ResponseInvoiceDTO): Invoice {
 }
 
 export async function fetchInvoice(id: number): Promise<Invoice> {
-  const response = await Vue.axios.get<ResponseInvoiceDTO>(
+  const response = await axios.get<ResponseInvoiceDTO>(
     "/api/invoices/" + id
   );
   return mapInvoiceDTOToInvoice(response.data);
@@ -84,7 +84,7 @@ function mapInvoiceToDTO(invoice: Invoice): RequestInvoiceDTO {
 }
 
 export async function createInvoice(invoice: Invoice): Promise<Invoice> {
-  const response = await Vue.axios.post(
+  const response = await axios.post(
     "/api/invoices",
     mapInvoiceToDTO(invoice)
   );
@@ -92,13 +92,13 @@ export async function createInvoice(invoice: Invoice): Promise<Invoice> {
 }
 
 export async function updateInvoice(invoice: Invoice): Promise<void> {
-  await Vue.axios.put(`/api/invoices/${invoice.id}`, mapInvoiceToDTO(invoice));
+  await axios.put(`/api/invoices/${invoice.id}`, mapInvoiceToDTO(invoice));
 }
 
 export async function exportInvoice(
   invoice: Invoice
 ): Promise<DocumentVersion> {
-  const response = await Vue.axios.post<DocumentVersionDTO>(
+  const response = await axios.post<DocumentVersionDTO>(
     `/api/invoices/${invoice.id}/export`
   );
   return documentVerionFromDTO(response.data);
@@ -107,6 +107,6 @@ export async function exportInvoice(
 export async function commitInvoice(
   invoiceId: number
 ): Promise<InvoiceCommittedDTO> {
-  const response = await Vue.axios.post(`/api/invoices/${invoiceId}/committed`);
+  const response = await axios.post(`/api/invoices/${invoiceId}/committed`);
   return response.data;
 }

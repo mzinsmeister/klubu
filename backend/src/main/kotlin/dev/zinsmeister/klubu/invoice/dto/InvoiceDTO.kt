@@ -2,6 +2,7 @@ package dev.zinsmeister.klubu.invoice.dto
 
 import dev.zinsmeister.klubu.common.domain.Recipient
 import dev.zinsmeister.klubu.common.dto.ItemDTO
+import dev.zinsmeister.klubu.common.dto.PaymentDTO
 import dev.zinsmeister.klubu.contact.dto.ContactDTO
 import dev.zinsmeister.klubu.documentfile.dto.DocumentDTO
 import dev.zinsmeister.klubu.offer.dto.OfferIdDTO
@@ -25,7 +26,7 @@ data class ResponseInvoiceDTO(
         val title: String?,
         val subject: String?,
         val fromOffer: OfferIdDTO?,
-        val payments: PaymentDTO
+        val payments: List<PaymentDTO>
         )
 
 data class RequestInvoiceDTO(
@@ -39,7 +40,8 @@ data class RequestInvoiceDTO(
         val subject: String?,
         val correctedInvoiceId: Int?,
         val isCancelation: Boolean?,
-        val fromOffer: OfferIdDTO?
+        val fromOffer: OfferIdDTO?,
+
 )
 
 data class InvoiceMetadataDTO(

@@ -6,9 +6,26 @@ plugins {
 	id("org.springframework.boot") version "2.7.3"
 	id("io.spring.dependency-management") version "1.0.11.RELEASE"
 	id("de.undercouch.download") version "4.1.2"
+	id("org.liquibase.gradle") version "2.2.0"
 	kotlin("jvm") version "1.7.10"
 	kotlin("plugin.spring") version "1.7.10"
 	kotlin("plugin.jpa") version "1.7.10"
+}
+
+configurations {
+	liquibase {
+		activities.register("main") {
+			this.arguments = mapOf(
+				"changeLogFile" to "src/main/resources/db/changelog/db.changelog-master.yaml",
+				"url" to "jdbc:postgresql://localhost:5432/klubu",
+				"username" to "klubu",
+				"password" to "klubu-test",
+				"driver" to "org.postgresql.Driver",
+				"referenceUrl" to "hibernate:spring:dev.zinsmeister.klubu?dialect=org.hibernate.dialect.PostgreSQLDialect&hibernate.physical_naming_strategy=org.springframework.boot.orm.jpa.hibernate.SpringPhysicalNamingStrategy&hibernate.implicit_naming_strategy=org.springframework.boot.orm.jpa.hibernate.SpringImplicitNamingStrategy"
+			)
+		}
+		runList = "main"
+	}
 }
 
 group = "dev.zinsmeister"
@@ -22,6 +39,15 @@ repositories {
 }
 
 dependencies {
+	liquibaseRuntime("info.picocli:picocli:4.6.3")
+	liquibaseRuntime("org.liquibase:liquibase-core:4.23.0")
+	liquibaseRuntime("org.liquibase:liquibase-groovy-dsl:2.0.1")
+	liquibaseRuntime("org.liquibase.ext:liquibase-hibernate5:4.22.0")
+	liquibaseRuntime("org.postgresql:postgresql")
+	liquibaseRuntime(sourceSets.main.get().compileClasspath)
+	liquibaseRuntime(sourceSets.main.get().runtimeClasspath)
+	liquibaseRuntime(sourceSets.main.get().output)
+
 	implementation("org.springframework.boot:spring-boot-starter-data-jpa")
 	//implementation("org.springframework.boot:spring-boot-starter-security")
 	implementation("org.springframework.boot:spring-boot-starter-web")
@@ -29,7 +55,7 @@ dependencies {
 
 	implementation("org.liquibase:liquibase-core")
 
-	implementation("com.googlecode.owasp-java-html-sanitizer:owasp-java-html-sanitizer:1.1")
+	implementation("com.googlecode.owasp-java-html-sanitizer:owasp-java-html-sanitizer:20211018.1")
 	implementation("com.github.spullara.mustache.java:compiler:0.9.10")
 	// New Docker baseimage should be built when a new playwright verson is for a new chromium version
 	// TODO: Evaluate goging through chrome devtools protocol directly or using selenium instead

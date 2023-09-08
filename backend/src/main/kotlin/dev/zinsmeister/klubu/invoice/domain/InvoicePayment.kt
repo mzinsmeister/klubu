@@ -10,7 +10,9 @@ import javax.persistence.Id
 // but because it's simpler I will go with separate ones for now. Can be changed to the other option later either way.
 @Entity
 class InvoicePayment(
+    @Column(name = "date", nullable = false)
     override var date: LocalDate,
+    @Column(name = "amount_cents", nullable = false)
     override var amountCents: Int
     ): Payment {
 

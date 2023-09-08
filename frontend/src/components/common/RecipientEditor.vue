@@ -1,84 +1,102 @@
 <template>
   <div class="recipent-editor">
-    <b-field grouped>
-      <b-field expanded label="Anrede">
-        <b-input
+    <o-field grouped>
+      <o-field expanded label="Anrede">
+        <o-input
           @input="change"
           :disabled="isDisabled"
-          v-model="value.formOfAddress"
+          :modelValue="modelValue.formOfAddress"
+          @update:modelValue="$emit('update:modelValue', { ...modelValue, formOfAddress: $event })"
         />
-      </b-field>
-      <b-field expanded label="Titel">
-        <b-input @input="change" :disabled="isDisabled" v-model="value.title" />
-      </b-field>
-    </b-field>
-    <b-field label="Name">
-      <b-input
+      </o-field>
+      <o-field expanded label="Titel">
+        <o-input 
+          @input="change" 
+          :disabled="isDisabled" 
+          :modelValue="modelValue.title"
+          @update:modelValue="$emit('update:modelValue', { ...modelValue, title: $event })" />
+      </o-field>
+    </o-field>
+    <o-field label="Name">
+      <o-input
         @input="change"
         :disabled="isDisabled"
         expanded
-        v-model="value.firstName"
+        :modelValue="modelValue.firstName"
+        @update:modelValue="$emit('update:modelValue', { ...modelValue, firstName: $event })"
       />
-      <b-input
+      <o-input
         @input="change"
         :disabled="isDisabled"
         expanded
-        v-model="value.name"
+        :modelValue="modelValue.name"
+        @update:modelValue="$emit('update:modelValue', { ...modelValue, name: $event })"
       />
-    </b-field>
-    <b-field grouped>
-      <b-field expanded label="Straße">
-        <b-input
+    </o-field>
+    <o-field grouped>
+      <o-field expanded label="Straße">
+        <o-input
           @input="change"
           :disabled="isDisabled"
-          v-model="value.street"
+          :modelValue="modelValue.street"
+          @update:modelValue="$emit('update:modelValue', { ...modelValue, street: $event })"
         />
-      </b-field>
-      <b-field expanded label="Hausnummer">
-        <b-input
+      </o-field>
+      <o-field expanded label="Hausnummer">
+        <o-input
           @input="change"
           :disabled="isDisabled"
-          v-model="value.houseNumber"
+          :modelValue="modelValue.houseNumber"
+          @update:modelValue="$emit('update:modelValue', { ...modelValue, houseNumber: $event })"
         />
-      </b-field>
-    </b-field>
-    <b-field grouped>
-      <b-field expanded label="PLZ">
-        <b-input
+      </o-field>
+    </o-field>
+    <o-field grouped>
+      <o-field expanded label="PLZ">
+        <o-input
           @input="change"
           :disabled="isDisabled"
-          v-model="value.zipCode"
+          :modelValue="modelValue.zipCode"
+          @update:modelValue="$emit('update:modelValue', { ...modelValue, zipCode: $event })"
         />
-      </b-field>
-      <b-field expanded label="Ort">
-        <b-input @input="change" :disabled="isDisabled" v-model="value.city" />
-      </b-field>
-    </b-field>
-    <b-field label="Land">
-      <b-input @input="change" :disabled="isDisabled" v-model="value.country" />
-    </b-field>
+      </o-field>
+      <o-field expanded label="Ort">
+        <o-input 
+          @input="change"
+          :disabled="isDisabled" 
+          :modelValue="modelValue.city"
+          @update:modelValue="$emit('update:modelValue', { ...modelValue, city: $event })" 
+        />
+      </o-field>
+    </o-field>
+    <o-field label="Land">
+      <o-input 
+        @input="change"
+        :disabled="isDisabled"
+        :modelValue="modelValue.country"
+        @update:modelValue="$emit('update:modelValue', { ...modelValue, country: $event })"
+      />
+    </o-field>
   </div>
 </template>
 
-<script lang="ts">
-import { Recipient } from "@/models/CommonModel";
-import { Component, Prop, Vue } from "vue-property-decorator";
+<script setup lang="ts">
 
-@Component({
-  name: "recipient-editor",
-})
-export default class RecipientEditor extends Vue {
-  @Prop() private value!: Recipient;
-  @Prop({ required: false }) private disabled?: boolean;
+import { computed } from "vue";
+import { type Recipient } from "@/models/CommonModel";
 
-  private get isDisabled(): boolean {
-    return this.disabled !== undefined ? this.disabled : false;
-  }
+const { disabled, modelValue } = defineProps<{
+  disabled?: boolean,
+  modelValue:  Recipient,
+}>()
 
-  private change(): void {
-    this.$emit("change");
-  }
+const emit = defineEmits(["change", "update:modelValue"]);
+
+const isDisabled = computed((): boolean => {
+  return disabled !== undefined ? disabled : false;
+});
+const change = (): void => {
+  emit("change");
 }
 </script>
-
 <style scoped lang="scss"></style>

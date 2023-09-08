@@ -11,10 +11,10 @@
         <th></th>
       </thead>
       <tbody>
-        <tr v-for="(item, i) in value" :key="i">
+        <tr v-for="(item, i) in modelValue" :key="i">
           <td :value="i + 1" />
           <td>
-            <b-input
+            <o-input
               @input="change"
               :disabled="isDisabled"
               class="position-input"
@@ -22,7 +22,7 @@
             />
           </td>
           <td>
-            <b-input
+            <o-input
               @input="change"
               :disabled="isDisabled"
               class="position-input"
@@ -31,7 +31,7 @@
             />
           </td>
           <td>
-            <b-input
+            <o-input
               @input="change"
               :disabled="isDisabled"
               class="position-input"
@@ -40,7 +40,7 @@
             />
           </td>
           <td>
-            <b-input
+            <o-input
               @input="change"
               :disabled="isDisabled"
               class="position-input"
@@ -52,7 +52,7 @@
             {{ formatCentsAsMoney(item.quantity * item.price.amountCents) }}
           </td>
           <td>
-            <b-button
+            <o-button
               :disabled="isDisabled"
               icon-right="delete"
               type="is-danger"
@@ -62,58 +62,53 @@
         </tr>
       </tbody>
     </table>
-    <b-button @click="addEmptyItem()" :disabled="isDisabled"
-      >Zusätzliche Position</b-button
+    <o-button @click="addEmptyItem()" :disabled="isDisabled"
+      >Zusätzliche Position</o-button
     >
   </div>
 </template>
 
-<script lang="ts">
-import { Item } from "@/models/CommonModel";
+<script setup lang="ts">
+
+import { computed } from "vue";
 import { formatCentsAsMoney } from "@/util/MoneyUtil";
-import { Component, Prop, Vue } from "vue-property-decorator";
+import { type Item } from "@/models/CommonModel";
 
-@Component({
-  name: "items-editor",
-})
-export default class ItemsEditor extends Vue {
-  @Prop() private value!: Item[];
-  @Prop({ required: false }) private disabled?: boolean;
 
-  private created() {
-    if (this.value.length === 0) {
-      this.addEmptyItem();
+
+let { modelValue, disabled } = defineProps<{
+    modelValue:  Item[], 
+    disabled?: boolean
+  }>();
+
+const emit = defineEmits(["change", "update:modelValue"]);
+
+  const created = ()  => {
+    if (modelValue.length === 0) {
+      addEmptyItem();
     }
   }
-
-  private get isDisabled(): boolean {
-    return this.disabled !== undefined ? this.disabled : false;
+  const isDisabled = computed((): boolean => {
+    return disabled !== undefined ? disabled : false;
+  });
+  const deleteItem = (index: number)  => {
+    emit("update:modelValue", modelValue.filter((_: any, i: number) => i !== index));
+    change();
   }
 
-  private deleteItem(index: number) {
-    this.value.splice(index, 1);
-    this.change();
-  }
-
-  private formatCentsAsMoney(cents: number): string {
-    return formatCentsAsMoney(cents);
-  }
-
-  private addEmptyItem(): void {
+  const addEmptyItem = (): void => {
     const newItem: Item = {
       item: "",
       quantity: 1,
       unit: "",
       price: { amountCents: 0, currency: { code: "EUR" } },
     };
-    this.value.push(newItem);
-    this.change();
+    emit("update:modelValue", modelValue.concat(newItem));
+    change();
   }
-
-  private change(): void {
-    this.$emit("change");
+  const change = (): void => {
+    emit("change");
   }
-}
+  void created();
 </script>
-
 <style scoped lang="scss"></style>
