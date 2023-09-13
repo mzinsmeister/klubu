@@ -3,13 +3,17 @@ import org.gradle.nativeplatform.platform.internal.DefaultNativePlatform
 import org.springframework.boot.gradle.tasks.bundling.BootJar
 
 plugins {
-	id("org.springframework.boot") version "2.7.3"
-	id("io.spring.dependency-management") version "1.0.11.RELEASE"
+	id("org.springframework.boot") version "3.1.3"
+	id("io.spring.dependency-management") version "1.1.3"
 	id("de.undercouch.download") version "4.1.2"
 	id("org.liquibase.gradle") version "2.2.0"
-	kotlin("jvm") version "1.7.10"
-	kotlin("plugin.spring") version "1.7.10"
-	kotlin("plugin.jpa") version "1.7.10"
+	kotlin("jvm") version "1.8.22"
+	kotlin("plugin.spring") version "1.8.22"
+	kotlin("plugin.jpa") version "1.8.22"
+}
+
+java {
+	sourceCompatibility = JavaVersion.VERSION_17
 }
 
 configurations {
@@ -21,16 +25,19 @@ configurations {
 				"username" to "klubu",
 				"password" to "klubu-test",
 				"driver" to "org.postgresql.Driver",
-				"referenceUrl" to "hibernate:spring:dev.zinsmeister.klubu?dialect=org.hibernate.dialect.PostgreSQLDialect&hibernate.physical_naming_strategy=org.springframework.boot.orm.jpa.hibernate.SpringPhysicalNamingStrategy&hibernate.implicit_naming_strategy=org.springframework.boot.orm.jpa.hibernate.SpringImplicitNamingStrategy"
+				"referenceUrl" to "hibernate:spring:dev.zinsmeister.klubu?dialect=org.hibernate.dialect.PostgreSQLDialect&hibernate.physical_naming_strategy=org.springframework.boot.orm.jpa.hibernate.SpringPhysicalNamingStrategy&hibernate.physical_naming_strategy=org.hibernate.boot.model.naming.CamelCaseToUnderscoresNamingStrategy"
 			)
 		}
 		runList = "main"
+	}
+	liquibaseRuntime {
+		extendsFrom(runtimeClasspath.get())
+		extendsFrom(compileClasspath.get())
 	}
 }
 
 group = "dev.zinsmeister"
 version = "0.0.1-SNAPSHOT"
-java.sourceCompatibility = JavaVersion.VERSION_11
 
 val kotestVersion = "5.4.2"
 
@@ -42,11 +49,10 @@ dependencies {
 	liquibaseRuntime("info.picocli:picocli:4.6.3")
 	liquibaseRuntime("org.liquibase:liquibase-core:4.23.0")
 	liquibaseRuntime("org.liquibase:liquibase-groovy-dsl:2.0.1")
-	liquibaseRuntime("org.liquibase.ext:liquibase-hibernate5:4.22.0")
+	liquibaseRuntime("org.liquibase.ext:liquibase-hibernate6:4.22.0")
 	liquibaseRuntime("org.postgresql:postgresql")
-	liquibaseRuntime(sourceSets.main.get().compileClasspath)
-	liquibaseRuntime(sourceSets.main.get().runtimeClasspath)
-	liquibaseRuntime(sourceSets.main.get().output)
+	liquibaseRuntime(sourceSets.getByName("main").output)
+	liquibaseRuntime(files("$buildDir/classes/kotlin/main"))
 
 	implementation("org.springframework.boot:spring-boot-starter-data-jpa")
 	//implementation("org.springframework.boot:spring-boot-starter-security")
@@ -59,10 +65,11 @@ dependencies {
 	implementation("com.github.spullara.mustache.java:compiler:0.9.10")
 	// New Docker baseimage should be built when a new playwright verson is for a new chromium version
 	// TODO: Evaluate goging through chrome devtools protocol directly or using selenium instead
-	implementation("org.seleniumhq.selenium:selenium-support:4.1.1")
-	implementation("org.seleniumhq.selenium:selenium-chrome-driver:4.1.1")
-	implementation("org.seleniumhq.selenium:selenium-remote-driver:4.1.1")
-	implementation("org.seleniumhq.selenium:selenium-api:4.1.1")
+	implementation("org.seleniumhq.selenium:selenium-support:4.10.0")
+	implementation("org.seleniumhq.selenium:selenium-chrome-driver:4.10.0")
+	implementation("org.seleniumhq.selenium:selenium-remote-driver:4.10.0")
+	implementation("org.seleniumhq.selenium:selenium-api:4.10.0")
+	implementation("org.seleniumhq.selenium:selenium-manager:4.10.0")
 	implementation("org.apache.pdfbox:pdfbox:2.0.24")
 	implementation("org.apache.pdfbox:xmpbox:2.0.24")
 
@@ -90,7 +97,7 @@ springBoot {
 tasks.withType<KotlinCompile> {
 	kotlinOptions {
 		freeCompilerArgs = listOf("-Xjsr305=strict")
-		jvmTarget = "11"
+		jvmTarget = "17"
 	}
 }
 

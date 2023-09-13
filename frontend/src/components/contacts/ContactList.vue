@@ -59,6 +59,12 @@ const clearCache = (): void => {
 const reload = (): void => {
   pageChange(0);
 }
+
+defineExpose({
+  reload,
+  clearCache,
+});
+
 const pageChange = (page: number): void => {
   contacts.value = contactsCache.get(page) ?? null;
   if (contacts.value === null) {

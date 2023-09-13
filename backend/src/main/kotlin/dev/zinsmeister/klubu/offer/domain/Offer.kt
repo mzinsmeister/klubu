@@ -10,7 +10,7 @@ import dev.zinsmeister.klubu.itemdocument.domain.ItemDocumentItem
 import java.io.Serializable
 import java.time.Instant
 import java.time.LocalDate
-import javax.persistence.*
+import jakarta.persistence.*
 
 data class OfferId(var offerId: Int? = null, var revision: Int? = null): Serializable
 

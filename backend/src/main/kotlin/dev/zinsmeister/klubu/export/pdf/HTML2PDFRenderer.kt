@@ -5,7 +5,6 @@ import org.openqa.selenium.By
 import org.openqa.selenium.JavascriptExecutor
 import org.openqa.selenium.WebDriver
 import org.openqa.selenium.chrome.ChromeDriver
-import org.openqa.selenium.chrome.ChromeDriverLogLevel
 import org.openqa.selenium.chrome.ChromeOptions
 import org.openqa.selenium.support.ui.ExpectedCondition
 import org.openqa.selenium.support.ui.ExpectedConditions
@@ -49,9 +48,7 @@ class HTML2PDFRenderer(
         // It's a lot uglier than with Playwright but better in a few other ways
 
         val chromeOptions = ChromeOptions()
-            .setHeadless(true)
-            .addArguments("--disable-gpu", "--disable-software-rasterizer", "--no-sandbox", "--disable-dev-shm-usage")
-            .setLogLevel(ChromeDriverLogLevel.SEVERE)
+            .addArguments("--headless", "--disable-gpu", "--disable-software-rasterizer", "--no-sandbox", "--disable-dev-shm-usage")
 
         if(!chromiumPath.isNullOrEmpty()) {
             chromeOptions.setBinary(chromiumPath)

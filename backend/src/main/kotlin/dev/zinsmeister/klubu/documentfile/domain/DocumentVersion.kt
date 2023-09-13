@@ -2,7 +2,7 @@ package dev.zinsmeister.klubu.documentfile.domain
 
 import java.io.Serializable
 import java.time.Instant
-import javax.persistence.*
+import jakarta.persistence.*
 
 data class DocumentVersionId(var document: Int? = null, var version: Int? = null): Serializable
 

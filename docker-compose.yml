@@ -21,10 +21,12 @@ services:
     volumes:
       - ./templates:/templates
       - ./config:/app/config
+      - ./files:/app/files
       - klubu-chromedata:/chromedata
     user: 1000:1000
     environment:
       - SPRING_PROFILES_ACTIVE=dev
+      - SPRING_CONFIG_LOCATION=/app/config/
       - SPRING_DATASOURCE_URL=jdbc:postgresql://db:5432/klubu
       - KLUBU_EXPORT_TEMPLATES_PATH=/templates
       - KLUBU_EXPORT_CHROMIUM_DATAPATH=/chromedata

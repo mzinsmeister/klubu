@@ -1,7 +1,7 @@
 package dev.zinsmeister.klubu.offer.domain
 
 import dev.zinsmeister.klubu.itemdocument.domain.ItemDocumentItem
-import javax.persistence.Entity
+import jakarta.persistence.Entity
 
 // This only needs to be an extra class so that Hibernate creates an extra table for it
 @Entity

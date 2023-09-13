@@ -1,6 +1,6 @@
 package dev.zinsmeister.klubu.receipt.domain
 
-import javax.persistence.*
+import jakarta.persistence.*
 
 @Entity
 class ReceiptItem (

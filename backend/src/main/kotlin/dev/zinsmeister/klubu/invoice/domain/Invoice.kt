@@ -8,7 +8,7 @@ import dev.zinsmeister.klubu.itemdocument.domain.ItemDocument
 import dev.zinsmeister.klubu.itemdocument.domain.ItemDocumentItem
 import dev.zinsmeister.klubu.offer.domain.Offer
 import java.time.LocalDate
-import javax.persistence.*
+import jakarta.persistence.*
 
 //TODO: Add last modified date
 @Entity
