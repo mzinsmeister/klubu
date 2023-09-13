@@ -1,5 +1,7 @@
 package dev.zinsmeister.klubu.invoice.controller
 
+import dev.zinsmeister.klubu.common.domain.Payment
+import dev.zinsmeister.klubu.common.dto.PaymentDTO
 import dev.zinsmeister.klubu.documentfile.dto.DocumentVersionDTO
 import dev.zinsmeister.klubu.invoice.dto.InvoiceMetadataDTO
 import dev.zinsmeister.klubu.invoice.dto.RequestInvoiceDTO

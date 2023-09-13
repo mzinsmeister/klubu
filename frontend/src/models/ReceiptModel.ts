@@ -1,6 +1,6 @@
-import { Money } from "./CommonModel";
-import { Contact } from "./ContactModel";
-import { Document, DocumentData } from "./DocumentModel";
+import { type Money, type Payment } from "./CommonModel";
+import type { Contact } from "./ContactModel";
+import type { Document, DocumentData } from "./DocumentModel";
 
 export interface Receipt {
   id?: number;
@@ -8,7 +8,7 @@ export interface Receipt {
   createdTimestamp?: Date;
   committedTimestamp?: Date;
   receiptNumber: string;
-  paidDate?: Date;
+  payments: Array<Payment>;
   receiptDate?: Date;
   dueDate?: Date;
   supplierContact?: Contact;
@@ -29,4 +29,16 @@ export interface ReceiptListItem {
 export interface ReceiptItem {
   item: string;
   price: Money;
+  category?: ReceiptItemCategory
+}
+
+export interface ReceiptItemCategory {
+  id: number,
+  name: string,
+  categoryType: ReceiptItemCategoryType
+}
+
+export interface ReceiptItemCategoryType {
+  id: number,
+  name: string
 }

@@ -1,9 +1,9 @@
-import { Contact } from "./ContactModel";
-import { Recipient } from "./CommonModel";
-import { Item } from "./CommonModel";
-import { Document, DocumentVersion } from "./DocumentModel";
+import type { Contact } from "./ContactModel";
+import type { Money, Recipient } from "./CommonModel";
+import type { Item } from "./CommonModel";
+import type { Document, DocumentVersion } from "./DocumentModel";
 import { parseISO } from "date-fns";
-import { ReceiptItem } from "./ReceiptModel";
+import type { ReceiptItem } from "./ReceiptModel";
 
 export interface ApiPage<T> {
   content: Array<T>;
@@ -59,13 +59,18 @@ export interface OfferRevisionListItemDTO {
   createdTimestamp: string;
 }
 
+export interface PaymentDTO {
+  date: string;
+  amountCents: number;
+}
+
 export interface ResponseInvoiceDTO {
   id: number;
   items: Array<Item>;
   createdTimestamp: string;
   committedTimestamp?: string;
   invoiceNumber?: number;
-  paidDate?: string;
+  payments: Array<PaymentDTO>;
   invoiceDate?: string;
   isCanceled: boolean;
   isCancelation: boolean;
@@ -128,7 +133,6 @@ export interface ReceiptListItemDTO {
   id: number;
   createdTimestamp: string;
   supplierContact?: Contact;
-  paidDate?: string;
   dueDate?: string;
   receiptDate?: string;
   committed: boolean;
@@ -141,7 +145,7 @@ export interface ResponseReceiptDTO {
   createdTimestamp: string;
   committedTimestamp?: string;
   receiptNumber?: string;
-  paidDate?: string;
+  payments: Array<PaymentDTO>;
   receiptDate?: string;
   dueDate?: string;
   supplierContact?: Contact;
@@ -152,10 +156,16 @@ export interface RequestReceiptDTO {
   receiptNumber: string;
   items: Array<ReceiptItem>;
   supplierContactId?: number;
-  paidDate?: string;
+  payments: Array<PaymentDTO>;
   receiptDate?: string;
   dueDate?: string;
   document?: RequestReceiptDocumentDTO;
+}
+
+export interface RequestReceiptItemDTO {
+  item: string;
+  price: Money;
+  categoryId: number
 }
 
 export interface RequestReceiptDocumentDTO {

@@ -1,6 +1,6 @@
-import { Item, Recipient } from "./CommonModel";
-import { Contact } from "./ContactModel";
-import { Document } from "./DocumentModel";
+import type { Item, Recipient } from "./CommonModel";
+import type { Contact } from "./ContactModel";
+import type { Document } from "./DocumentModel";
 
 export interface Offer {
   id?: number;

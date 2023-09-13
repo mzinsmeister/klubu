@@ -12,6 +12,7 @@ import dev.zinsmeister.klubu.invoice.domain.Invoice
 import dev.zinsmeister.klubu.invoice.dto.*
 import dev.zinsmeister.klubu.invoice.repository.InvoiceRepository
 import dev.zinsmeister.klubu.common.dto.ItemDTO
+import dev.zinsmeister.klubu.common.dto.PaymentDTO
 import dev.zinsmeister.klubu.documentfile.domain.Document
 import dev.zinsmeister.klubu.documentfile.dto.DocumentDTO
 import dev.zinsmeister.klubu.documentfile.dto.DocumentVersionDTO
@@ -19,6 +20,7 @@ import dev.zinsmeister.klubu.documentfile.service.DocumentService
 import dev.zinsmeister.klubu.exception.NotCommittedException
 import dev.zinsmeister.klubu.export.service.ExportService
 import dev.zinsmeister.klubu.invoice.domain.InvoiceItem
+import dev.zinsmeister.klubu.invoice.domain.InvoicePayment
 import dev.zinsmeister.klubu.offer.domain.OfferId
 import dev.zinsmeister.klubu.offer.dto.OfferIdDTO
 import dev.zinsmeister.klubu.offer.repository.OfferRepository
@@ -65,9 +67,10 @@ class InvoiceService(private val repository: InvoiceRepository,
         val foundEntity = repository.findByIdOrNull(id)
                 ?: throw NotFoundInDBException("Invoice not found")
         foundEntity.title = dto.title
-        foundEntity.paidDate = dto.paidDate?.let { LocalDate.parse(it) }
         foundEntity.offer = dto.fromOffer?.let { offerRepository.findByIdOrNull(OfferId(it.id, it.revision))
                 ?: throw NotFoundInDBException("Offer not found") }
+        foundEntity.payments.clear()
+        foundEntity.payments.addAll(dto.payments.map { InvoicePayment(LocalDate.parse(it.date), it.amountCents) })
         if(!foundEntity.isCommitted) { // TODO: Is silently not updating the other fields correct behaviour here?
             try {
                 if(foundEntity.customerContact?.contactId != dto.customerContactId) {
@@ -138,7 +141,6 @@ class InvoiceService(private val repository: InvoiceRepository,
             invoiceNumber = entity.invoiceNumber,
             correctedInvoice = entity.correctedInvoice?.let { mapInvoiceEntityToMetadataDTO(it) },
             correctedByInvoice = entity.correctedBy?.let { mapInvoiceEntityToMetadataDTO(it) },
-            paidDate = entity.paidDate?.format(DateTimeFormatter.ISO_LOCAL_DATE),
             invoiceDate = entity.documentDate?.format(DateTimeFormatter.ISO_LOCAL_DATE),
             committedTimestamp = entity.committedTimestamp?.isoFormat(),
             createdTimestamp = entity.createdTimestamp.isoFormat(),
@@ -152,7 +154,8 @@ class InvoiceService(private val repository: InvoiceRepository,
             footerHTML = entity.footerHTML,
             title = entity.title,
             subject = entity.subject,
-            fromOffer = entity.offer?.let { OfferIdDTO(it.offerId, it.revision) }
+            fromOffer = entity.offer?.let { OfferIdDTO(it.offerId, it.revision) },
+            payments = entity.payments.map { PaymentDTO(it) }
     )
 
     private fun mapInvoiceDTOToEntity(dto: RequestInvoiceDTO) = Invoice(
@@ -160,12 +163,12 @@ class InvoiceService(private val repository: InvoiceRepository,
                     ?: throw NotFoundInDBException("Contact not found") },
             items = dto.items.map { mapInvoiceItemDTOToEntity(it) }.toMutableList(),
             recipient = dto.recipient,
-            paidDate = dto.paidDate?.let { LocalDate.parse(it) },
             invoiceDate = dto.invoiceDate?.let { LocalDate.parse(it) },
             headerHTML = dto.headerHTML,
             footerHTML = dto.footerHTML,
             title = dto.title,
-            subject = dto.subject
+            subject = dto.subject,
+            payments = dto.payments.map { InvoicePayment(LocalDate.parse(it.date), it.amountCents) }.toMutableSet(),
     // TODO: Add cancelation/correction stuff here
     )
 
@@ -185,7 +188,6 @@ class InvoiceService(private val repository: InvoiceRepository,
             isCancelation = entity.isCancelation,
             committed = entity.isCommitted,
             createdTimestamp = entity.createdTimestamp.isoFormat(),
-            paidDate = entity.paidDate?.format(DateTimeFormatter.ISO_LOCAL_DATE)
     )
 
     private fun mapInvoiceEntityToExportDTO(entity: Invoice) = ExportInvoiceDTO(

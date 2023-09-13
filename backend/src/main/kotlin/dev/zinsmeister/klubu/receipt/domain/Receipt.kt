@@ -21,12 +21,15 @@ class Receipt(
 
     receiptDate: LocalDate?,
 
-    dueDate: LocalDate?,
+    dueDate: LocalDate? = null,
+
+    deliveryDate: LocalDate? = null,
 
     document: Document? = null,
 
-    @Column
-    var paidDate: LocalDate? = null,
+    @OneToMany(orphanRemoval = true, cascade = [CascadeType.ALL])
+    @JoinColumn(name = "RECEIPT_ID")
+    val payments: MutableSet<ReceiptPayment> = mutableSetOf(),
 
     @Column(name = "CREATED_TIMESTAMP", updatable = false, nullable = false)
     val createdTimestamp: Instant = Instant.now(),
@@ -44,6 +47,16 @@ class Receipt(
         }
         field = value
     }
+
+    @Column
+    var deliveryDate: LocalDate? = deliveryDate
+        set(value) {
+            if(value == field) return
+            if(isCommitted) {
+                throw IllegalModificationException("Modification of committed document not allowed")
+            }
+            field = value
+        }
 
     @Column
     var dueDate: LocalDate? = dueDate

@@ -1,19 +1,19 @@
-import Vue from "vue";
-import axios from "axios";
-import VueAxios from "vue-axios";
-import App from "./App.vue";
-import router from "./router";
-import store from "./store";
-import Buefy from "buefy";
-import "./assets/scss/app.scss";
+import './assets/scss/app.scss'
+import '@mdi/font/css/materialdesignicons.css';
 
-Vue.use(Buefy);
-Vue.use(VueAxios, axios);
+import { createApp } from 'vue'
+import { createPinia } from 'pinia'
 
-Vue.config.productionTip = false;
+import App from './App.vue'
+import router from './router'
+import Oruga from "@oruga-ui/oruga-next"
+import { bulmaConfig } from "@oruga-ui/theme-bulma"
 
-new Vue({
-  router,
-  store,
-  render: (h) => h(App),
-}).$mount("#app");
+const app = createApp(App)
+
+app.use(createPinia())
+app.use(router)
+
+app.use(Oruga, {...bulmaConfig, iconPack: 'mdi'});
+
+app.mount('#app')

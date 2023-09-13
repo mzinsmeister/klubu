@@ -14,7 +14,7 @@ class InvoiceTest: WordSpec({
     val invoiceFactory = fun (contact: Contact?, recipient: Recipient?, items: MutableList<InvoiceItem>,
              title: String?, headerHTML: String?, footerHTML: String?,subject: String?, documentDate: LocalDate?): Invoice {
         return Invoice(
-            contact, recipient, items, title, headerHTML, footerHTML, subject, null, documentDate, null
+            contact, recipient, items, title, headerHTML, footerHTML, subject, null, documentDate
         )
     }
     val invoiceItemFactory = fun (name: String, quantity: Double, unit: String, priceCents: Int): InvoiceItem {
@@ -34,7 +34,6 @@ class InvoiceTest: WordSpec({
             subject = null,
             offer = null,
             invoiceDate = null,
-            paidDate = null
         )
         invoice.invoiceNumber = 123
         "be invoiceNumber as a string" {
@@ -52,8 +51,7 @@ class InvoiceTest: WordSpec({
             footerHTML = null,
             subject = null,
             offer = null,
-            invoiceDate = LocalDate.of(2021, 12, 12),
-            paidDate = null
+            invoiceDate = LocalDate.of(2021, 12, 12)
         )
         invoice.invoiceNumber = 123
         "be invoiceDate" {

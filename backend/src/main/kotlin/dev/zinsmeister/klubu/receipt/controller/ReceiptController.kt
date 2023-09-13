@@ -1,9 +1,6 @@
 package dev.zinsmeister.klubu.receipt.controller
 
-import dev.zinsmeister.klubu.receipt.dto.ReceiptMetadataDTO
-import dev.zinsmeister.klubu.receipt.dto.RequestReceiptDTO
-import dev.zinsmeister.klubu.receipt.dto.ResponseReceiptCommittedDTO
-import dev.zinsmeister.klubu.receipt.dto.ResponseReceiptDTO
+import dev.zinsmeister.klubu.receipt.dto.*
 import dev.zinsmeister.klubu.receipt.service.ReceiptService
 import org.springframework.data.domain.Page
 import org.springframework.data.domain.Pageable
@@ -39,6 +36,11 @@ class ReceiptController(
     @PostMapping("{id}/committed")
     fun commitReceipt(@PathVariable("id") id: Int): ResponseReceiptCommittedDTO {
         return service.commitReceipt(id)
+    }
+
+    @GetMapping("itemcategories")
+    fun getItemCategories(): List<ReceiptItemCategoryDTO> {
+        return service.fetchItemCategories()
     }
 
 }

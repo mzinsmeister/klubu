@@ -1,6 +1,6 @@
 <template>
   <div class="receipt-list">
-    <b-table
+    <o-table
       v-if="receipts !== null"
       :data="receipts"
       :backend-pagination="true"
@@ -9,7 +9,7 @@
       aria-page-label="Page"
       aria-current-label="Current page"
     >
-      <b-table-column
+      <o-table-column
         field="id"
         label="Belegsnr."
         width="20"
@@ -17,81 +17,67 @@
         v-slot="props"
       >
         {{ props.row.receiptNumber }}
-      </b-table-column>
-      <!--<b-table-column field="title" label="Titel" width="200" v-slot="props">
+      </o-table-column>
+      <!--o-table-column field="title" label="Titel" width="200" v-slot="props">
         {{ props.row.title }}
-      </b-table-column>-->
-      <b-table-column
+      </o-table-column>-->
+      <o-table-column
         field="supplierContact.name"
         label="Lieferant"
         width="200"
         v-slot="props"
       >
         {{ getSupplierName(props.row.supplierContact) }}
-      </b-table-column>
-      <b-table-column custom-key="actions" v-slot="props">
+      </o-table-column>
+      <o-table-column custom-key="actions" v-slot="props">
         <button class="button is-small is-light" @click="view(props.row.id)">
           Öffnen
         </button>
-      </b-table-column>
-    </b-table>
+      </o-table-column>
+    </o-table>
   </div>
 </template>
 
-<script lang="ts">
-import { Contact } from "@/models/ContactModel";
-import { ReceiptListItem } from "@/models/ReceiptModel";
+<script setup lang="ts">
+
+import { type Contact } from "@/models/ContactModel";
 import { listReceipts } from "@/services/ReceiptsApiService";
-import { Component, Vue } from "vue-property-decorator";
+import { type ReceiptListItem } from "@/models/ReceiptModel";
+import { useRoute, useRouter } from "vue-router";
+import { ref, type Ref } from "vue";
 
+const route = useRoute();
+const router = useRouter();
 const PAGE_SIZE = 100000;
-
-@Component({
-  name: "receipt-list",
-})
-export default class ReceiptList extends Vue {
-  private pagesCache: Map<number, Array<ReceiptListItem>> = new Map();
-  private receipts: Array<ReceiptListItem> | null = null;
-
-  private created(): void {
-    this.pageChange(0);
-  }
-
-  private activated(): void {
-    if (this.$route.query["forceRefresh"] === "true") {
-      this.clearCache();
-      this.reload();
-    }
-  }
-
-  private view(id: number): void {
-    this.$router.push(`/receipts/${id}`);
-  }
-
-  private getSupplierName(supplierContact: Contact | undefined): string {
-    return supplierContact?.name ?? "";
-  }
-
-  clearCache(): void {
-    this.pagesCache = new Map();
-  }
-
-  reload(): void {
-    this.pageChange(0);
-  }
-
-  private pageChange(page: number): void {
-    this.receipts = this.pagesCache.get(page) ?? null;
-    if (this.receipts === null) {
-      listReceipts(page, PAGE_SIZE).then((v) => {
-        this.receipts = v;
-        this.pagesCache.set(page, v);
-      });
-    }
+let pagesCache: Map<number, Array<ReceiptListItem>> = new Map();
+const receipts: Ref<Array<ReceiptListItem> | null> = ref(null);
+const view = (id: number): void => {
+  router.push(`/receipts/${id}`);
+}
+const getSupplierName = (supplierContact: Contact | undefined): string => {
+  return supplierContact?.name ?? "";
+}
+const clearCache = (): void => {
+  pagesCache = new Map();
+}
+const reload = (): void => {
+  pageChange(0);
+}
+const pageChange = (page: number): void => {
+  receipts.value = pagesCache.get(page) ?? null;
+  if (receipts.value === null) {
+    listReceipts(page, PAGE_SIZE).then((v) => {
+      receipts.value = v;
+      pagesCache.set(page, v);
+    });
   }
 }
+if (route.query["forceRefresh"] === "true") {
+  clearCache();
+  reload();
+}
+pageChange(0);
 </script>
-
 <!-- Add "scoped" attribute to limit CSS to this component only -->
 <style scoped lang="scss">
 h3 {

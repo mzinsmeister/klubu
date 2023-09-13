@@ -1,94 +1,105 @@
 <template>
   <div class="items-editor">
-    <table>
-      <thead>
-        <th></th>
-        <th>Position</th>
-        <th>Betrag</th>
-        <th></th>
-      </thead>
-      <tbody>
-        <tr v-for="(item, i) in value" :key="i">
-          <td :value="i + 1" />
-          <td>
-            <b-input
-              @input="change"
-              :disabled="isDisabled"
-              class="position-input"
-              v-model="item.item"
-            />
-          </td>
-          <td>
-            <b-input
-              @input="change"
-              :disabled="isDisabled"
-              class="position-input"
-              style="max-width: 100px"
-              v-model="item.price.amountCents"
-            />
-          </td>
-          <td>
-            <b-button
-              :disabled="isDisabled"
-              icon-right="delete"
-              type="is-danger"
-              @click="deleteItem(i)"
-            />
-          </td>
-        </tr>
-      </tbody>
-    </table>
-    <b-button @click="addEmptyItem()" :disabled="isDisabled"
-      >Zusätzliche Position</b-button
+    <div class="receipt-item-inputs" v-for="(item, i) in props.modelValue" :key="i">
+      <o-field label="Beschreibung">
+        <o-input
+         @update:modelValue="change"
+          :disabled="isDisabled"
+          class="position-input"
+          v-model="item.item"
+        />
+      </o-field>
+      <o-field label="Kategorie">
+        <o-select 
+         @update:modelValue="change"
+          :disabled="isDisabled"
+          placeholder="Kategorie wählen"
+          class="position-input"
+          style="width: 100%;"
+          v-model="item.category"
+          :loading="item.category === undefined && itemCategories === null"
+          >
+            <option
+                v-for="option in itemCategories"
+                :value="option"
+                :key="option.id">
+                {{ option.name }}
+            </option>
+        </o-select>
+      </o-field>
+      <o-field grouped group-multiline>
+        <o-field label="Preis in Cent">
+          <o-input
+            @update:modelValue="change(); item.price.amountCents = $event !== '' ? Number.parseInt($event) : 0"
+            :disabled="isDisabled"
+            class="position-input"
+            v-model="item.price.amountCents"
+          />
+        </o-field>
+        <o-field label="Löschen?">
+          <o-button
+            :disabled="isDisabled"
+            icon-right="delete"
+            variant="danger"
+            @click="deleteItem(i)"
+          />
+      </o-field>
+    </o-field>  
+    </div>
+    <o-button @click="addEmptyItem()" style="margin-top: 20px" :disabled="isDisabled"
+      >Zusätzliche Position</o-button
     >
   </div>
 </template>
 
-<script lang="ts">
-import { ReceiptItem } from "@/models/ReceiptModel";
-import { formatCentsAsMoney } from "@/util/MoneyUtil";
-import { Component, Prop, Vue } from "vue-property-decorator";
+<script setup lang="ts">
+
+import { computed, ref, type Ref } from "vue";
+import { fetchReceiptItemCategories } from "@/services/ReceiptsApiService";
+import { type ReceiptItem, type ReceiptItemCategory } from "@/models/ReceiptModel";
+
+
+const props = defineProps<{
+  modelValue:  ReceiptItem[], 
+  disabled?: boolean,
+}>()
+
+const emit = defineEmits(["change", "update:modelValue"]);
+const itemCategories:  Ref<Array<ReceiptItemCategory> | null> = ref(null);
+
+const change = (): void => {
+  emit("change");
+}
 
 //TODO: amountCents is String after input but should be number (somehow still works)
-@Component({
-  name: "items-editor",
-})
-export default class ItemsEditor extends Vue {
-  @Prop() private value!: ReceiptItem[];
-  @Prop({ required: false }) private disabled?: boolean;
 
-  private created() {
-    if (this.value.length === 0) {
-      this.addEmptyItem();
-    }
-  }
-
-  private get isDisabled(): boolean {
-    return this.disabled !== undefined ? this.disabled : false;
-  }
-
-  private deleteItem(index: number) {
-    this.value.splice(index, 1);
-    this.change();
-  }
-
-  private formatCentsAsMoney(cents: number): string {
-    return formatCentsAsMoney(cents);
-  }
-
-  private addEmptyItem(): void {
-    const newItem: ReceiptItem = {
-      item: "",
-      price: { amountCents: 0, currency: { code: "EUR" } },
-    };
-    this.value.push(newItem);
-    this.change();
-  }
-
-  private change(): void {
-    this.$emit("change");
-  }
+const isDisabled = computed((): boolean => {
+  return props.disabled !== undefined ? props.disabled : false;
+});
+const deleteItem = (index: number)  => {
+  emit("update:modelValue", props.modelValue.filter((_: any, i: number) => i !== index));
+  change();
 }
+const addEmptyItem = (): void => {
+  const newItem: ReceiptItem = {
+    item: "",
+    price: { amountCents: 0, currency: { code: "EUR" } },
+    category: undefined
+  };
+  emit("update:modelValue", [...props.modelValue, newItem]);
+  change();
+}
+if (props.modelValue.length === 0) {
+  addEmptyItem();
+}
+fetchReceiptItemCategories().then((data) => {
+  itemCategories.value = data;
+})
 </script>
-
-<style scoped lang="scss"></style>
+<style scoped lang="scss">
+  .receipt-item-inputs {
+    margin-top: 20px;
+    border-bottom: 1px solid lightgrey;
+    padding-bottom: 20px;
+  }
+</style>

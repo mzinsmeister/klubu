@@ -1,9 +1,7 @@
 // Included below are all the defined variables from Bulma
 // Modify as needed, removing the !default attribute.
 
-// Colors
-@import "~bulma/sass/utilities/initial-variables";
-@import "~bulma/sass/utilities/functions";
+@import "bulma/sass/utilities/_all";
 
 $black:        hsl(0, 0%, 4%) !default;
 $black-bis:    hsl(0, 0%, 7%) !default;
@@ -154,3 +152,85 @@ $size-medium: $size-5 !default;
 $size-large: $size-4 !default;
 
 $sidebar-width: 200px;
+
+
+// Set your colors
+$primary: #8c67ef;
+$primary-light: findLightColor($primary);
+$primary-dark: findDarkColor($primary);
+$primary-invert: findColorInvert($primary);
+$twitter: #4099FF;
+$twitter-invert: findColorInvert($twitter);
+
+// Lists and maps
+$custom-colors: null !default;
+$custom-shades: null !default;
+
+// Links
+$link: $primary;
+$link-light: $primary-light;
+$link-invert: $primary-invert;
+$link-focus-border: $primary;
+$link-dark: $primary-dark;
+
+// Setup $colors to use as bulma classes (e.g. 'is-twitter')
+$colors: mergeColorMaps(
+    (
+        "white": (
+            $white,
+            $black,
+        ),
+        "black": (
+            $black,
+            $white,
+        ),
+        "light": (
+            $light,
+            $light-invert,
+        ),
+        "dark": (
+            $dark,
+            $dark-invert,
+        ),
+        "primary": (
+            $primary,
+            $primary-invert,
+            $primary-light,
+            $primary-dark,
+        ),
+        "link": (
+            $link,
+            $link-invert,
+            $link-light,
+            $link-dark,
+        ),
+        "info": (
+            $info,
+            $info-invert,
+            $info-light,
+            $info-dark,
+        ),
+        "success": (
+            $success,
+            $success-invert,
+            $success-light,
+            $success-dark,
+        ),
+        "warning": (
+            $warning,
+            $warning-invert,
+            $warning-light,
+            $warning-dark,
+        ),
+        "danger": (
+            $danger,
+            $danger-invert,
+            $danger-light,
+            $danger-dark,
+        ),
+    ),
+    $custom-colors
+);
+
+@import "bulma/bulma";
+@import '@oruga-ui/theme-bulma/dist/scss/bulma';

@@ -19,10 +19,12 @@ class ReceiptTest: WordSpec({
         supplierContact: Contact? = null,
         receiptDate: LocalDate? = null,
         dueDate: LocalDate? = null,
+        deliveryDate: LocalDate? = null,
         document: Document? = null,
-        paidDate: LocalDate? = null,
+        payments: MutableSet<ReceiptPayment> = mutableSetOf(),
         createdTimestamp: Instant = Instant.now()
-    ) = Receipt(receiptNumber, items, supplierContact, receiptDate, dueDate, document, paidDate, createdTimestamp)
+    ) = Receipt(receiptNumber, items, supplierContact, receiptDate, dueDate, deliveryDate,
+        document, payments,createdTimestamp)
 
     "Modifying receipt number" When {
         val newReceiptNumber = "REC-1289"
@@ -103,25 +105,6 @@ class ReceiptTest: WordSpec({
                 shouldThrowExactlyUnit<IllegalModificationException> {
                     receipt.dueDate = newDueDate
                 }
-            }
-        }
-    }
-
-    "Modifying paid date" When {
-        val newPaidDate = LocalDate.of(2020, 1, 1)
-        "receipt is not commited" should {
-            val receipt = makeReceipt()
-            receipt.paidDate = newPaidDate
-            "modify" {
-                receipt.paidDate shouldBe newPaidDate
-            }
-        }
-        "receipt is commited" should {
-            val receipt = makeReceipt()
-            receipt.committedTimestamp = Instant.now()
-            receipt.paidDate = newPaidDate
-            "modify" {
-                receipt.paidDate shouldBe newPaidDate
             }
         }
     }

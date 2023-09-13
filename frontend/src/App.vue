@@ -4,18 +4,10 @@
     <router-view class="content" />
   </div>
 </template>
-<script>
-import { Component, Vue } from "vue-property-decorator";
-import Sidebar from "@/components/Sidebar.vue";
+<script setup lang="ts">
+import Sidebar from "@/components/KlubuSidebar.vue";
 
-@Component({
-  components: {
-    Sidebar,
-  },
-})
-export default class App extends Vue {}
 </script>
-
 <style lang="scss" scoped>
 #app {
   font-family: Avenir, Helvetica, Arial, sans-serif;
@@ -24,7 +16,6 @@ export default class App extends Vue {}
   text-align: center;
   color: $text;
 }
-
 .content {
   padding-left: $sidebar-width;
 }

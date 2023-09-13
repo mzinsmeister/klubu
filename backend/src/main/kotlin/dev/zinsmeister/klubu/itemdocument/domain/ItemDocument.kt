@@ -20,7 +20,7 @@ abstract class ItemDocument<Item: ItemDocumentItem> (
     @OneToMany(cascade = [CascadeType.ALL], orphanRemoval = false)
     @OrderColumn(name = "POSITION")
     @JoinColumn(name = "DOCUMENT_ID")
-    private var items: MutableList<Item>,
+    private val items: MutableList<Item>,
 
     @Column
     var title: String?,

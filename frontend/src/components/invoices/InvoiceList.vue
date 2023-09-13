@@ -1,6 +1,6 @@
 <template>
   <div class="invoice-list">
-    <b-table
+    <o-table
       v-if="invoices !== null"
       :data="invoices"
       :backend-pagination="true"
@@ -9,7 +9,7 @@
       aria-page-label="Page"
       aria-current-label="Current page"
     >
-      <b-table-column
+      <o-table-column
         field="id"
         label="Rechnungsnr."
         width="20"
@@ -21,81 +21,70 @@
             ? props.row.invoiceNumber
             : "Keine"
         }}
-      </b-table-column>
-      <b-table-column field="title" label="Titel" width="200" v-slot="props">
+      </o-table-column>
+      <o-table-column field="title" label="Titel" width="200" v-slot="props">
         {{ props.row.title }}
-      </b-table-column>
-      <b-table-column
+      </o-table-column>
+      <o-table-column
         field="customerContact.name"
         label="Kunde"
         width="200"
         v-slot="props"
       >
         {{ getCustomerName(props.row.customerContact) }}
-      </b-table-column>
-      <b-table-column custom-key="actions" v-slot="props">
+      </o-table-column>
+      <o-table-column custom-key="actions" v-slot="props">
         <button class="button is-small is-light" @click="view(props.row.id)">
           Öffnen
         </button>
-      </b-table-column>
-    </b-table>
+      </o-table-column>
+    </o-table>
   </div>
 </template>
 
-<script lang="ts">
-import { Contact } from "@/models/ContactModel";
-import { InvoiceListItem } from "@/models/InvoiceModel";
+<script setup lang="ts">
+import { type Contact } from "@/models/ContactModel";
+import { type InvoiceListItem } from "@/models/InvoiceModel";
 import { listInvoices } from "@/services/InvoicesApiService";
-import { Component, Vue } from "vue-property-decorator";
+import { ref, type Ref } from "vue";
+import { useRoute, useRouter } from "vue-router";
 
+const route = useRoute();
+const router = useRouter();
 const PAGE_SIZE = 100000;
 
-@Component({
-  name: "invoice-list",
-})
-export default class InvoiceList extends Vue {
-  private pagesCache: Map<number, Array<InvoiceListItem>> = new Map();
-  private invoices: Array<InvoiceListItem> | null = null;
+let pagesCache: Map<number, Array<InvoiceListItem>> = new Map();
+const invoices: Ref<Array<InvoiceListItem> | null> = ref(null);
 
-  private created(): void {
-    this.pageChange(0);
-  }
-
-  private activated(): void {
-    if (this.$route.query["forceRefresh"] === "true") {
-      this.clearCache();
-      this.reload();
-    }
-  }
-
-  private view(id: number): void {
-    this.$router.push(`/invoices/${id}`);
-  }
-
-  private getCustomerName(customerContact: Contact | undefined): string {
-    return customerContact?.name ?? "";
-  }
-
-  clearCache(): void {
-    this.pagesCache = new Map();
-  }
-
-  reload(): void {
-    this.pageChange(0);
-  }
-
-  private pageChange(page: number): void {
-    this.invoices = this.pagesCache.get(page) ?? null;
-    if (this.invoices === null) {
-      listInvoices(page, PAGE_SIZE).then((v) => {
-        this.invoices = v;
-        this.pagesCache.set(page, v);
-      });
-    }
+const pageChange = (page: number): void => {
+  invoices.value = pagesCache.get(page) ?? null;
+  if (invoices.value === null) {
+    listInvoices(page, PAGE_SIZE).then((v) => {
+      invoices.value = v;
+      pagesCache.set(page, v);
+    });
   }
 }
-</script>
 
+const view = (id: number): void => {
+  router.push(`/invoices/${id}`);
+}
+const getCustomerName = (customerContact: Contact | undefined): string => {
+  return customerContact?.name ?? "";
+}
+const clearCache = (): void => {
+  pagesCache = new Map();
+}
+const reload = (): void => {
+  pageChange(0);
+}
+if (route.query["forceRefresh"] === "true") {
+  clearCache();
+  reload();
+}
+
+pageChange(0);
+</script>
 <!-- Add "scoped" attribute to limit CSS to this component only -->
 <style scoped lang="scss">
 h3 {

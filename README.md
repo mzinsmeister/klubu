@@ -91,11 +91,23 @@ of a hack btw.). You can have a look at the Spring Boot docs for all the differe
 configuration. In general look at the development config under backend/main/resources/config for reference.
 
 If you quickly want to have an instance up and running for testing purposes there's a docker-compose.yml 
-file in the root directory that allows you to do that. Just call
+file in the root directory that allows you to do that. Just copy the user.properties file in backend/main/resources/config
+to a config directory in the root of the project and call 
 ```    
 docker compose up
 ```
 in the root directory and a docker image should be built and run in combination with a postgres database.
 
 For production use, you can create a docker-compose.yml file similar to that one. In general the whole installation
-experience still needs some work because the Dockerfile should also generally add a config directory to the classpath.
+experience still needs some work.
+
+## Database
+
+There's currently no database migration tool at work but introducing Liquibase is planned. This will allow KluBu to
+be used with almost any RDBMS but only Postgres (and SQLite once (and if) a standalone Desktop version is introduced)
+will be actually tested with for now and unless you have a very good reason not to, just use that.
+Since the tool is currently (and probably will always be) only meant for people who don't have a lot of invoices, 
+offers, receipts and contacts anyway, optimizing the database by creating indexes is currently not a priority 
+since a lot of accesses happen through the primary key anyway or will result in sequential scans anyway and most 
+table will stay in the ballpark of a few thousand rows at best, there will be almost no performance difference
+between sequential scans and index accesses anyway.

@@ -1,6 +1,6 @@
 <template>
-  <div class="contact-search">
-    <b-autocomplete
+  <div class="props.contact-search">
+    <o-autocomplete
       :disabled="isDisabled"
       :data="contactSuggestions"
       v-model="contactString"
@@ -8,39 +8,22 @@
       @select="select"
       :clear-on-select="true"
     >
-      <template slot-scope="props">
+      <template v-slot="{option}">
         <div class="customerSuggestion">
-          {{ formatContact(props.option) }}
+          {{ formatContact(option) }}
         </div>
       </template>
-    </b-autocomplete>
+    </o-autocomplete>
   </div>
 </template>
 
-<script lang="ts">
-import { Component, Prop, Vue } from "vue-property-decorator";
+<script setup lang="ts">
+import { OAutocomplete } from "@oruga-ui/oruga-next"
+import { ref, computed } from "vue";
+import type { Contact } from "@/models/ContactModel";
 import { listContacts } from "@/services/ContactsApiService";
-import { Contact } from "@/models/ContactModel";
 
-@Component({
-  name: "contact-search",
-})
-export default class ContactSearch extends Vue {
-  @Prop() private contact!: Contact | null;
-  @Prop({ required: false }) private disabled?: boolean;
-
-  private contactSuggestions: Contact[] = [];
-  private contactString = this.contact ? this.formatContact(this.contact) : "";
-
-  private get isDisabled(): boolean {
-    return this.disabled !== undefined ? this.disabled : false;
-  }
-
-  private change(): void {
-    this.$emit("change");
-  }
-
-  private formatContact(contact: Contact): string {
+const formatContact = (contact: Contact): string => {
     let result = contact.name;
     if (
       contact.firstName !== undefined &&
@@ -52,15 +35,25 @@ export default class ContactSearch extends Vue {
     return result;
   }
 
-  private getcontactSuggestions(name: string): void {
-    listContacts(0, 10, name).then((v) => (this.contactSuggestions = v));
-  }
+const props = defineProps<{
+  contact?:  Contact | null, 
+  disabled?: boolean
+}>();
 
-  private select(option: Contact) {
-    this.contactString = this.formatContact(option);
-    this.$emit("select", option);
-  }
+const emit = defineEmits(["select", "change"]);
+
+const contactSuggestions = ref<Contact[]>([]);
+let contactString = props.contact ? formatContact(props.contact) : "";
+const isDisabled = computed((): boolean => {
+  return props.disabled !== undefined ? props.disabled : false;
+});
+
+const getcontactSuggestions = (name: string): void => {
+  listContacts(0, 10, name).then((v) => (contactSuggestions.value = v));
+}
+const select = (option: Contact)  => {
+  contactString = formatContact(option);
+  emit("select", option);
 }
 </script>
-
 <style scoped lang="scss"></style>

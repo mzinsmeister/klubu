@@ -5,22 +5,17 @@
   </div>
 </template>
 
-<script lang="ts">
-import { Component, Vue } from "vue-property-decorator";
-import ReceiptList from "@/components/receipts/ReceiptList.vue";
+<script setup lang="ts">
 
-@Component({
-  name: "receipts-overview",
-  components: {
-    ReceiptList,
-  },
-})
-export default class ReceiptsOverview extends Vue {
-  private newReceipt(): void {
-    this.$router.push("/receipts/new");
-  }
+import ReceiptList from "@/components/receipts/ReceiptList.vue";
+import { useRouter } from "vue-router";
+
+
+
+const router = useRouter();
+const newReceipt = (): void => {
+  router.push("/receipts/new");
 }
 </script>
-
 <!-- Add "scoped" attribute to limit CSS to this component only -->
 <style scoped lang="scss"></style>

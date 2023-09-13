@@ -11,19 +11,19 @@
         <th></th>
       </thead>
       <tbody>
-        <tr v-for="(item, i) in value" :key="i">
+        <tr v-for="(item, i) in props.modelValue" :key="i">
           <td :value="i + 1" />
           <td>
-            <b-input
-              @input="change"
+            <o-input
+              @update:modelValue="changeItem(i, {...item, item: $event})"
               :disabled="isDisabled"
               class="position-input"
               v-model="item.item"
             />
           </td>
           <td>
-            <b-input
-              @input="change"
+            <o-input
+              @update:modelValue="changeItem(i, {...item, quantity: $event})"
               :disabled="isDisabled"
               class="position-input"
               style="max-width: 50px"
@@ -31,8 +31,8 @@
             />
           </td>
           <td>
-            <b-input
-              @input="change"
+            <o-input
+              @update:modelValue="changeItem(i, {...item, unit: $event})"
               :disabled="isDisabled"
               class="position-input"
               style="max-width: 80px"
@@ -40,8 +40,8 @@
             />
           </td>
           <td>
-            <b-input
-              @input="change"
+            <o-input
+              @update:modelValue="changeItem(i, {...item, price: { ...item.price, amountCents: $event != '' ? Number.parseInt($event) : 0 }})"
               :disabled="isDisabled"
               class="position-input"
               style="max-width: 100px"
@@ -52,68 +52,72 @@
             {{ formatCentsAsMoney(item.quantity * item.price.amountCents) }}
           </td>
           <td>
-            <b-button
+            <o-button
               :disabled="isDisabled"
               icon-right="delete"
-              type="is-danger"
+              variant="danger"
               @click="deleteItem(i)"
             />
           </td>
         </tr>
       </tbody>
     </table>
-    <b-button @click="addEmptyItem()" :disabled="isDisabled"
-      >Zusätzliche Position</b-button
+    <o-button @click="addEmptyItem()" :disabled="isDisabled"
+      >Zusätzliche Position</o-button
     >
   </div>
 </template>
 
-<script lang="ts">
-import { Item } from "@/models/CommonModel";
+<script setup lang="ts">
+
+import { computed, onMounted } from "vue";
 import { formatCentsAsMoney } from "@/util/MoneyUtil";
-import { Component, Prop, Vue } from "vue-property-decorator";
+import { type Item } from "@/models/CommonModel";
 
-@Component({
-  name: "items-editor",
-})
-export default class ItemsEditor extends Vue {
-  @Prop() private value!: Item[];
-  @Prop({ required: false }) private disabled?: boolean;
 
-  private created() {
-    if (this.value.length === 0) {
-      this.addEmptyItem();
-    }
-  }
+const props = defineProps<{
+    modelValue: Item[], 
+    disabled?: boolean
+  }>();
 
-  private get isDisabled(): boolean {
-    return this.disabled !== undefined ? this.disabled : false;
-  }
 
-  private deleteItem(index: number) {
-    this.value.splice(index, 1);
-    this.change();
-  }
+const emit = defineEmits(["change", "update:modelValue"]);
 
-  private formatCentsAsMoney(cents: number): string {
-    return formatCentsAsMoney(cents);
-  }
+const isDisabled = computed((): boolean => {
+  return props.disabled !== undefined ? props.disabled : false;
+});
 
-  private addEmptyItem(): void {
-    const newItem: Item = {
-      item: "",
-      quantity: 1,
-      unit: "",
-      price: { amountCents: 0, currency: { code: "EUR" } },
-    };
-    this.value.push(newItem);
-    this.change();
-  }
-
-  private change(): void {
-    this.$emit("change");
-  }
+const deleteItem = (index: number)  => {
+  emit("update:modelValue", props.modelValue.filter((_: any, i: number) => i !== index));
+  change();
 }
-</script>
 
+const changeItem = (i: number, item: Item) => {
+  const newItems = [...props.modelValue];
+  newItems[i] = item;
+  emit("update:modelValue", newItems);
+  change();
+}
+
+const addEmptyItem = (): void => {
+  const newItem: Item = {
+    item: "",
+    quantity: 1,
+    unit: "",
+    price: { amountCents: 0, currency: { code: "EUR" } },
+  };
+  emit("update:modelValue", [...props.modelValue, newItem]);
+  change();
+
+}
+const change = (): void => {
+  emit("change");
+}
+onMounted(() => {
+  if (props.modelValue.length === 0) {
+    addEmptyItem();
+  }
+});
+
+</script>
 <style scoped lang="scss"></style>
