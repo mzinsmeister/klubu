@@ -4,6 +4,7 @@ import dev.zinsmeister.klubu.common.domain.Payment
 import java.time.LocalDate
 import javax.persistence.Column
 import javax.persistence.Entity
+import javax.persistence.GeneratedValue
 import javax.persistence.Id
 
 // Not sure whether it is better to model this as a single payment class for invoices and receipts or separate ones
@@ -18,5 +19,6 @@ class InvoicePayment(
 
     @Id
     @Column(name = "id", nullable = false)
+    @GeneratedValue
     var id: Long? = null
 }

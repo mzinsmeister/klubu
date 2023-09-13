@@ -2,14 +2,14 @@
   <div class="invoice-editor" v-if="invoice !== null">
     <div>
       <div class="top-buttons">
-        <o-button type="is-info" @click="back">Zurück</o-button>
-        <o-button type="is-success" @click="save">Speichern</o-button>
-        <o-button v-if="!isCommitted" type="is-danger" @click="commit"
+        <o-button variant="info" @click="back">Zurück</o-button>
+        <o-button variant="success" @click="save">Speichern</o-button>
+        <o-button v-if="!isCommitted" variant="danger" @click="commit"
           >Festschreiben</o-button
         >
         <o-button
           v-if="isCommitted && invoice.document === undefined"
-          type="is-warning"
+          variant="warning"
           :loading="isExporting"
           :disabled="invoice.id === undefined"
           @click="tryExport"
@@ -17,7 +17,7 @@
         >
         <o-button
           v-if="isCommitted && invoice.document !== undefined"
-          type="is-warning"
+          variant="warning"
           tag="a"
           :href="`/api/documents/${invoice.document.id}`"
           target="_blank"
@@ -27,8 +27,9 @@
       </div>
     </div>
     <o-field label="Titel">
-      <o-input @input="change" v-model="invoice.title" />
+      <o-input @update:modelValue="change" v-model="invoice.title" />
     </o-field>
+    <o-button class="payments-button" @click="openPayments">Zahlungen</o-button>
     <o-field label="Kunde">
       <contact-search
         :contact="
@@ -39,6 +40,7 @@
       />
     </o-field>
     <recipient-editor
+      v-if="invoice.recipient !== undefined"
       @change="change"
       :disabled="isCommitted"
       v-model="invoice.recipient"
@@ -46,7 +48,7 @@
     <o-field grouped>
       <o-field expanded label="Rechnungsdatum">
         <o-datepicker
-          @input="change"
+         @update:modelValue="change"
           :disabled="isCommitted"
           v-model="invoice.invoiceDate"
         />
@@ -61,30 +63,17 @@
           />
         </p>
       </o-field>
-      <o-field expanded label="Bezahlt am">
-        <o-datepicker @input="change" v-model="invoice.paidDate" />
-        <p class="control">
-          <o-button
-            @click="
-              invoice.paidDate = undefined;
-              change();
-            "
-            icon-right="delete"
-            :disabled="invoice.paidDate === undefined"
-          />
-        </p>
-      </o-field>
     </o-field>
     <o-field label="Betreff">
       <o-input
-        @input="change"
+       @update:modelValue="change"
         :disabled="isCommitted"
         v-model="invoice.subject"
       />
     </o-field>
     <o-field label="Einleitungstext">
       <o-input
-        @input="change"
+       @update:modelValue="change"
         :disabled="isCommitted"
         type="textarea"
         v-model="invoice.headerHTML"
@@ -94,11 +83,12 @@
       @change="change"
       :disabled="isCommitted"
       v-model="invoice.items"
+      @update:modelValue="updateItems"
     />
     <p>Gesamt: {{ getTotal() }}</p>
     <o-field label="Fußtext">
       <o-input
-        @input="change"
+       @update:modelValue="change"
         :disabled="isCommitted"
         type="textarea"
         v-model="invoice.footerHTML"
@@ -109,7 +99,7 @@
 
 <script setup lang="ts">
 
-import { ref, computed } from "vue";
+import { ref, computed, reactive, onMounted, getCurrentInstance } from "vue";
 import {
   commitInvoice,
   createInvoice,
@@ -126,6 +116,8 @@ import ItemsEditor from "../common/ItemsEditor.vue";
 import RecipientEditor from "../common/RecipientEditor.vue";
 import { useRoute, useRouter } from "vue-router";
 import { useProgrammatic } from "@oruga-ui/oruga-next";
+import type { Item, Payment } from "@/models/CommonModel";
+import PaymentsModal from "../common/PaymentsModal.vue";
 
 
 const { oruga } = useProgrammatic();
@@ -154,6 +146,28 @@ const { oruga } = useProgrammatic();
       });
     }
   }
+
+  const openPayments = () => {
+    if(invoice.value !== null) {
+      oruga.modal.open({
+        component: PaymentsModal,
+        hasModalCard: true,
+        canCancel: false,
+        trapFocus: true,
+        props: {
+          payments: invoice.value.payments,
+        },
+        events: {
+          update: (payments: Payment[]) => {
+            if (invoice.value !== null) {
+              invoice.value.payments = payments;
+            }
+          },
+        },
+      });
+    }
+  }
+
   const getTotal = (): string => {
     let total = 0;
     if (invoice.value !== null) {
@@ -174,14 +188,14 @@ const { oruga } = useProgrammatic();
             invoice.value.document = r.document;
           }
           isExporting.value = false;
-          oruga.toast.open({
+          oruga.notification.open({
             message: "Export erfolgreich",
             type: "is-success",
           });
         })
         .catch(() => {
           isExporting.value = false;
-          oruga.toast.open({
+          oruga.notification.open({
             message: "Fehler beim Export",
             type: "is-danger",
           });
@@ -244,26 +258,31 @@ const { oruga } = useProgrammatic();
     }
     changed.value = true;
   }
-  const created = (): void => {
+  onMounted(() => {
     const id = route.params["id"] as string;
     if (id === "new") {
-      invoice.value = {
+      invoice.value = reactive({
         items: [],
         subject: "Rechnung",
         isCanceled: false,
         isCancelation: false,
         recipient: { name: "" },
-      };
+        payments: [],
+      });
     } else {
       fetchInvoice(Number.parseInt(id)).then((v) => {
         if (v.recipient === undefined) {
           v.recipient = { name: "" };
         }
-        invoice.value = v;
+        invoice.value = reactive(v);
       });
     }
+  });
+  const updateItems = (items: Item[]) => {
+    if (invoice.value !== null) {
+      invoice.value.items = items;
+    }    
   }
-  void created();
 </script>
 <style scoped lang="scss">
 .position-input {
@@ -274,5 +293,12 @@ const { oruga } = useProgrammatic();
   display: flex;
   justify-content: space-between;
   padding: 10px;
+}
+
+.payments-button {
+  margin-top: 10px;
+  margin-bottom: 10px;
+  margin-left: auto;
+  margin-right: auto;
 }
 </style>

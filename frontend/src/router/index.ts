@@ -1,4 +1,4 @@
-import { createRouter, createWebHistory } from 'vue-router'
+import { createRouter, createWebHashHistory } from 'vue-router'
 import Contacts from "../views/ContactsView.vue";
 import Home from "../views/HomeView.vue";
 import Invoices from "../views/InvoicesView.vue";
@@ -13,7 +13,9 @@ import ReceiptEditor from "../components/receipts/ReceiptEditor.vue";
 import Reporting from "../views/ReportingView.vue";
 
 const router = createRouter({
-  history: createWebHistory(import.meta.env.BASE_URL),
+  // We use hash mode. I haven't found the correct way to configure Spring boot otherwise yet.
+  // Also it doesn't matter since hash mode is only bad for SEO and stuff which we won't need anyway.
+  history: createWebHashHistory(import.meta.env.BASE_URL),
   routes: [
     {
       path: "/",

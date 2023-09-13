@@ -8,7 +8,7 @@
       @select="select"
       :clear-on-select="true"
     >
-      <template v-slot="option">
+      <template v-slot="{option}">
         <div class="customerSuggestion">
           {{ formatContact(option) }}
         </div>
@@ -35,7 +35,7 @@ const formatContact = (contact: Contact): string => {
     return result;
   }
 
-const { contact, disabled } = defineProps<{
+const props = defineProps<{
   contact?:  Contact | null, 
   disabled?: boolean
 }>();
@@ -43,9 +43,9 @@ const { contact, disabled } = defineProps<{
 const emit = defineEmits(["select", "change"]);
 
 const contactSuggestions = ref<Contact[]>([]);
-let contactString = contact ? formatContact(contact) : "";
+let contactString = props.contact ? formatContact(props.contact) : "";
 const isDisabled = computed((): boolean => {
-  return disabled !== undefined ? disabled : false;
+  return props.disabled !== undefined ? props.disabled : false;
 });
 
 const getcontactSuggestions = (name: string): void => {

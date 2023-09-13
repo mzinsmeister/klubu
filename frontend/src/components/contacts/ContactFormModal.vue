@@ -72,7 +72,7 @@
     <footer class="modal-card-foot">
       <o-button
         :label="isNew ? 'Erstellen' : 'Speichern'"
-        type="is-primary"
+        variant="primary"
         :disabled="editedContact.name.length === 0"
         @click="save"
         :loading="saving"
@@ -90,17 +90,17 @@ import { createContact, updateContact } from "@/services/ContactsApiService";
 
 
 const emit = defineEmits(["change", "close"]);
-const { contact } = defineProps<{ contact?: Contact }>();
+const props = defineProps<{ contact?: Contact }>();
 
 const getEditedContact = (): Contact => {
-  if (contact === undefined) {
+  if (props.contact === undefined) {
     return {
       name: "",
       country: "Deutschland",
       isPerson: false,
     };
   } else {
-    return JSON.parse(JSON.stringify(contact));
+    return JSON.parse(JSON.stringify(props.contact));
   }
 }
 

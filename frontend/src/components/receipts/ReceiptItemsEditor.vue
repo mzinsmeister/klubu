@@ -1,9 +1,9 @@
 <template>
   <div class="items-editor">
-    <div class="receipt-item-inputs" v-for="(item, i) in value" :key="i">
+    <div class="receipt-item-inputs" v-for="(item, i) in props.modelValue" :key="i">
       <o-field label="Beschreibung">
         <o-input
-          @input="change"
+         @update:modelValue="change"
           :disabled="isDisabled"
           class="position-input"
           v-model="item.item"
@@ -11,7 +11,7 @@
       </o-field>
       <o-field label="Kategorie">
         <o-select 
-          @input="change"
+         @update:modelValue="change"
           :disabled="isDisabled"
           placeholder="Kategorie wählen"
           class="position-input"
@@ -30,7 +30,7 @@
       <o-field grouped group-multiline>
         <o-field label="Preis in Cent">
           <o-input
-            @input="change"
+           @update:modelValue="change"
             :disabled="isDisabled"
             class="position-input"
             v-model="item.price.amountCents"
@@ -40,7 +40,7 @@
           <o-button
             :disabled="isDisabled"
             icon-right="delete"
-            type="is-danger"
+            variant="danger"
             @click="deleteItem(i)"
           />
       </o-field>
@@ -60,7 +60,7 @@ import { type ReceiptItem, type ReceiptItemCategory } from "@/models/ReceiptMode
 
 
 
-const { modelValue, disabled} = defineProps<{
+const props = defineProps<{
   modelValue:  ReceiptItem[], 
   disabled?: boolean,
 }>()
@@ -75,10 +75,10 @@ const change = (): void => {
 //TODO: amountCents is String after input but should be number (somehow still works)
 
 const isDisabled = computed((): boolean => {
-  return disabled !== undefined ? disabled : false;
+  return props.disabled !== undefined ? props.disabled : false;
 });
 const deleteItem = (index: number)  => {
-  emit("update:modelValue", modelValue.filter((_: any, i: number) => i !== index));
+  emit("update:modelValue", props.modelValue.filter((_: any, i: number) => i !== index));
   change();
 }
 const addEmptyItem = (): void => {
@@ -87,10 +87,10 @@ const addEmptyItem = (): void => {
     price: { amountCents: 0, currency: { code: "EUR" } },
     category: undefined
   };
-  emit("update:modelValue", [...modelValue, newItem]);
+  emit("update:modelValue", [...props.modelValue, newItem]);
   change();
 }
-if (modelValue.length === 0) {
+if (props.modelValue.length === 0) {
   addEmptyItem();
 }
 fetchReceiptItemCategories().then((data) => {

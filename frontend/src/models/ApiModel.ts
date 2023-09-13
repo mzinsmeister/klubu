@@ -59,13 +59,18 @@ export interface OfferRevisionListItemDTO {
   createdTimestamp: string;
 }
 
+export interface PaymentDTO {
+  date: string;
+  amountCents: number;
+}
+
 export interface ResponseInvoiceDTO {
   id: number;
   items: Array<Item>;
   createdTimestamp: string;
   committedTimestamp?: string;
   invoiceNumber?: number;
-  paidDate?: string;
+  payments: Array<PaymentDTO>;
   invoiceDate?: string;
   isCanceled: boolean;
   isCancelation: boolean;

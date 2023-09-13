@@ -56,9 +56,6 @@ const PAGE_SIZE = 100000;
 let pagesCache: Map<number, Array<InvoiceListItem>> = new Map();
 const invoices: Ref<Array<InvoiceListItem> | null> = ref(null);
 
-const created = (): void => {
-  pageChange(0);
-}
 
 const view = (id: number): void => {
   router.push(`/invoices/${id}`);
@@ -86,7 +83,7 @@ const pageChange = (page: number): void => {
     });
   }
 }
-void created();
+pageChange(0);
 </script>
 <!-- Add "scoped" attribute to limit CSS to this component only -->
 <style scoped lang="scss">

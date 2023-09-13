@@ -1,5 +1,5 @@
 <template>
-  <div class="offer-list" >
+  <div class="offer-list">
     <o-table
       v-if="offers !== null"
       :data="offers"
@@ -40,7 +40,7 @@
 
 <script setup lang="ts">
 
-import { getCurrentInstance, ref, type Ref } from "vue";
+import { onMounted, ref, type Ref } from "vue";
 import { type Contact } from "@/models/ContactModel";
 import { listOffers } from "@/services/OffersApiService";
 import { type OfferListItem } from "@/models/OfferModel";
@@ -53,12 +53,9 @@ const router = useRouter();
 const PAGE_SIZE = 100000;
 let pagesCache: Map<number, Array<OfferListItem>> = new Map();
 const offers: Ref<Array<OfferListItem> | null> = ref(null);
-const created = (): void => {
-  pageChange(0);
-}
 
 const view = (id: number): void => {
-  router.value.push(`/offers/${id}`);
+  router.push(`/offers/${id}`);
 }
 const getCustomerName = (customerContact: Contact | undefined): string => {
   return customerContact?.name ?? "";
@@ -82,6 +79,10 @@ const pageChange = (page: number): void => {
     });
   }
 }
+
+onMounted(() =>{
+  pageChange(0);
+});
 </script>
 <!-- Add "scoped" attribute to limit CSS to this component only -->
 <style scoped lang="scss">

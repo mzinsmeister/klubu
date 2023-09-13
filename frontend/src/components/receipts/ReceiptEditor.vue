@@ -2,11 +2,11 @@
   <div class="receipt-editor" v-if="receipt !== null">
     <div>
       <div class="top-buttons">
-        <o-button type="is-info" @click="back">Zurück</o-button>
-        <o-button type="is-success" @click="save">Speichern</o-button>
+        <o-button variant="info" @click="back">Zurück</o-button>
+        <o-button variant="success" @click="save">Speichern</o-button>
         <o-button
           :disabled="isCommitted || receipt.id === undefined"
-          type="is-danger"
+          variant="danger"
           @click="commit"
           >Festschreiben</o-button
         >
@@ -14,12 +14,12 @@
     </div>
     <div class="columns is-vcentered">
       <div class="column is-8">
-        <div v-if="receipt.documentData !== null || pdfSrc !== null">
+        <div v-if="pdfSrc !== null">
           <div class="pdf-viewer">
-            <VuePDF :pdf="pdfSrc" />
+            <vue-pdf-embed :source="pdfSrc" />
           </div>
           <div class="pdf-viewer-controls">
-            <o-button type="is-danger" @click="removeDocument"
+            <o-button variant="danger" @click="removeDocument"
               >Dokument entfernen</o-button
             >
           </div>
@@ -29,7 +29,7 @@
           v-model="fileUpload"
           accept=".pdf"
           drag-drop
-          @input="changeFile"
+         @update:modelValue="changeFile"
         >
           <section class="section">
             <div class="content has-text-centered">
@@ -58,7 +58,7 @@
         </o-field>
         <o-field expanded label="Belegdatum">
           <o-datepicker
-            @input="change"
+           @update:modelValue="change"
             :disabled="isCommitted"
             v-model="receipt.receiptDate"
             expanded
@@ -76,7 +76,7 @@
         </o-field>
         <o-field label="Bezahlt am">
           <o-datepicker
-            @input="change"
+           @update:modelValue="change"
             v-model="receipt.paidDate"
             :disabled="isCommitted"
             expanded
@@ -94,7 +94,7 @@
         </o-field>
         <o-field label="Zu bezahlen bis">
           <o-datepicker
-            @input="change"
+           @update:modelValue="change"
             v-model="receipt.dueDate"
             :disabled="isCommitted"
             expanded
@@ -124,7 +124,7 @@
 
 <script setup lang="ts">
 
-import { ref, computed } from "vue";
+import { ref, computed, onMounted } from "vue";
 import {
   commitReceipt,
   createReceipt,
@@ -135,12 +135,12 @@ import { type Contact } from "@/models/ContactModel";
 import { formatCentsAsMoney } from "@/util/MoneyUtil";
 import { parseISO } from "date-fns";
 import { type Receipt } from "@/models/ReceiptModel";
-import { VuePDF, usePDF } from "@tato30/vue-pdf";
 import ContactSearch from "../common/ContactSearch.vue";
-import pdf from "pdfjs-dist";
 import ReceiptItemsEditor from "./ReceiptItemsEditor.vue";
 import { useRoute, useRouter } from "vue-router";
 import { useProgrammatic } from "@oruga-ui/oruga-next";
+import VuePdfEmbed from "vue-pdf-embed";
+
 
 const { oruga } = useProgrammatic();
 
@@ -150,8 +150,7 @@ const receipt = ref<Receipt | null>(null);
 const changed = ref(false);
 const changedSinceSave = ref(false);
 const fileUpload = ref<File | null>(null);
-const pdfNumPages = ref(0);
-const pdfSrc = ref<any | null>(null);
+const pdfSrc = ref<Uint8Array | string | null>(null);
 const documentChanged = ref(false);
 const change = ()  => {
   changedSinceSave.value = true;
@@ -159,6 +158,7 @@ const change = ()  => {
 const isCommitted = computed((): boolean => {
   return receipt.value?.committedTimestamp !== undefined;
 });
+
 const changeFile = (file: File)  => {
   file.arrayBuffer().then((b) => {
     if (receipt.value !== null) {
@@ -166,10 +166,7 @@ const changeFile = (file: File)  => {
         data: new Uint8Array(b),
         mediaType: "application/pdf",
       };
-      pdfSrc.value = usePDF(receipt.value.documentData.data);
-      pdfSrc.value!.promise.then((r: { numPages: number; }) => {
-        pdfNumPages.value = r.numPages;
-      });
+      pdfSrc.value = receipt.value.documentData.data;
     }
     documentChanged.value = true;
   });
@@ -177,8 +174,8 @@ const changeFile = (file: File)  => {
 }
 const removeDocument = ()  => {
   if (receipt.value !== null) {
-    receipt.value.documentData = null;
     pdfSrc.value = null;
+    receipt.value.documentData = null;
     documentChanged.value = true;
     change();
   }
@@ -217,7 +214,7 @@ const select = (option: Contact)  => {
 }
 const save = (): void => {
   if (receipt.value?.items.some(it => it.category === undefined)) {
-    oruga.toast.open({
+    oruga.notification.open({
           message: "Bitte für alle Positionen Kategorien auswählen",
           type: "is-danger",
         });
@@ -244,24 +241,24 @@ const save = (): void => {
   }
   changed.value = true;
 }
-const id = route.params["id"] as string;
-if (id === "new") {
-  receipt.value = {
-    items: [],
-    receiptNumber: "",
-    documentData: null,
-  };
-} else {
-  fetchReceipt(Number.parseInt(id)).then((v: Receipt | null) => {
-    receipt.value = v;
-    if (v !== null && v.document !== undefined) {
-      pdfSrc.value = usePDF(`/api/documents/${v.document.id}`);
-      pdfSrc.value!.promise.then((r: { numPages: number; }) => {
-        pdfNumPages.value = r.numPages;
-      });
-    }
-  });
-}
+onMounted(() => {
+  const id = route.params["id"] as string;
+  if (id === "new") {
+    receipt.value = {
+      items: [],
+      receiptNumber: "",
+      documentData: null,
+    };
+  } else {
+    fetchReceipt(Number.parseInt(id)).then((v: Receipt | null) => {
+      receipt.value = v;
+      if (v !== null && v.document !== undefined) {
+        pdfSrc.value = `/api/documents/${v.document.id}`;
+      }
+    });
+  }
+})
+
 </script>
 <style scoped lang="scss">
 .receipt-editor {
@@ -284,6 +281,13 @@ if (id === "new") {
 .pdf-viewer {
   height: 75vh;
   overflow-y: scroll;
+}
+
+.pdf-viewer-inner {
+  width: fit-content;
+  margin-left: auto;
+  margin-right: auto;
+  display: block;
 }
 .pdf-viewer-controls {
   margin-top: 10px;

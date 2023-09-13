@@ -55,7 +55,7 @@ import { useRouter } from "vue-router";
 
 
 
-const { offerId } = defineProps<{
+const props = defineProps<{
     offerId:  number, 
   }>()
 
@@ -64,7 +64,7 @@ const emit = defineEmits(["createRevision", "close"]);
 
   const router = useRouter();
   const revisions: Ref<Array<OfferRevision> | null> = ref(null);
-  getOfferRevisions(offerId).then((r) => {
+  getOfferRevisions(props.offerId).then((r) => {
     revisions.value = r.sort(
       (a, b) => b.creationDate.getTime() - a.creationDate.getTime()
     );
@@ -74,7 +74,7 @@ const emit = defineEmits(["createRevision", "close"]);
     emit("close");
   }
   const openRevision = (revisionNumber: number)  => {
-    router.push(`/offers/${offerId}/revisions/${revisionNumber}`);
+    router.push(`/offers/${props.offerId}/revisions/${revisionNumber}`);
     emit("close");
   }
 </script>

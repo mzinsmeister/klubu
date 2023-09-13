@@ -2,19 +2,19 @@
   <div class="offer-editor" v-if="offer !== null">
     <div>
       <div class="top-buttons">
-        <o-button type="is-info" @click="back">Zurück</o-button>
-        <o-button type="is-success" @click="save">Speichern</o-button>
+        <o-button variant="info" @click="back">Zurück</o-button>
+        <o-button variant="success" @click="save">Speichern</o-button>
         <o-button
           v-if="offer.revision !== undefined"
           @click="openRevisionsModal"
           >Revisionen</o-button
         >
-        <o-button v-if="!isCommitted" type="is-danger" @click="commit"
+        <o-button v-if="!isCommitted" variant="danger" @click="commit"
           >Festschreiben</o-button
         >
         <o-button
           v-if="isCommitted && offer.document === undefined"
-          type="is-warning"
+          variant="warning"
           :loading="isExporting"
           :disabled="offer.id === undefined"
           @click="tryExport"
@@ -22,7 +22,7 @@
         >
         <o-button
           v-if="isCommitted && offer.document !== undefined"
-          type="is-warning"
+          variant="warning"
           tag="a"
           :href="`/api/documents/${offer.document.id}`"
           target="_blank"
@@ -32,7 +32,7 @@
       </div>
     </div>
     <o-field label="Titel">
-      <o-input @input="change" v-model="offer.title" />
+      <o-input @update:modelValue="change" v-model="offer.title" />
     </o-field>
     <o-field label="Kunde">
       <contact-search
@@ -44,6 +44,7 @@
       />
     </o-field>
     <recipient-editor
+      v-if="offer.recipient !== undefined"
       @change="change"
       :disabled="isCommitted"
       v-model="offer.recipient"
@@ -51,7 +52,7 @@
     <o-field grouped>
       <o-field expanded label="Angebotsdatum">
         <o-datepicker
-          @input="change"
+         @update:modelValue="change"
           :disabled="isCommitted"
           v-model="offer.offerDate"
         />
@@ -68,7 +69,7 @@
       </o-field>
       <o-field expanded label="Gültig bis">
         <o-datepicker
-          @input="change"
+         @update:modelValue="change"
           :disabled="isCommitted"
           v-model="offer.validUntilDate"
         />
@@ -86,14 +87,14 @@
     </o-field>
     <o-field label="Betreff">
       <o-input
-        @input="change"
+       @update:modelValue="change"
         :disabled="isCommitted"
         v-model="offer.subject"
       />
     </o-field>
     <o-field label="Einleitungstext">
       <o-input
-        @input="change"
+       @update:modelValue="change"
         :disabled="isCommitted"
         type="textarea"
         v-model="offer.headerHTML"
@@ -107,7 +108,7 @@
     <p>Gesamt: {{ getTotal() }}</p>
     <o-field label="Fußtext">
       <o-input
-        @input="change"
+        @update:modelValue="change"
         :disabled="isCommitted"
         type="textarea"
         v-model="offer.footerHTML"
@@ -118,7 +119,7 @@
 
 <script setup lang="ts">
 
-import { ref, computed, watch } from "vue";
+import { ref, computed, watch, onMounted, toRef } from "vue";
 import {
   commitOffer,
   createOffer,
@@ -209,14 +210,14 @@ const exportDocument = ()  => {
           offer.value.document = r.document;
         }
         isExporting.value = false;
-        oruga.toast.open({
+        oruga.notification.open({
           message: "Export erfolgreich",
           type: "is-success",
         });
       })
       .catch(() => {
         isExporting.value = false;
-        oruga.toast.open({
+        oruga.notification.open({
           message: "Fehler beim Export",
           type: "is-danger",
         });
@@ -261,13 +262,7 @@ const save = (): void => {
   }
   changed.value = true;
 }
-const created = (): void => {
-  fetchCurrentOffer();
-}
-watch(route, () => void onUrlChange(), { immediate: true, deep: true });
-const onUrlChange = ()  => {
-  fetchCurrentOffer();
-}
+
 const fetchCurrentOffer = ()  => {
   const id = route.params["id"] as string;
   if (id === "new") {
@@ -293,6 +288,17 @@ const fetchCurrentOffer = ()  => {
     });
   }
 }
+
+onMounted(() => {
+    fetchCurrentOffer();
+  });
+
+const onUrlChange = ()  => {
+  fetchCurrentOffer();
+}
+watch(route, () => onUrlChange(), { immediate: true, deep: true });
+
+
 const openRevisionsModal = ()  => {
   if (offer.value?.id !== undefined) {
     oruga.modal.open({
@@ -316,7 +322,6 @@ const openRevisionsModal = ()  => {
     });
   }
 }
-void created();
 </script>
 <style scoped lang="scss">
 .position-input {

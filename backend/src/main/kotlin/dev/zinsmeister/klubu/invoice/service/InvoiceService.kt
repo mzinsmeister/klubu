@@ -20,6 +20,7 @@ import dev.zinsmeister.klubu.documentfile.service.DocumentService
 import dev.zinsmeister.klubu.exception.NotCommittedException
 import dev.zinsmeister.klubu.export.service.ExportService
 import dev.zinsmeister.klubu.invoice.domain.InvoiceItem
+import dev.zinsmeister.klubu.invoice.domain.InvoicePayment
 import dev.zinsmeister.klubu.offer.domain.OfferId
 import dev.zinsmeister.klubu.offer.dto.OfferIdDTO
 import dev.zinsmeister.klubu.offer.repository.OfferRepository
@@ -68,6 +69,8 @@ class InvoiceService(private val repository: InvoiceRepository,
         foundEntity.title = dto.title
         foundEntity.offer = dto.fromOffer?.let { offerRepository.findByIdOrNull(OfferId(it.id, it.revision))
                 ?: throw NotFoundInDBException("Offer not found") }
+        foundEntity.payments.clear()
+        foundEntity.payments.addAll(dto.payments.map { InvoicePayment(LocalDate.parse(it.date), it.amountCents) })
         if(!foundEntity.isCommitted) { // TODO: Is silently not updating the other fields correct behaviour here?
             try {
                 if(foundEntity.customerContact?.contactId != dto.customerContactId) {
@@ -164,7 +167,8 @@ class InvoiceService(private val repository: InvoiceRepository,
             headerHTML = dto.headerHTML,
             footerHTML = dto.footerHTML,
             title = dto.title,
-            subject = dto.subject
+            subject = dto.subject,
+            payments = dto.payments.map { InvoicePayment(LocalDate.parse(it.date), it.amountCents) }.toMutableSet(),
     // TODO: Add cancelation/correction stuff here
     )
 

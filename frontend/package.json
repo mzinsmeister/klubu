@@ -13,14 +13,16 @@
     "format": "prettier --write src/"
   },
   "dependencies": {
+    "@mdi/font": "^7.2.96",
     "@oruga-ui/oruga-next": "^0.6.0",
     "@oruga-ui/theme-bulma": "^0.2.11",
-    "@tato30/vue-pdf": "^1.7.2",
     "axios": "^1.5.0",
     "date-fns": "^2.30.0",
     "js-base64": "^3.7.5",
+    "material-symbols": "^0.12.0",
     "pinia": "^2.1.6",
     "vue": "^3.3.4",
+    "vue-pdf-embed": "^1.1.6",
     "vue-router": "^4.2.4"
   },
   "devDependencies": {

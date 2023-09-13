@@ -1,6 +1,6 @@
 <template>
   <div class="sidebar">
-    <o-sidebar position="fixed" :fullheight="true" type="is-light" open>
+    <o-sidebar position="fixed" :fullheight="true" variant="light" open>
       <div class="p-1">
         <div class="block">
           <h1 class="title">KLUBU</h1>

@@ -26,3 +26,8 @@ export interface Item {
   unit: string;
   price: Money;
 }
+
+export interface Payment {
+  date: Date;
+  amountCents: number;
+}

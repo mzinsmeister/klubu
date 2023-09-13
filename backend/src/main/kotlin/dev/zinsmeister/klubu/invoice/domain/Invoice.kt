@@ -39,7 +39,7 @@ class Invoice(
 
     invoiceDate: LocalDate? = null,
 
-    @OneToMany(orphanRemoval = true)
+    @OneToMany(orphanRemoval = true, cascade = [CascadeType.ALL])
     @JoinColumn(name = "INVOICE_ID")
     val payments: MutableSet<InvoicePayment> = mutableSetOf(),
 ): DocumentEntity, ItemDocument<InvoiceItem>(contact, recipient, items, title, headerHTML,
@@ -65,6 +65,7 @@ class Invoice(
 
     var isCancelation: Boolean = false
     set(value) {
+        if(value == field) return
         if(!isCommitted) {
             if(value) correctedInvoice?: throw IllegalStateException("can't be cancelation without corrected invoice")
             correctedInvoice?.isCanceled = true
@@ -78,6 +79,7 @@ class Invoice(
     @JoinColumn(name = "CORRECTED_INVOICE_ID")
     var correctedInvoice: Invoice? = null
     set(value) {
+        if(value == field) return
         if(!isCommitted) {
             value?.correctedBy = this
             field = value

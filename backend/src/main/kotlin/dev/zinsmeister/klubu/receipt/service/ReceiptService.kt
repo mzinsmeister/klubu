@@ -42,6 +42,7 @@ class ReceiptService(
     @Transactional
     fun createReceipt(dto: RequestReceiptDTO): ResponseReceiptDTO {
         var entity = mapReceiptDTOToEntity(dto)
+        entity = repository.save(entity)
         val document = dto.documentData?.let {
             //TODO: Add support for more types here
             if(it.mediaType != MediaType.APPLICATION_PDF_VALUE) {

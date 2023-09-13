@@ -45,6 +45,10 @@ function mapInvoiceDTOToInvoice(dto: ResponseInvoiceDTO): Invoice {
     customerContact: dto.customerContact,
     recipient: dto.recipient,
     items: dto.items,
+    payments: dto.payments.map((payment) => ({
+      amountCents: payment.amountCents,
+      date: parseISO(payment.date),
+    })),
     createdTimestamp: parseISO(dto.createdTimestamp),
     committedTimestamp: dto.committedTimestamp
       ? parseISO(dto.committedTimestamp)
@@ -79,6 +83,10 @@ function mapInvoiceToDTO(invoice: Invoice): RequestInvoiceDTO {
     footerHTML: invoice.footerHTML,
     headerHTML: invoice.headerHTML,
     recipient: invoice.recipient,
+    payments: invoice.payments.map((payment) => ({
+      amountCents: payment.amountCents,
+      date: formatISO(payment.date, { representation: "date" }),
+    })),
   };
   return val;
 }

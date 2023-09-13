@@ -1,4 +1,4 @@
-import type { Item, Recipient } from "./CommonModel";
+import type { Item, Payment, Recipient } from "./CommonModel";
 import type { Contact } from "./ContactModel";
 import type { Document } from "./DocumentModel";
 
@@ -8,7 +8,7 @@ export interface Invoice {
   createdTimestamp?: Date;
   committedTimestamp?: Date;
   invoiceNumber?: number;
-  paidDate?: Date;
+  payments: Array<Payment>;
   invoiceDate?: Date;
   isCanceled: boolean;
   isCancelation: boolean;

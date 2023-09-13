@@ -41,7 +41,7 @@ data class RequestInvoiceDTO(
         val correctedInvoiceId: Int?,
         val isCancelation: Boolean?,
         val fromOffer: OfferIdDTO?,
-
+        val payments: List<PaymentDTO>
 )
 
 data class InvoiceMetadataDTO(

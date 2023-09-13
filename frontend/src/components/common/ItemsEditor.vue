@@ -11,11 +11,11 @@
         <th></th>
       </thead>
       <tbody>
-        <tr v-for="(item, i) in modelValue" :key="i">
+        <tr v-for="(item, i) in props.modelValue" :key="i">
           <td :value="i + 1" />
           <td>
             <o-input
-              @input="change"
+              @update:modelValue="changeItem(i, {...item, item: $event})"
               :disabled="isDisabled"
               class="position-input"
               v-model="item.item"
@@ -23,7 +23,7 @@
           </td>
           <td>
             <o-input
-              @input="change"
+              @update:modelValue="changeItem(i, {...item, quantity: $event})"
               :disabled="isDisabled"
               class="position-input"
               style="max-width: 50px"
@@ -32,7 +32,7 @@
           </td>
           <td>
             <o-input
-              @input="change"
+              @update:modelValue="changeItem(i, {...item, unit: $event})"
               :disabled="isDisabled"
               class="position-input"
               style="max-width: 80px"
@@ -41,7 +41,7 @@
           </td>
           <td>
             <o-input
-              @input="change"
+              @update:modelValue="changeItem(i, {...item, price: { ...item.price, amountCents: $event != '' ? Number.parseInt($event) : 0 }})"
               :disabled="isDisabled"
               class="position-input"
               style="max-width: 100px"
@@ -55,7 +55,7 @@
             <o-button
               :disabled="isDisabled"
               icon-right="delete"
-              type="is-danger"
+              variant="danger"
               @click="deleteItem(i)"
             />
           </td>
@@ -70,45 +70,54 @@
 
 <script setup lang="ts">
 
-import { computed } from "vue";
+import { computed, onMounted } from "vue";
 import { formatCentsAsMoney } from "@/util/MoneyUtil";
 import { type Item } from "@/models/CommonModel";
 
 
-
-let { modelValue, disabled } = defineProps<{
-    modelValue:  Item[], 
+const props = defineProps<{
+    modelValue: Item[], 
     disabled?: boolean
   }>();
 
+
 const emit = defineEmits(["change", "update:modelValue"]);
 
-  const created = ()  => {
-    if (modelValue.length === 0) {
-      addEmptyItem();
-    }
-  }
-  const isDisabled = computed((): boolean => {
-    return disabled !== undefined ? disabled : false;
-  });
-  const deleteItem = (index: number)  => {
-    emit("update:modelValue", modelValue.filter((_: any, i: number) => i !== index));
-    change();
-  }
+const isDisabled = computed((): boolean => {
+  return props.disabled !== undefined ? props.disabled : false;
+});
 
-  const addEmptyItem = (): void => {
-    const newItem: Item = {
-      item: "",
-      quantity: 1,
-      unit: "",
-      price: { amountCents: 0, currency: { code: "EUR" } },
-    };
-    emit("update:modelValue", modelValue.concat(newItem));
-    change();
+const deleteItem = (index: number)  => {
+  emit("update:modelValue", props.modelValue.filter((_: any, i: number) => i !== index));
+  change();
+}
+
+const changeItem = (i: number, item: Item) => {
+  const newItems = [...props.modelValue];
+  newItems[i] = item;
+  emit("update:modelValue", newItems);
+  change();
+}
+
+const addEmptyItem = (): void => {
+  const newItem: Item = {
+    item: "",
+    quantity: 1,
+    unit: "",
+    price: { amountCents: 0, currency: { code: "EUR" } },
+  };
+  emit("update:modelValue", [...props.modelValue, newItem]);
+  change();
+
+}
+const change = (): void => {
+  emit("change");
+}
+onMounted(() => {
+  if (props.modelValue.length === 0) {
+    addEmptyItem();
   }
-  const change = (): void => {
-    emit("change");
-  }
-  void created();
+});
+
 </script>
 <style scoped lang="scss"></style>
