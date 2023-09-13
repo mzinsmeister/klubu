@@ -2,7 +2,7 @@ package dev.zinsmeister.klubu.contact.domain
 
 import dev.zinsmeister.klubu.common.domain.Address
 import java.time.Instant
-import javax.persistence.*
+import jakarta.persistence.*
 
 @Entity
 @Table(name = "CONTACT")

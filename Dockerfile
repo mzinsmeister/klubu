@@ -32,7 +32,7 @@ RUN apt-get update \
     && tar --extract --file /tmp/openjdk.tar.gz --directory "$JAVA_HOME" --strip-components 1 --no-same-owner && rm /tmp/openjdk.tar.gz \
     && find "$JAVA_HOME/lib" -name '*.so' -exec dirname '{}' ';' | sort -u > /etc/ld.so.conf.d/docker-openjdk.conf && ldconfig &&  java -Xshare:dump \
     && apt-get install -y --no-install-recommends chromium-l10n \
-      fonts-liberation \foundEntity
+      fonts-liberation \
       fonts-roboto \
       hicolor-icon-theme \
       libcanberra-gtk-module \

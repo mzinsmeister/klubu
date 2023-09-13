@@ -1,7 +1,7 @@
 package dev.zinsmeister.klubu.itemdocument.domain
 
 import dev.zinsmeister.klubu.common.domain.ImmutableItem
-import javax.persistence.*
+import jakarta.persistence.*
 
 @MappedSuperclass
 abstract class ItemDocumentItem (

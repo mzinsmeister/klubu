@@ -1,7 +1,7 @@
 package dev.zinsmeister.klubu.documentfile.domain
 
 import java.time.Instant
-import javax.persistence.*
+import jakarta.persistence.*
 
 @Entity
 class Document(

@@ -32,7 +32,7 @@ import org.springframework.stereotype.Service
 import java.time.Instant
 import java.time.LocalDate
 import java.time.format.DateTimeFormatter
-import javax.transaction.Transactional
+import jakarta.transaction.Transactional
 
 @Service
 class OfferService(private val offerRepository: OfferRepository,

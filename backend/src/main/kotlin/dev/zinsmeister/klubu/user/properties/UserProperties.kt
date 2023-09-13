@@ -1,13 +1,8 @@
 package dev.zinsmeister.klubu.user.properties
 
 import org.springframework.boot.context.properties.ConfigurationProperties
-import org.springframework.boot.context.properties.ConstructorBinding
-import org.springframework.boot.context.properties.EnableConfigurationProperties
-import org.springframework.context.annotation.PropertySource
-import org.springframework.stereotype.Component
 
 @ConfigurationProperties(prefix="klubu.user")
-@ConstructorBinding
 data class UserProperties(
     val name: String,
     val street: String,

@@ -1,6 +1,6 @@
 package dev.zinsmeister.klubu.common.domain
 
-import javax.persistence.*
+import jakarta.persistence.*
 
 @Embeddable
 class Recipient(

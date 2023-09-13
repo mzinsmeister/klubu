@@ -1,6 +1,6 @@
 databaseChangeLog:
 - changeSet:
-    id: 1693925214072-1
+    id: 1694642612212-1
     author: michi (generated)
     changes:
     - createTable:
@@ -14,12 +14,12 @@ databaseChangeLog:
             type: INTEGER
         - column:
             name: committed_timestamp
-            type: TIMESTAMP WITHOUT TIME ZONE
+            type: TIMESTAMP WITH TIME ZONE
         - column:
             constraints:
               nullable: false
             name: created_timestamp
-            type: TIMESTAMP WITHOUT TIME ZONE
+            type: TIMESTAMP WITH TIME ZONE
         - column:
             name: invoice_date
             type: date
@@ -78,9 +78,6 @@ databaseChangeLog:
             name: is_canceled
             type: BOOLEAN
         - column:
-            name: paid_date
-            type: date
-        - column:
             name: customer_contact_id
             type: INTEGER
         - column:
@@ -100,7 +97,7 @@ databaseChangeLog:
             type: INTEGER
         tableName: invoice
 - changeSet:
-    id: 1693925214072-2
+    id: 1694642612212-2
     author: michi (generated)
     changes:
     - addUniqueConstraint:
@@ -108,7 +105,20 @@ databaseChangeLog:
         constraintName: uk_t6xkdjx1qtd5whp2iljdfn2yj
         tableName: invoice
 - changeSet:
-    id: 1693925214072-3
+    id: 1694642612212-3
+    author: michi (generated)
+    changes:
+    - createSequence:
+        cacheSize: 1
+        cycle: false
+        dataType: bigint
+        incrementBy: 50
+        maxValue: 9223372036854775807
+        minValue: 1
+        sequenceName: document_seq
+        startValue: 1
+- changeSet:
+    id: 1694642612212-4
     author: michi (generated)
     changes:
     - createSequence:
@@ -121,7 +131,124 @@ databaseChangeLog:
         sequenceName: hibernate_sequence
         startValue: 1
 - changeSet:
-    id: 1693925214072-4
+    id: 1694642612212-5
+    author: michi (generated)
+    changes:
+    - createSequence:
+        cacheSize: 1
+        cycle: false
+        dataType: bigint
+        incrementBy: 50
+        maxValue: 9223372036854775807
+        minValue: 1
+        sequenceName: invoice_item_seq
+        startValue: 1
+- changeSet:
+    id: 1694642612212-6
+    author: michi (generated)
+    changes:
+    - createSequence:
+        cacheSize: 1
+        cycle: false
+        dataType: bigint
+        incrementBy: 50
+        maxValue: 9223372036854775807
+        minValue: 1
+        sequenceName: invoice_payment_seq
+        startValue: 1
+- changeSet:
+    id: 1694642612212-7
+    author: michi (generated)
+    changes:
+    - createSequence:
+        cacheSize: 1
+        cycle: false
+        dataType: bigint
+        incrementBy: 50
+        maxValue: 9223372036854775807
+        minValue: 1
+        sequenceName: invoice_seq
+        startValue: 1
+- changeSet:
+    id: 1694642612212-8
+    author: michi (generated)
+    changes:
+    - createSequence:
+        cacheSize: 1
+        cycle: false
+        dataType: bigint
+        incrementBy: 50
+        maxValue: 9223372036854775807
+        minValue: 1
+        sequenceName: offer_item_seq
+        startValue: 1
+- changeSet:
+    id: 1694642612212-9
+    author: michi (generated)
+    changes:
+    - createSequence:
+        cacheSize: 1
+        cycle: false
+        dataType: bigint
+        incrementBy: 50
+        maxValue: 9223372036854775807
+        minValue: 1
+        sequenceName: receipt_item_category_seq
+        startValue: 1
+- changeSet:
+    id: 1694642612212-10
+    author: michi (generated)
+    changes:
+    - createSequence:
+        cacheSize: 1
+        cycle: false
+        dataType: bigint
+        incrementBy: 50
+        maxValue: 9223372036854775807
+        minValue: 1
+        sequenceName: receipt_item_category_type_seq
+        startValue: 1
+- changeSet:
+    id: 1694642612212-11
+    author: michi (generated)
+    changes:
+    - createSequence:
+        cacheSize: 1
+        cycle: false
+        dataType: bigint
+        incrementBy: 50
+        maxValue: 9223372036854775807
+        minValue: 1
+        sequenceName: receipt_item_seq
+        startValue: 1
+- changeSet:
+    id: 1694642612212-12
+    author: michi (generated)
+    changes:
+    - createSequence:
+        cacheSize: 1
+        cycle: false
+        dataType: bigint
+        incrementBy: 50
+        maxValue: 9223372036854775807
+        minValue: 1
+        sequenceName: receipt_payment_seq
+        startValue: 1
+- changeSet:
+    id: 1694642612212-13
+    author: michi (generated)
+    changes:
+    - createSequence:
+        cacheSize: 1
+        cycle: false
+        dataType: bigint
+        incrementBy: 50
+        maxValue: 9223372036854775807
+        minValue: 1
+        sequenceName: receipt_seq
+        startValue: 1
+- changeSet:
+    id: 1694642612212-14
     author: michi (generated)
     changes:
     - createTable:
@@ -152,7 +279,7 @@ databaseChangeLog:
             constraints:
               nullable: false
             name: created_date
-            type: TIMESTAMP WITHOUT TIME ZONE
+            type: TIMESTAMP WITH TIME ZONE
         - column:
             name: first_name
             type: VARCHAR(255)
@@ -177,7 +304,7 @@ databaseChangeLog:
             type: VARCHAR(255)
         tableName: contact
 - changeSet:
-    id: 1693925214072-5
+    id: 1694642612212-15
     author: michi (generated)
     changes:
     - createTable:
@@ -200,7 +327,7 @@ databaseChangeLog:
             type: VARCHAR(255)
         tableName: document
 - changeSet:
-    id: 1693925214072-6
+    id: 1694642612212-16
     author: michi (generated)
     changes:
     - createTable:
@@ -224,7 +351,7 @@ databaseChangeLog:
             type: BYTEA
         - column:
             name: created_timestamp
-            type: TIMESTAMP WITHOUT TIME ZONE
+            type: TIMESTAMP WITH TIME ZONE
         - column:
             constraints:
               nullable: false
@@ -232,7 +359,7 @@ databaseChangeLog:
             type: BOOLEAN
         tableName: document_version
 - changeSet:
-    id: 1693925214072-7
+    id: 1694642612212-17
     author: michi (generated)
     changes:
     - createTable:
@@ -251,7 +378,7 @@ databaseChangeLog:
             type: INTEGER
         tableName: id_generator
 - changeSet:
-    id: 1693925214072-8
+    id: 1694642612212-18
     author: michi (generated)
     changes:
     - createTable:
@@ -287,7 +414,32 @@ databaseChangeLog:
             type: INTEGER
         tableName: invoice_item
 - changeSet:
-    id: 1693925214072-9
+    id: 1694642612212-19
+    author: michi (generated)
+    changes:
+    - createTable:
+        columns:
+        - column:
+            constraints:
+              nullable: false
+              primaryKey: true
+              primaryKeyName: invoice_paymentPK
+            name: id
+            type: BIGINT
+        - column:
+            constraints:
+              nullable: false
+            name: amount_cents
+            type: INTEGER
+        - column:
+            name: date
+            type: date
+        - column:
+            name: invoice_id
+            type: INTEGER
+        tableName: invoice_payment
+- changeSet:
+    id: 1694642612212-20
     author: michi (generated)
     changes:
     - createTable:
@@ -308,12 +460,12 @@ databaseChangeLog:
             type: INTEGER
         - column:
             name: committed_timestamp
-            type: TIMESTAMP WITHOUT TIME ZONE
+            type: TIMESTAMP WITH TIME ZONE
         - column:
             constraints:
               nullable: false
             name: created_timestamp
-            type: TIMESTAMP WITHOUT TIME ZONE
+            type: TIMESTAMP WITH TIME ZONE
         - column:
             name: document_date
             type: date
@@ -369,7 +521,7 @@ databaseChangeLog:
             type: INTEGER
         tableName: offer
 - changeSet:
-    id: 1693925214072-10
+    id: 1694642612212-21
     author: michi (generated)
     changes:
     - createTable:
@@ -408,7 +560,7 @@ databaseChangeLog:
             type: INTEGER
         tableName: offer_item
 - changeSet:
-    id: 1693925214072-11
+    id: 1694642612212-22
     author: michi (generated)
     changes:
     - createTable:
@@ -422,17 +574,14 @@ databaseChangeLog:
             type: INTEGER
         - column:
             name: committed_timestamp
-            type: TIMESTAMP WITHOUT TIME ZONE
+            type: TIMESTAMP WITH TIME ZONE
         - column:
             constraints:
               nullable: false
             name: created_timestamp
-            type: TIMESTAMP WITHOUT TIME ZONE
+            type: TIMESTAMP WITH TIME ZONE
         - column:
             name: due_date
-            type: date
-        - column:
-            name: paid_date
             type: date
         - column:
             name: receipt_date
@@ -451,7 +600,7 @@ databaseChangeLog:
             type: date
         tableName: receipt
 - changeSet:
-    id: 1693925214072-12
+    id: 1694642612212-23
     author: michi (generated)
     changes:
     - createTable:
@@ -492,7 +641,7 @@ databaseChangeLog:
             type: INTEGER
         tableName: receipt_item
 - changeSet:
-    id: 1693925214072-13
+    id: 1694642612212-24
     author: michi (generated)
     changes:
     - createTable:
@@ -514,7 +663,7 @@ databaseChangeLog:
             type: INTEGER
         tableName: receipt_item_category
 - changeSet:
-    id: 1693925214072-14
+    id: 1694642612212-25
     author: michi (generated)
     changes:
     - createTable:
@@ -531,7 +680,63 @@ databaseChangeLog:
             type: VARCHAR(255)
         tableName: receipt_item_category_type
 - changeSet:
-    id: 1693925214072-15
+    id: 1694642612212-26
+    author: michi (generated)
+    changes:
+    - createTable:
+        columns:
+        - column:
+            autoIncrement: true
+            constraints:
+              nullable: false
+              primaryKey: true
+              primaryKeyName: receipt_paymentPK
+            name: id
+            type: BIGINT
+        - column:
+            constraints:
+              nullable: false
+            name: amount_cents
+            type: INTEGER
+        - column:
+            name: date
+            type: date
+        - column:
+            name: receipt_id
+            type: INTEGER
+        tableName: receipt_payment
+- changeSet:
+    id: 1694642612212-27
+    author: michi (generated)
+    changes:
+    - addForeignKeyConstraint:
+        baseColumnNames: receipt_id
+        baseTableName: receipt_payment
+        constraintName: FKfusc94pigj6k4yfuwole845eg
+        deferrable: false
+        initiallyDeferred: false
+        onDelete: NO ACTION
+        onUpdate: NO ACTION
+        referencedColumnNames: id
+        referencedTableName: receipt
+        validate: true
+- changeSet:
+    id: 1694642612212-28
+    author: michi (generated)
+    changes:
+    - addForeignKeyConstraint:
+        baseColumnNames: invoice_id
+        baseTableName: invoice_payment
+        constraintName: FKkopeu965ps1ljahtib8n8nub2
+        deferrable: false
+        initiallyDeferred: false
+        onDelete: NO ACTION
+        onUpdate: NO ACTION
+        referencedColumnNames: id
+        referencedTableName: invoice
+        validate: true
+- changeSet:
+    id: 1694642612212-29
     author: michi (generated)
     changes:
     - addForeignKeyConstraint:
@@ -546,7 +751,7 @@ databaseChangeLog:
         referencedTableName: contact
         validate: true
 - changeSet:
-    id: 1693925214072-16
+    id: 1694642612212-30
     author: michi (generated)
     changes:
     - addForeignKeyConstraint:
@@ -561,7 +766,7 @@ databaseChangeLog:
         referencedTableName: invoice
         validate: true
 - changeSet:
-    id: 1693925214072-17
+    id: 1694642612212-31
     author: michi (generated)
     changes:
     - addForeignKeyConstraint:
@@ -576,7 +781,7 @@ databaseChangeLog:
         referencedTableName: offer
         validate: true
 - changeSet:
-    id: 1693925214072-18
+    id: 1694642612212-32
     author: michi (generated)
     changes:
     - addForeignKeyConstraint:
@@ -591,7 +796,7 @@ databaseChangeLog:
         referencedTableName: receipt_item_category_type
         validate: true
 - changeSet:
-    id: 1693925214072-19
+    id: 1694642612212-33
     author: michi (generated)
     changes:
     - addForeignKeyConstraint:
@@ -606,7 +811,7 @@ databaseChangeLog:
         referencedTableName: receipt_item_category
         validate: true
 - changeSet:
-    id: 1693925214072-20
+    id: 1694642612212-34
     author: michi (generated)
     changes:
     - addForeignKeyConstraint:
@@ -621,7 +826,7 @@ databaseChangeLog:
         referencedTableName: document
         validate: true
 - changeSet:
-    id: 1693925214072-21
+    id: 1694642612212-35
     author: michi (generated)
     changes:
     - addForeignKeyConstraint:
@@ -636,7 +841,7 @@ databaseChangeLog:
         referencedTableName: invoice
         validate: true
 - changeSet:
-    id: 1693925214072-22
+    id: 1694642612212-36
     author: michi (generated)
     changes:
     - addForeignKeyConstraint:
@@ -651,7 +856,7 @@ databaseChangeLog:
         referencedTableName: document
         validate: true
 - changeSet:
-    id: 1693925214072-23
+    id: 1694642612212-37
     author: michi (generated)
     changes:
     - addForeignKeyConstraint:
@@ -666,7 +871,7 @@ databaseChangeLog:
         referencedTableName: offer
         validate: true
 - changeSet:
-    id: 1693925214072-24
+    id: 1694642612212-38
     author: michi (generated)
     changes:
     - addForeignKeyConstraint:
@@ -681,7 +886,7 @@ databaseChangeLog:
         referencedTableName: contact
         validate: true
 - changeSet:
-    id: 1693925214072-25
+    id: 1694642612212-39
     author: michi (generated)
     changes:
     - addForeignKeyConstraint:
@@ -696,7 +901,7 @@ databaseChangeLog:
         referencedTableName: contact
         validate: true
 - changeSet:
-    id: 1693925214072-26
+    id: 1694642612212-40
     author: michi (generated)
     changes:
     - addForeignKeyConstraint:
@@ -711,7 +916,7 @@ databaseChangeLog:
         referencedTableName: invoice
         validate: true
 - changeSet:
-    id: 1693925214072-27
+    id: 1694642612212-41
     author: michi (generated)
     changes:
     - addForeignKeyConstraint:
@@ -726,7 +931,7 @@ databaseChangeLog:
         referencedTableName: document
         validate: true
 - changeSet:
-    id: 1693925214072-28
+    id: 1694642612212-42
     author: michi (generated)
     changes:
     - addForeignKeyConstraint:
@@ -741,7 +946,7 @@ databaseChangeLog:
         referencedTableName: document
         validate: true
 - changeSet:
-    id: 1693925214072-29
+    id: 1694642612212-43
     author: michi (generated)
     changes:
     - addForeignKeyConstraint:
@@ -755,7 +960,59 @@ databaseChangeLog:
         referencedColumnNames: id
         referencedTableName: receipt
         validate: true
+- changeSet:
+    id: 1694642703621-2
+    author: michi (generated)
+    changes:
+    - addUniqueConstraint:
+        columnNames: corrected_by_invoice_id
+        constraintName: UC_INVOICECORRECTED_BY_INVOICE_ID_COL
+        tableName: invoice
+- changeSet:
+    id: 1694642703621-3
+    author: michi (generated)
+    changes:
+    - addUniqueConstraint:
+        columnNames: corrected_invoice_id
+        constraintName: UC_INVOICECORRECTED_INVOICE_ID_COL
+        tableName: invoice
+- changeSet:
+    id: 1694642703621-4
+    author: michi (generated)
+    changes:
+    - addUniqueConstraint:
+        columnNames: document_id
+        constraintName: UC_INVOICEDOCUMENT_ID_COL
+        tableName: invoice
+- changeSet:
+    id: 1694642703621-5
+    author: michi (generated)
+    changes:
+    - addUniqueConstraint:
+        columnNames: document_id
+        constraintName: UC_OFFERDOCUMENT_ID_COL
+        tableName: offer
+- changeSet:
+    id: 1694642703621-6
+    author: michi (generated)
+    changes:
+    - addUniqueConstraint:
+        columnNames: document_id
+        constraintName: UC_RECEIPTDOCUMENT_ID_COL
+        tableName: receipt
+- changeSet:
+    id: 1694642703621-7
+    author: michi (generated)
+    changes:
+    - dropSequence:
+        sequenceName: hibernate_sequence
+- changeSet:
+    id: 1694642703621-1
+    author: michi (generated)
+    changes:
+    - addNotNullConstraint:
+        columnDataType: date
+        columnName: date
+        tableName: invoice_payment
+        validate: true
 
-- include:
-      file: db.changelog-001.yaml
-      relativeToChangelogFile: true

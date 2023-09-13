@@ -19,7 +19,7 @@
             <vue-pdf-embed :source="pdfSrc" />
           </div>
           <div class="pdf-viewer-controls">
-            <o-button variant="danger" @click="removeDocument"
+            <o-button variant="danger" :disabled="isCommitted" @click="removeDocument"
               >Dokument entfernen</o-button
             >
           </div>

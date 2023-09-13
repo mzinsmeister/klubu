@@ -6,7 +6,7 @@ import dev.zinsmeister.klubu.documentfile.domain.DocumentEntity
 import dev.zinsmeister.klubu.exception.IllegalModificationException
 import java.time.Instant
 import java.time.LocalDate
-import javax.persistence.*
+import jakarta.persistence.*
 
 @Entity
 class Receipt(
