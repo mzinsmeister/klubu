@@ -133,7 +133,6 @@ export interface ReceiptListItemDTO {
   id: number;
   createdTimestamp: string;
   supplierContact?: Contact;
-  paidDate?: string;
   dueDate?: string;
   receiptDate?: string;
   committed: boolean;
@@ -146,7 +145,7 @@ export interface ResponseReceiptDTO {
   createdTimestamp: string;
   committedTimestamp?: string;
   receiptNumber?: string;
-  paidDate?: string;
+  payments: Array<PaymentDTO>;
   receiptDate?: string;
   dueDate?: string;
   supplierContact?: Contact;
@@ -157,7 +156,7 @@ export interface RequestReceiptDTO {
   receiptNumber: string;
   items: Array<ReceiptItem>;
   supplierContactId?: number;
-  paidDate?: string;
+  payments: Array<PaymentDTO>;
   receiptDate?: string;
   dueDate?: string;
   document?: RequestReceiptDocumentDTO;

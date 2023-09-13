@@ -1,5 +1,6 @@
 package dev.zinsmeister.klubu.receipt.service
 
+import dev.zinsmeister.klubu.common.dto.PaymentDTO
 import dev.zinsmeister.klubu.contact.repository.ContactRepository
 import dev.zinsmeister.klubu.contact.service.mapContactEntityToDTO
 import dev.zinsmeister.klubu.documentfile.domain.Document
@@ -11,6 +12,7 @@ import dev.zinsmeister.klubu.exception.NotFoundInDBException
 import dev.zinsmeister.klubu.receipt.domain.Receipt
 import dev.zinsmeister.klubu.receipt.domain.ReceiptItem
 import dev.zinsmeister.klubu.receipt.domain.ReceiptItemCategory
+import dev.zinsmeister.klubu.receipt.domain.ReceiptPayment
 import dev.zinsmeister.klubu.receipt.dto.*
 import dev.zinsmeister.klubu.receipt.repository.ReceiptItemCategoryRepository
 import dev.zinsmeister.klubu.receipt.repository.ReceiptRepository
@@ -64,6 +66,8 @@ class ReceiptService(
     fun updateReceipt(id: Int, dto: RequestReceiptDTO, updateDocument: Boolean) {
         val foundEntity = repository.findByIdOrNull(id)
             ?: throw NotFoundInDBException("Receipt not found")
+        foundEntity.payments.clear()
+        foundEntity.payments.addAll(dto.payments.map { ReceiptPayment(LocalDate.parse(it.date), it.amountCents) })
         if(!foundEntity.isCommitted) { // TODO: Is silently not updating the other fields correct behaviour here?
             try {
                 if(foundEntity.supplierContact?.contactId != dto.supplierContactId) {
@@ -122,7 +126,7 @@ class ReceiptService(
         receiptNumber = entity.receiptNumber,
         receiptDate = entity.receiptDate?.format(DateTimeFormatter.ISO_LOCAL_DATE),
         dueDate = entity.dueDate?.format(DateTimeFormatter.ISO_LOCAL_DATE),
-        paidDate = null, //TODO: Replace by payments
+        payments = entity.payments.map { PaymentDTO(it) },
         deliveryDate = entity.deliveryDate?.format(DateTimeFormatter.ISO_LOCAL_DATE),
         committedTimestamp = entity.committedTimestamp?.isoFormat(),
         createdTimestamp = entity.createdTimestamp.isoFormat(),
@@ -138,6 +142,7 @@ class ReceiptService(
         receiptDate = dto.receiptDate?.let { LocalDate.parse(it) },
         dueDate = dto.dueDate?.let { LocalDate.parse(it) },
         receiptNumber = dto.receiptNumber,
+        payments = dto.payments.map { ReceiptPayment(LocalDate.parse(it.date), it.amountCents) }.toMutableSet(),
     )
 
     private fun mapReceiptItemDTOToEntity(dto: RequestReceiptItemDTO) = ReceiptItem(
@@ -155,7 +160,6 @@ class ReceiptService(
         supplierContact = entity.supplierContact?.let { mapContactEntityToDTO(it) },
         committed = entity.isCommitted,
         createdTimestamp = entity.createdTimestamp.isoFormat(),
-        paidDate = null, //TODO: Replace by payments
         dueDate = entity.dueDate?.format(DateTimeFormatter.ISO_LOCAL_DATE),
         receiptDate = entity.receiptDate?.format(DateTimeFormatter.ISO_LOCAL_DATE),
     )

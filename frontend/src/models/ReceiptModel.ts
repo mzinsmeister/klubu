@@ -1,4 +1,4 @@
-import { type Money } from "./CommonModel";
+import { type Money, type Payment } from "./CommonModel";
 import type { Contact } from "./ContactModel";
 import type { Document, DocumentData } from "./DocumentModel";
 
@@ -8,7 +8,7 @@ export interface Receipt {
   createdTimestamp?: Date;
   committedTimestamp?: Date;
   receiptNumber: string;
-  paidDate?: Date;
+  payments: Array<Payment>;
   receiptDate?: Date;
   dueDate?: Date;
   supplierContact?: Contact;

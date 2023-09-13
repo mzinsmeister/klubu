@@ -2,6 +2,7 @@ package dev.zinsmeister.klubu.receipt.dto
 
 import dev.zinsmeister.klubu.common.dto.CurrencyDTO
 import dev.zinsmeister.klubu.common.dto.MoneyDTO
+import dev.zinsmeister.klubu.common.dto.PaymentDTO
 import dev.zinsmeister.klubu.contact.dto.ContactDTO
 import dev.zinsmeister.klubu.documentfile.dto.DocumentDTO
 import dev.zinsmeister.klubu.receipt.domain.ReceiptItem
@@ -14,7 +15,7 @@ data class ResponseReceiptDTO(
     val createdTimestamp: String,
     val committedTimestamp: String?,
     val receiptNumber: String?,
-    val paidDate: String?,
+    val payments: List<PaymentDTO>,
     val deliveryDate: String?,
     val receiptDate: String?,
     val dueDate: String?,
@@ -26,7 +27,7 @@ data class RequestReceiptDTO(
     val receiptNumber: String,
     val items: List<RequestReceiptItemDTO>,
     val supplierContactId: Int?,
-    val paidDate: String?,
+    val payments: List<PaymentDTO>,
     val deliveryDate: String?,
     val receiptDate: String?,
     val dueDate: String?,
@@ -70,7 +71,6 @@ data class ReceiptMetadataDTO(
     val id: Int,
     val createdTimestamp: String,
     val supplierContact: ContactDTO?,
-    val paidDate: String?,
     val dueDate: String?,
     val receiptDate: String?,
     val committed: Boolean,

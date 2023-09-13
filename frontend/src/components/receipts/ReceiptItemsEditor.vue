@@ -15,7 +15,7 @@
           :disabled="isDisabled"
           placeholder="Kategorie wählen"
           class="position-input"
-          style="min-width: 200px"
+          style="width: 100%;"
           v-model="item.category"
           :loading="item.category === undefined && itemCategories === null"
           >
@@ -30,7 +30,7 @@
       <o-field grouped group-multiline>
         <o-field label="Preis in Cent">
           <o-input
-           @update:modelValue="change"
+            @update:modelValue="change(); item.price.amountCents = $event !== '' ? Number.parseInt($event) : 0"
             :disabled="isDisabled"
             class="position-input"
             v-model="item.price.amountCents"
@@ -57,7 +57,6 @@
 import { computed, ref, type Ref } from "vue";
 import { fetchReceiptItemCategories } from "@/services/ReceiptsApiService";
 import { type ReceiptItem, type ReceiptItemCategory } from "@/models/ReceiptModel";
-
 
 
 const props = defineProps<{

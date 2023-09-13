@@ -32,7 +32,6 @@ export async function listReceipts(
     supplierContact: dto.supplierContact,
     committed: dto.committed,
     receiptNumber: dto.receiptNumber,
-    paidDate: dto.paidDate ? parseISO(dto.paidDate) : undefined,
     dueDate: dto.dueDate ? parseISO(dto.dueDate) : undefined,
     receiptDate: dto.receiptDate ? parseISO(dto.receiptDate) : undefined,
   }));
@@ -49,7 +48,10 @@ function mapReceiptDTOToReceipt(dto: ResponseReceiptDTO): Receipt {
       : undefined,
     receiptDate: dto.receiptDate ? parseISO(dto.receiptDate) : undefined,
     dueDate: dto.dueDate ? parseISO(dto.dueDate) : undefined,
-    paidDate: dto.paidDate ? parseISO(dto.paidDate) : undefined,
+    payments: dto.payments.map((payment) => ({
+      amountCents: payment.amountCents,
+      date: parseISO(payment.date),
+    })),
     document: dto.document,
     receiptNumber: dto.receiptNumber ?? "",
     documentData: null,
@@ -99,9 +101,10 @@ function mapReceiptToDTO(
     dueDate: receipt.dueDate
       ? formatISO(receipt.dueDate, { representation: "date" })
       : undefined,
-    paidDate: receipt.paidDate
-      ? formatISO(receipt.paidDate, { representation: "date" })
-      : undefined,
+    payments: receipt.payments.map((payment) => ({
+      amountCents: payment.amountCents,
+      date: formatISO(payment.date, { representation: "date" }),
+    })),
     receiptNumber: receipt.receiptNumber,
     documentData: addData
       ? mapDocumentDataToDTO(receipt.documentData ?? undefined)

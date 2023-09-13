@@ -27,7 +27,7 @@ class Receipt(
 
     document: Document? = null,
 
-    @OneToMany(orphanRemoval = true)
+    @OneToMany(orphanRemoval = true, cascade = [CascadeType.ALL])
     @JoinColumn(name = "RECEIPT_ID")
     val payments: MutableSet<ReceiptPayment> = mutableSetOf(),
 

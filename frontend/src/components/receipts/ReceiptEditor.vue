@@ -41,7 +41,7 @@
           </section>
         </o-upload>
       </div>
-      <div class="column inputcolumn">
+      <div class="column is-4 inputcolumn">
         <o-field label="Belegnummer">
           <o-input v-model="receipt.receiptNumber" :disabled="isCommitted" />
         </o-field>
@@ -74,24 +74,6 @@
             />
           </p>
         </o-field>
-        <o-field label="Bezahlt am">
-          <o-datepicker
-           @update:modelValue="change"
-            v-model="receipt.paidDate"
-            :disabled="isCommitted"
-            expanded
-          />
-          <p class="control">
-            <o-button
-              @click="
-                receipt.paidDate = undefined;
-                change();
-              "
-              icon-right="delete"
-              :disabled="receipt.paidDate === undefined || isCommitted"
-            />
-          </p>
-        </o-field>
         <o-field label="Zu bezahlen bis">
           <o-datepicker
            @update:modelValue="change"
@@ -110,11 +92,13 @@
             />
           </p>
         </o-field>
+        <o-button class="payments-button" @click="openPayments">Zahlungen</o-button>
         <div style="height:10px; border-bottom: 1px solid black" />
         <receipt-items-editor
           @change="change"
           :disabled="isCommitted"
           v-model="receipt.items"
+          class="items-editor"
         />
         <p>Gesamt: {{ getTotal() }}</p>
       </div>
@@ -140,6 +124,8 @@ import ReceiptItemsEditor from "./ReceiptItemsEditor.vue";
 import { useRoute, useRouter } from "vue-router";
 import { useProgrammatic } from "@oruga-ui/oruga-next";
 import VuePdfEmbed from "vue-pdf-embed";
+import type { Payment } from "@/models/CommonModel";
+import PaymentsModal from "../common/PaymentsModal.vue";
 
 
 const { oruga } = useProgrammatic();
@@ -248,6 +234,7 @@ onMounted(() => {
       items: [],
       receiptNumber: "",
       documentData: null,
+      payments: []
     };
   } else {
     fetchReceipt(Number.parseInt(id)).then((v: Receipt | null) => {
@@ -258,6 +245,27 @@ onMounted(() => {
     });
   }
 })
+
+const openPayments = () => {
+    if(receipt.value !== null) {
+      oruga.modal.open({
+        component: PaymentsModal,
+        hasModalCard: true,
+        canCancel: false,
+        trapFocus: true,
+        props: {
+          payments: receipt.value.payments,
+        },
+        events: {
+          update: (payments: Payment[]) => {
+            if (receipt.value !== null) {
+              receipt.value.payments = payments;
+            }
+          },
+        },
+      });
+    }
+  }
 
 </script>
 <style scoped lang="scss">
@@ -291,5 +299,15 @@ onMounted(() => {
 }
 .pdf-viewer-controls {
   margin-top: 10px;
+}
+.payments-button {
+  margin-top: 10px;
+  margin-bottom: 10px;
+  margin-left: auto;
+  margin-right: auto;
+}
+
+.items-editor {
+  width: 100%;
 }
 </style>
