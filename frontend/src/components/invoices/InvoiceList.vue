@@ -56,6 +56,15 @@ const PAGE_SIZE = 100000;
 let pagesCache: Map<number, Array<InvoiceListItem>> = new Map();
 const invoices: Ref<Array<InvoiceListItem> | null> = ref(null);
 
+const pageChange = (page: number): void => {
+  invoices.value = pagesCache.get(page) ?? null;
+  if (invoices.value === null) {
+    listInvoices(page, PAGE_SIZE).then((v) => {
+      invoices.value = v;
+      pagesCache.set(page, v);
+    });
+  }
+}
 
 const view = (id: number): void => {
   router.push(`/invoices/${id}`);
@@ -74,15 +83,6 @@ if (route.query["forceRefresh"] === "true") {
   reload();
 }
 
-const pageChange = (page: number): void => {
-  invoices.value = pagesCache.get(page) ?? null;
-  if (invoices.value === null) {
-    listInvoices(page, PAGE_SIZE).then((v) => {
-      invoices.value = v;
-      pagesCache.set(page, v);
-    });
-  }
-}
 pageChange(0);
 </script>
 <!-- Add "scoped" attribute to limit CSS to this component only -->

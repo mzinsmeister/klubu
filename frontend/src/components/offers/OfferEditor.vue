@@ -9,7 +9,7 @@
           @click="openRevisionsModal"
           >Revisionen</o-button
         >
-        <o-button v-if="!isCommitted" variant="danger" @click="commit"
+        <o-button v-if="!isCommitted" :disabled="offer.id === undefined" variant="danger" @click="commit"
           >Festschreiben</o-button
         >
         <o-button
@@ -212,14 +212,14 @@ const exportDocument = ()  => {
         isExporting.value = false;
         oruga.notification.open({
           message: "Export erfolgreich",
-          type: "is-success",
+          variant: "success",
         });
       })
       .catch(() => {
         isExporting.value = false;
         oruga.notification.open({
           message: "Fehler beim Export",
-          type: "is-danger",
+          variant: "danger",
         });
       });
     isExporting.value = true;

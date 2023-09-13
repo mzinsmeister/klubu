@@ -4,7 +4,7 @@
       <div class="top-buttons">
         <o-button variant="info" @click="back">Zurück</o-button>
         <o-button variant="success" @click="save">Speichern</o-button>
-        <o-button v-if="!isCommitted" variant="danger" @click="commit"
+        <o-button v-if="!isCommitted" variant="danger" @click="commit" :disabled="invoice.id === undefined"
           >Festschreiben</o-button
         >
         <o-button
@@ -190,14 +190,14 @@ const { oruga } = useProgrammatic();
           isExporting.value = false;
           oruga.notification.open({
             message: "Export erfolgreich",
-            type: "is-success",
+            variant: "success",
           });
         })
         .catch(() => {
           isExporting.value = false;
           oruga.notification.open({
             message: "Fehler beim Export",
-            type: "is-danger",
+            variant: "danger",
           });
         });
       isExporting.value = true;

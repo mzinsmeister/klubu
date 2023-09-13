@@ -48,11 +48,22 @@ import { useRoute, useRouter } from "vue-router";
 
 
 
+
 const route = useRoute();
 const router = useRouter();
 const PAGE_SIZE = 100000;
 let pagesCache: Map<number, Array<OfferListItem>> = new Map();
 const offers: Ref<Array<OfferListItem> | null> = ref(null);
+
+const pageChange = (page: number): void => {
+  offers.value = pagesCache.get(page) ?? null;
+  if (offers.value === null) {
+    listOffers(page, PAGE_SIZE).then((v) => {
+      offers.value = v;
+      pagesCache.set(page, v);
+    });
+  }
+}
 
 const view = (id: number): void => {
   router.push(`/offers/${id}`);
@@ -70,15 +81,7 @@ if (route.query["forceRefresh"] === "true") {
   clearCache();
   reload();
 }
-const pageChange = (page: number): void => {
-  offers.value = pagesCache.get(page) ?? null;
-  if (offers.value === null) {
-    listOffers(page, PAGE_SIZE).then((v) => {
-      offers.value = v;
-      pagesCache.set(page, v);
-    });
-  }
-}
+
 
 onMounted(() =>{
   pageChange(0);

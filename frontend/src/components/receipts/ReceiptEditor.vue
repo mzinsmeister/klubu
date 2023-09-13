@@ -202,7 +202,7 @@ const save = (): void => {
   if (receipt.value?.items.some(it => it.category === undefined)) {
     oruga.notification.open({
           message: "Bitte für alle Positionen Kategorien auswählen",
-          type: "is-danger",
+          variant: "danger",
         });
     return;
   }
