@@ -213,6 +213,7 @@ const exportDocument = ()  => {
         oruga.notification.open({
           message: "Export erfolgreich",
           variant: "success",
+          position: "bottom-right"
         });
       })
       .catch(() => {
@@ -220,6 +221,7 @@ const exportDocument = ()  => {
         oruga.notification.open({
           message: "Fehler beim Export",
           variant: "danger",
+          position: "bottom-right"
         });
       });
     isExporting.value = true;

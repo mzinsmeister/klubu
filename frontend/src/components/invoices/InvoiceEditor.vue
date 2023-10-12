@@ -191,6 +191,7 @@ const { oruga } = useProgrammatic();
           oruga.notification.open({
             message: "Export erfolgreich",
             variant: "success",
+            positon: "bottom-right"
           });
         })
         .catch(() => {
@@ -198,6 +199,7 @@ const { oruga } = useProgrammatic();
           oruga.notification.open({
             message: "Fehler beim Export",
             variant: "danger",
+            positon: "bottom-right"
           });
         });
       isExporting.value = true;
