@@ -1,5 +1,6 @@
 <template>
-  <div class="contact-form modal-card">
+  <div class="modal-card">
+  <div class="contact-form">
     <header class="modal-card-head">
       <p class="modal-card-title">Neuen Kontakt erstellen</p>
       <button type="button" class="delete" @click="emit('close')" />
@@ -79,6 +80,7 @@
       />
     </footer>
   </div>
+  </div>
 </template>
 
 <script setup lang="ts">
@@ -128,4 +130,13 @@ const save = (): void => {
 }
 </script>
 <!-- Add "scoped" attribute to limit CSS to this component only -->
-<style scoped lang="scss"></style>
+<style scoped lang="scss">
+  .modal-card {
+    width: 100%;
+  }
+  .contact-form {
+    min-width: 800px;
+    margin-left: auto;
+    margin-right: auto;
+  }
+</style>
