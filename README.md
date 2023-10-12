@@ -49,9 +49,9 @@ For now KluBu is available under the GNU Affero Gneral Public Licence (AGPL). Th
 the most restrictive licences to give me more time to think about the lincence I actually want to use long term.
 
 ## Development
-You will need a JDK 11 or higher and npm (latest lts should work). For development of the webapp use
+You will need a JDK 17 or higher and npm (latest lts should work). For development of the webapp use
 ```    
-npm run serve
+npm run dev
 ```
 and for development of the Kotlin backend use
 ```
@@ -103,11 +103,11 @@ experience still needs some work.
 
 ## Database
 
-There's currently no database migration tool at work but introducing Liquibase is planned. This will allow KluBu to
+Liquibase is integrated now. However it's not sure whether this actually works properly in all cases. This will allow KluBu to
 be used with almost any RDBMS but only Postgres (and SQLite once (and if) a standalone Desktop version is introduced)
 will be actually tested with for now and unless you have a very good reason not to, just use that.
 Since the tool is currently (and probably will always be) only meant for people who don't have a lot of invoices, 
 offers, receipts and contacts anyway, optimizing the database by creating indexes is currently not a priority 
 since a lot of accesses happen through the primary key anyway or will result in sequential scans anyway and most 
-table will stay in the ballpark of a few thousand rows at best, there will be almost no performance difference
+table will stay in the ballpark of a few thousand rows at most, there will be almost no performance difference
 between sequential scans and index accesses anyway.
