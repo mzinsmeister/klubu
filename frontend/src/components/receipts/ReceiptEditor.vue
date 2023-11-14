@@ -203,6 +203,7 @@ const save = (): void => {
     oruga.notification.open({
           message: "Bitte für alle Positionen Kategorien auswählen",
           variant: "danger",
+            positon: "bottom-right"
         });
     return;
   }
