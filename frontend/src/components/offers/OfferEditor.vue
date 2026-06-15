@@ -138,9 +138,9 @@ import ItemsEditor from "../common/ItemsEditor.vue";
 import RecipientEditor from "../common/RecipientEditor.vue";
 import RevisionsModal from "./RevisionsModal.vue";
 import { useRoute, useRouter } from "vue-router";
-import { useProgrammatic } from "@oruga-ui/oruga-next";
+import { useOruga } from "@oruga-ui/oruga-next";
 
-const { oruga } = useProgrammatic();
+const oruga = useOruga();
 
 
 const route = useRoute();
@@ -181,16 +181,14 @@ const getTotal = (): string => {
 }
 const tryExport = ()  => {
   if (changedSinceSave.value) {
-    oruga.dialog.confirm({
-      message:
+    oruga.dialog.open({
+      content:
         "Das Angebot enthält ungespeicherte Änderungen!\n" +
         "Trotzdem exportieren (ohne ungespeicherte Änderungen)?",
       title: "Ungespeicherte Änderungen",
       onConfirm: exportDocument,
-      trapFocus: true,
-      canCancel: true,
-      confirmText: "Ja",
-      cancelText: "Abbrechen",
+      confirmButton: "Ja",
+      cancelButton: "Abbrechen",
     });
   } else {
     exportDocument();

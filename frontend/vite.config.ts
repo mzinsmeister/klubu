@@ -20,6 +20,9 @@ export default defineConfig({
       }
     }
   },
+  build: {
+    cssMinify: 'esbuild'
+  },
   server: {
     proxy: {
       "/api": {

@@ -11,10 +11,10 @@
 
 import ContactForm from "@/components/contacts/ContactFormModal.vue";
 import ContactList from "@/components/contacts/ContactList.vue";
-import { useProgrammatic } from "@oruga-ui/oruga-next";
+import { useOruga } from "@oruga-ui/oruga-next";
 import { type Ref, ref } from "vue";
 
-const {oruga} = useProgrammatic();
+const oruga = useOruga();
 
 const contactList: Ref<InstanceType<typeof ContactList> | null> = ref(null)
 const newContact = (): void => {

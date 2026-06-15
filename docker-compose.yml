@@ -1,12 +1,14 @@
 version: "3"
 services:
   db:
-    image: postgres:latest
+    image: postgres:16
     environment:
       - POSTGRES_DB=klubu
       - POSTGRES_USER=klubu
       - POSTGRES_PASSWORD=klubu-test
       - POSTGRES_ROOT_PASSWORD=abc123testroot
+    ports:
+      - "5433:5432"
     volumes:
       - klubu-data:/var/lib/postgresql/data:z
 

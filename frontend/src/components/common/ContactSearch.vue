@@ -2,15 +2,15 @@
   <div class="props.contact-search">
     <o-autocomplete
       :disabled="isDisabled"
-      :data="contactSuggestions"
-      v-model="contactString"
+      :options="contactSuggestions"
+      v-model:input="contactString"
       @typing="getcontactSuggestions"
       @select="select"
       :clear-on-select="true"
     >
-      <template v-slot="{option}">
+      <template #option="{ option }">
         <div class="customerSuggestion">
-          {{ formatContact(option) }}
+          {{ formatContact(toContact(option.item)) }}
         </div>
       </template>
     </o-autocomplete>
@@ -48,12 +48,15 @@ const isDisabled = computed((): boolean => {
   return props.disabled !== undefined ? props.disabled : false;
 });
 
+const toContact = (val: any): Contact => val;
+
 const getcontactSuggestions = (name: string): void => {
   listContacts(0, 10, name).then((v) => (contactSuggestions.value = v));
 }
-const select = (option: Contact)  => {
-  contactString = formatContact(option);
-  emit("select", option);
+const select = (option: any)  => {
+  const contact = toContact(option);
+  contactString = formatContact(contact);
+  emit("select", contact);
 }
 </script>
 <style scoped lang="scss"></style>

@@ -115,12 +115,12 @@ import ContactSearch from "../common/ContactSearch.vue";
 import ItemsEditor from "../common/ItemsEditor.vue";
 import RecipientEditor from "../common/RecipientEditor.vue";
 import { useRoute, useRouter } from "vue-router";
-import { useProgrammatic } from "@oruga-ui/oruga-next";
+import { useOruga } from "@oruga-ui/oruga-next";
 import type { Item, Payment } from "@/models/CommonModel";
 import PaymentsModal from "../common/PaymentsModal.vue";
 
 
-const { oruga } = useProgrammatic();
+const oruga = useOruga();
 
   const route = useRoute();
   const router = useRouter();
@@ -207,16 +207,14 @@ const { oruga } = useProgrammatic();
   }
   const tryExport = ()  => {
     if (changedSinceSave.value) {
-      oruga.dialog.confirm({
-        message:
+      oruga.dialog.open({
+        content:
           "Die Rechnung enthält ungespeicherte Änderungen!\n" +
           "Trotzdem exportieren (ohne ungespeicherte Änderungen)?",
         title: "Ungespeicherte Änderungen",
         onConfirm: exportDocument,
-        trapFocus: true,
-        canCancel: true,
-        confirmText: "Ja",
-        cancelText: "Abbrechen",
+        confirmButton: "Ja",
+        cancelButton: "Abbrechen",
       });
     } else {
       exportDocument();

@@ -2,14 +2,23 @@ import org.jetbrains.kotlin.gradle.tasks.KotlinCompile
 import org.gradle.nativeplatform.platform.internal.DefaultNativePlatform
 import org.springframework.boot.gradle.tasks.bundling.BootJar
 
+buildscript {
+	repositories {
+		mavenCentral()
+	}
+	dependencies {
+		classpath("org.liquibase:liquibase-core:4.29.2")
+	}
+}
+
 plugins {
-	id("org.springframework.boot") version "3.1.3"
-	id("io.spring.dependency-management") version "1.1.3"
-	id("de.undercouch.download") version "4.1.2"
-	id("org.liquibase.gradle") version "2.2.0"
-	kotlin("jvm") version "1.8.22"
-	kotlin("plugin.spring") version "1.8.22"
-	kotlin("plugin.jpa") version "1.8.22"
+	id("org.springframework.boot") version "3.4.3"
+	id("io.spring.dependency-management") version "1.1.7"
+	id("de.undercouch.download") version "5.6.0"
+	id("org.liquibase.gradle") version "3.1.0"
+	kotlin("jvm") version "2.1.10"
+	kotlin("plugin.spring") version "2.1.10"
+	kotlin("plugin.jpa") version "2.1.10"
 }
 
 java {
@@ -39,17 +48,17 @@ configurations {
 group = "dev.zinsmeister"
 version = "0.0.1-SNAPSHOT"
 
-val kotestVersion = "5.4.2"
+val kotestVersion = "5.9.1"
 
 repositories {
 	mavenCentral()
 }
 
 dependencies {
-	liquibaseRuntime("info.picocli:picocli:4.6.3")
-	liquibaseRuntime("org.liquibase:liquibase-core:4.23.0")
-	liquibaseRuntime("org.liquibase:liquibase-groovy-dsl:2.0.1")
-	liquibaseRuntime("org.liquibase.ext:liquibase-hibernate6:4.22.0")
+	liquibaseRuntime("info.picocli:picocli:4.7.6")
+	liquibaseRuntime("org.liquibase:liquibase-core:4.29.2")
+	liquibaseRuntime("org.liquibase:liquibase-groovy-dsl:4.0.1")
+	liquibaseRuntime("org.liquibase.ext:liquibase-hibernate6:4.29.2")
 	liquibaseRuntime("org.postgresql:postgresql")
 	liquibaseRuntime(sourceSets.getByName("main").output)
 	liquibaseRuntime(files("$buildDir/classes/kotlin/main"))
@@ -61,17 +70,17 @@ dependencies {
 
 	implementation("org.liquibase:liquibase-core")
 
-	implementation("com.googlecode.owasp-java-html-sanitizer:owasp-java-html-sanitizer:20211018.1")
-	implementation("com.github.spullara.mustache.java:compiler:0.9.10")
+	implementation("com.googlecode.owasp-java-html-sanitizer:owasp-java-html-sanitizer:20260313.1")
+	implementation("com.github.spullara.mustache.java:compiler:0.9.14")
 	// New Docker baseimage should be built when a new playwright verson is for a new chromium version
 	// TODO: Evaluate goging through chrome devtools protocol directly or using selenium instead
-	implementation("org.seleniumhq.selenium:selenium-support:4.10.0")
-	implementation("org.seleniumhq.selenium:selenium-chrome-driver:4.10.0")
-	implementation("org.seleniumhq.selenium:selenium-remote-driver:4.10.0")
-	implementation("org.seleniumhq.selenium:selenium-api:4.10.0")
-	implementation("org.seleniumhq.selenium:selenium-manager:4.10.0")
-	implementation("org.apache.pdfbox:pdfbox:2.0.24")
-	implementation("org.apache.pdfbox:xmpbox:2.0.24")
+	implementation("org.seleniumhq.selenium:selenium-support:4.28.0")
+	implementation("org.seleniumhq.selenium:selenium-chrome-driver:4.28.0")
+	implementation("org.seleniumhq.selenium:selenium-remote-driver:4.28.0")
+	implementation("org.seleniumhq.selenium:selenium-api:4.28.0")
+	implementation("org.seleniumhq.selenium:selenium-manager:4.28.0")
+	implementation("org.apache.pdfbox:pdfbox:2.0.33")
+	implementation("org.apache.pdfbox:xmpbox:2.0.33")
 
 	implementation("org.jetbrains.kotlin:kotlin-reflect")
 	implementation("org.jetbrains.kotlin:kotlin-stdlib-jdk8")
@@ -82,12 +91,12 @@ dependencies {
 
 	testImplementation("org.springframework.boot:spring-boot-starter-test")
 	testImplementation("org.springframework.security:spring-security-test")
-	testImplementation("io.mockk:mockk:1.12.2")
+	testImplementation("io.mockk:mockk:1.13.13")
 	testImplementation("io.kotest:kotest-runner-junit5:$kotestVersion")
 	testImplementation("io.kotest:kotest-assertions-core:$kotestVersion")
 	testImplementation("io.kotest:kotest-property:$kotestVersion")
 
-	testRuntimeOnly("com.h2database:h2:2.0.206")
+	testRuntimeOnly("com.h2database:h2:2.2.224")
 }
 
 springBoot {

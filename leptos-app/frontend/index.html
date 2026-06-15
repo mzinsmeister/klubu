@@ -1,0 +1,138 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Klubu</title>
+    <!-- Bulma CSS CDN -->
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bulma@1.0.0/css/bulma.min.css">
+    <!-- Google Fonts Outfit -->
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <!-- Material Design Icons CDN -->
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@mdi/font@7.4.47/css/materialdesignicons.min.css">
+    <style>
+      * {
+        font-family: 'Outfit', sans-serif;
+      }
+      body {
+        background: radial-gradient(circle at top right, #1a1235, #08060f) no-repeat;
+        background-attachment: fixed;
+        color: #e2e8f0;
+        min-height: 100vh;
+      }
+      h1, h2, h3, h4, h5, h6, .title, .subtitle {
+        color: #ffffff !important;
+      }
+      .column.is-2.navbar {
+        background: rgba(14, 11, 26, 0.9) !important;
+        backdrop-filter: blur(20px);
+        border-right: 1px solid rgba(140, 103, 239, 0.2);
+        box-shadow: 4px 0 24px rgba(0, 0, 0, 0.3);
+      }
+      .menu-label {
+        color: rgba(255, 255, 255, 0.4) !important;
+        letter-spacing: 0.1em;
+        text-transform: uppercase;
+        font-size: 0.75rem;
+      }
+      .menu-list a {
+        color: rgba(255, 255, 255, 0.75) !important;
+        padding: 0.75rem 1rem;
+        border-radius: 8px;
+        transition: all 0.2s ease;
+      }
+      .menu-list a:hover {
+        background: rgba(140, 103, 239, 0.15) !important;
+        color: #ffffff !important;
+        padding-left: 1.25rem;
+      }
+      .box {
+        background: rgba(22, 18, 38, 0.5) !important;
+        border: 1px solid rgba(140, 103, 239, 0.15) !important;
+        border-radius: 14px;
+        box-shadow: 0 10px 30px rgba(0, 0, 0, 0.4);
+        backdrop-filter: blur(10px);
+        color: #e2e8f0 !important;
+      }
+      .button.is-link {
+        background: linear-gradient(135deg, #8c67ef, #6f42c1) !important;
+        border: none;
+        color: #fff !important;
+        box-shadow: 0 4px 14px rgba(140, 103, 239, 0.4);
+        transition: all 0.3s ease;
+      }
+      .button.is-link:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 6px 20px rgba(140, 103, 239, 0.6);
+      }
+      .button.is-link:active {
+        transform: translateY(0);
+      }
+      .button.is-light {
+        background: rgba(255, 255, 255, 0.08) !important;
+        border: 1px solid rgba(255, 255, 255, 0.1) !important;
+        color: #e2e8f0 !important;
+        transition: all 0.2s ease;
+      }
+      .button.is-light:hover {
+        background: rgba(255, 255, 255, 0.15) !important;
+        color: #fff !important;
+      }
+      .input, .textarea, .select select {
+        background: rgba(10, 8, 20, 0.5) !important;
+        border: 1px solid rgba(140, 103, 239, 0.25) !important;
+        color: #fff !important;
+        border-radius: 8px;
+        box-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.2);
+        transition: all 0.3s ease;
+      }
+      .input:focus, .textarea:focus, .select select:focus {
+        border-color: #8c67ef !important;
+        box-shadow: 0 0 10px rgba(140, 103, 239, 0.3) !important;
+      }
+      .input::placeholder, .textarea::placeholder {
+        color: rgba(255, 255, 255, 0.3) !important;
+      }
+      .table {
+        background: transparent !important;
+        color: #e2e8f0 !important;
+        width: 100%;
+      }
+      .table th {
+        color: rgba(255, 255, 255, 0.6) !important;
+        border-bottom: 2px solid rgba(140, 103, 239, 0.2) !important;
+        background: transparent !important;
+      }
+      .table td {
+        border-bottom: 1px solid rgba(255, 255, 255, 0.06) !important;
+        vertical-align: middle;
+        background: transparent !important;
+        color: #e2e8f0 !important;
+      }
+      .table tr:hover {
+        background: rgba(140, 103, 239, 0.06) !important;
+      }
+      .label {
+        color: rgba(255, 255, 255, 0.7) !important;
+      }
+      .tag.is-success {
+        background-color: rgba(72, 199, 142, 0.15) !important;
+        color: #48c78e !important;
+        border: 1px solid rgba(72, 199, 142, 0.3);
+      }
+      .tag.is-warning {
+        background-color: rgba(255, 221, 87, 0.15) !important;
+        color: #ffdd57 !important;
+        border: 1px solid rgba(255, 221, 87, 0.3);
+      }
+      .tag.is-danger {
+        background-color: rgba(241, 70, 104, 0.15) !important;
+        color: #f14668 !important;
+        border: 1px solid rgba(241, 70, 104, 0.3);
+      }
+    </style>
+  </head>
+  <body>
+    <!-- Trunk will inject the WASM binary and script here -->
+  </body>
+</html>

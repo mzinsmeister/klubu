@@ -1,7 +1,26 @@
 // Included below are all the defined variables from Bulma
 // Modify as needed, removing the !default attribute.
 
-@import "bulma/sass/utilities/_all";
+@import "bulma/sass/utilities/index";
+
+@function findColorInvert($color) {
+    @return bulmaFindColorInvert($color);
+}
+@function findLightColor($color) {
+    @return bulmaFindLightColor($color);
+}
+@function findDarkColor($color) {
+    @return bulmaFindDarkColor($color);
+}
+
+$info-light: findLightColor($info) !default;
+$info-dark: findDarkColor($info) !default;
+$success-light: findLightColor($success) !default;
+$success-dark: findDarkColor($success) !default;
+$warning-light: findLightColor($warning) !default;
+$warning-dark: findDarkColor($warning) !default;
+$danger-light: findLightColor($danger) !default;
+$danger-dark: findDarkColor($danger) !default;
 
 $black:        hsl(0, 0%, 4%) !default;
 $black-bis:    hsl(0, 0%, 7%) !default;
@@ -233,4 +252,4 @@ $colors: mergeColorMaps(
 );
 
 @import "bulma/bulma";
-@import '@oruga-ui/theme-bulma/dist/scss/bulma';
+@import '@oruga-ui/theme-bulma/style.scss';

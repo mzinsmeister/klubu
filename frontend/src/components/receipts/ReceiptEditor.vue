@@ -122,13 +122,13 @@ import { type Receipt } from "@/models/ReceiptModel";
 import ContactSearch from "../common/ContactSearch.vue";
 import ReceiptItemsEditor from "./ReceiptItemsEditor.vue";
 import { useRoute, useRouter } from "vue-router";
-import { useProgrammatic } from "@oruga-ui/oruga-next";
+import { useOruga } from "@oruga-ui/oruga-next";
 import VuePdfEmbed from "vue-pdf-embed";
 import type { Payment } from "@/models/CommonModel";
 import PaymentsModal from "../common/PaymentsModal.vue";
 
 
-const { oruga } = useProgrammatic();
+const oruga = useOruga();
 
 const route = useRoute();
 const router = useRouter();

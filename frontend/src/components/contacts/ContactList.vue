@@ -29,9 +29,9 @@ import { type Contact } from "@/models/ContactModel";
 import { listContacts } from "@/services/ContactsApiService";
 import ContactForm from "./ContactFormModal.vue";
 import { ref, type Ref } from "vue";
-import { useProgrammatic } from "@oruga-ui/oruga-next";
+import { useOruga } from "@oruga-ui/oruga-next";
 
-const { oruga } = useProgrammatic();
+const oruga = useOruga();
 
 let contactsCache: Map<number, Array<Contact>> = new Map();
 const contacts: Ref<Array<Contact> | null> = ref(null);
