@@ -13,3 +13,5 @@ Cargo.lock
 *.db
 
 frontend/dist
+document_storage/
+backend/templates/

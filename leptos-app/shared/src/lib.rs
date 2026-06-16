@@ -115,12 +115,14 @@ pub struct InvoiceListItem {
     pub is_canceled: bool,
     #[serde(default)]
     pub is_cancelation: bool,
+    pub subject: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct Offer {
     pub id: Option<i64>,
     pub revision: Option<i64>,
+    pub offer_number: Option<i64>,
     pub title: Option<String>,
     pub customer_contact: Option<Contact>,
     pub offer_date: Option<NaiveDate>,
@@ -140,6 +142,7 @@ pub struct Offer {
 pub struct OfferListItem {
     pub id: i64,
     pub revision: i64,
+    pub offer_number: Option<i64>,
     pub title: Option<String>,
     pub created_timestamp: DateTime<Utc>,
     pub customer_contact: Option<Contact>,
@@ -149,6 +152,7 @@ pub struct OfferListItem {
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct OfferRevision {
+    pub id: i64,
     pub revision_number: i64,
     pub creation_date: DateTime<Utc>,
 }
@@ -174,6 +178,13 @@ pub struct ReceiptItem {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct ReceiptDocumentData {
+    pub data: String, // Base64 encoded file data
+    pub extension: String,
+    pub media_type: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct Receipt {
     pub id: Option<i64>,
     #[serde(default)]
@@ -187,6 +198,7 @@ pub struct Receipt {
     pub due_date: Option<NaiveDate>,
     pub supplier_contact: Option<Contact>,
     pub document: Option<Document>,
+    pub document_data: Option<ReceiptDocumentData>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]

@@ -2,7 +2,7 @@ use axum::{
     body::Body,
     extract::{Path, State},
     http::{header, Request, Response, StatusCode},
-    response::{IntoResponse, Response as AxumResponse},
+    response::IntoResponse,
     routing::{get, post},
     Router,
 };
@@ -42,12 +42,6 @@ async fn download_invoice_pdf(
 ) -> impl IntoResponse {
     match fetch_invoice_db(&pool, id).await {
         Ok(invoice) => {
-            if invoice.committed_timestamp.is_none() {
-                return Response::builder()
-                    .status(StatusCode::BAD_REQUEST)
-                    .body(Body::from("Can only export committed invoices"))
-                    .unwrap();
-            }
             let typst_code = app::generate_invoice_typst(&invoice);
             match app::pdf::compiler::compile_typst(typst_code) {
                 Ok(pdf_bytes) => Response::builder()
@@ -55,7 +49,7 @@ async fn download_invoice_pdf(
                     .header(header::CONTENT_TYPE, "application/pdf")
                     .header(
                         header::CONTENT_DISPOSITION,
-                        format!("attachment; filename=\"invoice_{}.pdf\"", id),
+                        format!("inline; filename=\"invoice_{}.pdf\"", id),
                     )
                     .body(Body::from(pdf_bytes))
                     .unwrap(),
@@ -78,12 +72,6 @@ async fn download_offer_pdf(
 ) -> impl IntoResponse {
     match fetch_offer_db(&pool, id).await {
         Ok(offer) => {
-            if offer.committed_timestamp.is_none() {
-                return Response::builder()
-                    .status(StatusCode::BAD_REQUEST)
-                    .body(Body::from("Can only export committed offers"))
-                    .unwrap();
-            }
             let typst_code = app::generate_offer_typst(&offer);
             match app::pdf::compiler::compile_typst(typst_code) {
                 Ok(pdf_bytes) => Response::builder()
@@ -91,7 +79,7 @@ async fn download_offer_pdf(
                     .header(header::CONTENT_TYPE, "application/pdf")
                     .header(
                         header::CONTENT_DISPOSITION,
-                        format!("attachment; filename=\"offer_{}.pdf\"", id),
+                        format!("inline; filename=\"offer_{}.pdf\"", id),
                     )
                     .body(Body::from(pdf_bytes))
                     .unwrap(),
@@ -104,6 +92,80 @@ async fn download_offer_pdf(
         Err(e) => Response::builder()
             .status(StatusCode::NOT_FOUND)
             .body(Body::from(format!("Offer not found: {}", e)))
+            .unwrap(),
+    }
+}
+
+async fn download_document(
+    Path(id): Path<i64>,
+    State(pool): State<PgPool>,
+) -> impl IntoResponse {
+    let doc_id = id as i32;
+    
+    let doc_res = sqlx::query!(
+        "SELECT extension, media_type, storage_key_prefix FROM document WHERE id = $1",
+        doc_id
+    )
+    .fetch_optional(&pool)
+    .await;
+    
+    let doc = match doc_res {
+        Ok(Some(d)) => d,
+        Ok(None) => return Response::builder()
+            .status(StatusCode::NOT_FOUND)
+            .body(Body::from("Document not found"))
+            .unwrap(),
+        Err(e) => return Response::builder()
+            .status(StatusCode::INTERNAL_SERVER_ERROR)
+            .body(Body::from(e.to_string()))
+            .unwrap(),
+    };
+    
+    let version_res = sqlx::query!(
+        "SELECT version, is_tombstone FROM document_version WHERE document_id = $1 ORDER BY version DESC LIMIT 1",
+        doc_id
+    )
+    .fetch_optional(&pool)
+    .await;
+    
+    let version = match version_res {
+        Ok(Some(v)) => v,
+        Ok(None) => return Response::builder()
+            .status(StatusCode::NOT_FOUND)
+            .body(Body::from("Document version not found"))
+            .unwrap(),
+        Err(e) => return Response::builder()
+            .status(StatusCode::INTERNAL_SERVER_ERROR)
+            .body(Body::from(e.to_string()))
+            .unwrap(),
+    };
+    
+    if version.is_tombstone != 0 {
+        return Response::builder()
+            .status(StatusCode::NOT_FOUND)
+            .body(Body::from("Document was deleted"))
+            .unwrap();
+    }
+    
+    let storage_dir = std::env::var("KLUBU_DOCUMENT_STORAGE_PATH")
+        .unwrap_or_else(|_| "./document_storage".to_string());
+        
+    let file_name = format!("{}_{}.{}", doc.storage_key_prefix, version.version, doc.extension);
+    let file_path = std::path::Path::new(&storage_dir).join(&file_name);
+    
+    match tokio::fs::read(&file_path).await {
+        Ok(bytes) => Response::builder()
+            .status(StatusCode::OK)
+            .header(header::CONTENT_TYPE, doc.media_type)
+            .header(
+                header::CONTENT_DISPOSITION,
+                format!("inline; filename=\"document_{}.{}\"", doc_id, doc.extension),
+            )
+            .body(Body::from(bytes))
+            .unwrap(),
+        Err(e) => Response::builder()
+            .status(StatusCode::INTERNAL_SERVER_ERROR)
+            .body(Body::from(format!("Failed to read file: {}", e)))
             .unwrap(),
     }
 }
@@ -140,6 +202,7 @@ async fn main() {
         .route("/api/*fn_name", post(handle_server_fns))
         .route("/api/pdf/invoice/:id", get(download_invoice_pdf))
         .route("/api/pdf/offer/:id", get(download_offer_pdf))
+        .route("/api/documents/:id", get(download_document))
         .layer(cors)
         .fallback_service(
             ServeDir::new(&dist_dir)
@@ -361,6 +424,7 @@ pub async fn fetch_offer_db(pool: &PgPool, id: i64) -> Result<shared::Offer, Str
     Ok(shared::Offer {
         id: Some(o.id as i64),
         revision: Some(o.revision as i64),
+        offer_number: o.offer_number.map(|num| num as i64),
         title: o.title,
         customer_contact: contact,
         offer_date: chrono::NaiveDate::parse_from_str(&o.offer_date.unwrap_or_default(), "%Y-%m-%d").ok(),

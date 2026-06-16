@@ -23,7 +23,7 @@
       h1, h2, h3, h4, h5, h6, .title, .subtitle {
         color: #ffffff !important;
       }
-      .column.is-2.navbar {
+      .column.is-2.sidebar {
         background: rgba(14, 11, 26, 0.9) !important;
         backdrop-filter: blur(20px);
         border-right: 1px solid rgba(140, 103, 239, 0.2);
@@ -36,6 +36,7 @@
         font-size: 0.75rem;
       }
       .menu-list a {
+        background: transparent !important;
         color: rgba(255, 255, 255, 0.75) !important;
         padding: 0.75rem 1rem;
         border-radius: 8px;
@@ -45,6 +46,12 @@
         background: rgba(140, 103, 239, 0.15) !important;
         color: #ffffff !important;
         padding-left: 1.25rem;
+      }
+      .menu-list a[aria-current="page"] {
+        background: rgba(140, 103, 239, 0.3) !important;
+        color: #ffffff !important;
+        font-weight: 600;
+        border-left: 4px solid #8c67ef;
       }
       .box {
         background: rgba(22, 18, 38, 0.5) !important;
@@ -111,6 +118,9 @@
       }
       .table tr:hover {
         background: rgba(140, 103, 239, 0.06) !important;
+      }
+      .table.is-striped tbody tr:nth-child(even) {
+        background-color: rgba(140, 103, 239, 0.03) !important;
       }
       .label {
         color: rgba(255, 255, 255, 0.7) !important;
