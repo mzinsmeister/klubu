@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "\n        SELECT i.id, i.created_timestamp, i.invoice_number, i.is_canceled, i.is_cancelation, i.committed_timestamp, i.subject,\n               c.id as \"contact_id?\", c.name as \"contact_name?\", c.first_name as \"contact_first_name?\"\n        FROM invoice i\n        LEFT JOIN contact c ON i.customer_contact_id = c.id\n        ORDER BY i.invoice_number DESC NULLS LAST, i.id DESC\n        ",
+  "query": "\n            SELECT r.id, r.created_timestamp, r.receipt_number, r.receipt_date, r.document_id,\n                   COALESCE((SELECT SUM(ri.total) FROM receipt_item ri WHERE ri.receipt_id = r.id), 0) as \"total!\",\n                   c.id as \"contact_id?\", c.name as \"contact_name?\", c.first_name as \"contact_first_name?\"\n            FROM receipt r\n            LEFT JOIN contact c ON r.customer_contact_id = c.id\n            ORDER BY r.receipt_date DESC NULLS LAST, r.id DESC\n            ",
   "describe": {
     "columns": [
       {
@@ -15,41 +15,36 @@
       },
       {
         "ordinal": 2,
-        "name": "invoice_number",
-        "type_info": "Int4"
+        "name": "receipt_number",
+        "type_info": "Varchar"
       },
       {
         "ordinal": 3,
-        "name": "is_canceled",
-        "type_info": "Int4"
+        "name": "receipt_date",
+        "type_info": "Varchar"
       },
       {
         "ordinal": 4,
-        "name": "is_cancelation",
+        "name": "document_id",
         "type_info": "Int4"
       },
       {
         "ordinal": 5,
-        "name": "committed_timestamp",
-        "type_info": "Varchar"
+        "name": "total!",
+        "type_info": "Int8"
       },
       {
         "ordinal": 6,
-        "name": "subject",
-        "type_info": "Varchar"
-      },
-      {
-        "ordinal": 7,
         "name": "contact_id?",
         "type_info": "Int4"
       },
       {
-        "ordinal": 8,
+        "ordinal": 7,
         "name": "contact_name?",
         "type_info": "Varchar"
       },
       {
-        "ordinal": 9,
+        "ordinal": 8,
         "name": "contact_first_name?",
         "type_info": "Varchar"
       }
@@ -61,14 +56,13 @@
       false,
       true,
       true,
-      false,
-      false,
       true,
       true,
+      null,
       false,
       false,
       true
     ]
   },
-  "hash": "f0f868542e0b6d9b9e96a5d71891b38523c93be6ee27220bf459b1ed8db64617"
+  "hash": "73e78e4d4bfe1c0eb3c4c50cd14a416107d33962cc343ec97280fd0745a91589"
 }

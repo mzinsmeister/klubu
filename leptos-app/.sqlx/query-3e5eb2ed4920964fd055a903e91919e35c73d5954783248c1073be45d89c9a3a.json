@@ -1,0 +1,50 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            SELECT c.id, c.name, t.id as \"type_id\", t.name as \"type_name\",\n                   t.euer_kennzahl as \"euer_kennzahl\", t.is_expense as \"is_expense\"\n            FROM receipt_item_category c\n            JOIN receipt_item_category_type t ON c.category_type_id = t.id\n            ORDER BY t.is_expense, t.name, c.name\n            ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 1,
+        "name": "name",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 2,
+        "name": "type_id",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 3,
+        "name": "type_name",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 4,
+        "name": "euer_kennzahl",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 5,
+        "name": "is_expense",
+        "type_info": "Int4"
+      }
+    ],
+    "parameters": {
+      "Left": []
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      true,
+      false
+    ]
+  },
+  "hash": "3e5eb2ed4920964fd055a903e91919e35c73d5954783248c1073be45d89c9a3a"
+}

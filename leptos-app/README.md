@@ -48,6 +48,15 @@ ollama pull qwen2.5:3b                       # ~1.9 GB
 KLUBU_AI_ENABLED=true cargo run --package backend
 ```
 
+If you would rather not install Ollama on the host, `docker-compose.yml` ships it
+behind an opt-in profile. It publishes port 11434 and pulls the default model on
+first start, so the backend needs no extra configuration:
+
+```bash
+docker compose --profile ai up -d            # postgres + ollama + model pull
+KLUBU_AI_ENABLED=true cargo run --package backend
+```
+
 ### Configuration
 
 Each setting can come from an environment variable or from `config/application.properties` (the env var wins). These are the defaults:

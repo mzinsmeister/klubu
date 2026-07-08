@@ -1,11 +1,11 @@
 {
   "db_name": "PostgreSQL",
-  "query": "SELECT COALESCE(MAX(invoice_number), 0) FROM invoice",
+  "query": "SELECT COALESCE(MAX(invoice_number), 0) as \"invoice_number!\" FROM invoice",
   "describe": {
     "columns": [
       {
         "ordinal": 0,
-        "name": "coalesce",
+        "name": "invoice_number!",
         "type_info": "Int4"
       }
     ],
@@ -16,5 +16,5 @@
       null
     ]
   },
-  "hash": "a4dcd84797e429d01ec9d698062b6ec07e88470a64f7a916c207250c63a89575"
+  "hash": "4f1dc18cd3d1d3ad7400fee1271fa9d7bc5c7e9e8c893313c6e563a7dac4e3aa"
 }

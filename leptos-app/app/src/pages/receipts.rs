@@ -115,7 +115,7 @@ pub fn ReceiptsPage() -> impl IntoView {
                 </div>
             </div>
 
-            <div class="columns">
+            <div class="columns is-split">
                 <div class="column is-5">
                     <div class="box">
                         <Show
@@ -340,25 +340,21 @@ fn ReceiptEditor(
                 </div>
             })}
 
-            <div class="columns">
-                <div class="column is-6">
-                    <div class="field">
-                        <label class="label">"Belegnummer"</label>
-                        <div class="control">
-                            <input class="input" type="text" placeholder="z. B. RG-2026-0042"
-                                prop:value=receipt_num
-                                on:input=move |ev| set_receipt_num.set(event_target_value(&ev)) />
-                        </div>
+            <div class="field-row">
+                <div class="field">
+                    <label class="label">"Belegnummer"</label>
+                    <div class="control">
+                        <input class="input" type="text" placeholder="z. B. RG-2026-0042"
+                            prop:value=receipt_num
+                            on:input=move |ev| set_receipt_num.set(event_target_value(&ev)) />
                     </div>
                 </div>
-                <div class="column is-6">
-                    <div class="field">
-                        <label class="label">"Belegdatum"</label>
-                        <div class="control">
-                            <input class="input" type="date"
-                                prop:value=receipt_date
-                                on:input=move |ev| set_receipt_date.set(event_target_value(&ev)) />
-                        </div>
+                <div class="field">
+                    <label class="label">"Belegdatum"</label>
+                    <div class="control">
+                        <input class="input" type="date"
+                            prop:value=receipt_date
+                            on:input=move |ev| set_receipt_date.set(event_target_value(&ev)) />
                     </div>
                 </div>
             </div>
@@ -405,41 +401,33 @@ fn ReceiptEditor(
             // Add item
             <div class="box subbox p-4 mt-4">
                 <h3 class="has-text-weight-bold mb-3">"Position hinzufügen"</h3>
-                <div class="columns is-vcentered">
-                    <div class="column is-4">
-                        <div class="field">
-                            <label class="label is-small">"Beschreibung"</label>
-                            <input class="input" type="text" placeholder="Beschreibung"
-                                prop:value=item_desc
-                                on:input=move |ev| set_item_desc.set(event_target_value(&ev)) />
+                <div class="field-row">
+                    <div class="field is-wide">
+                        <label class="label is-small">"Beschreibung"</label>
+                        <input class="input" type="text" placeholder="Beschreibung"
+                            prop:value=item_desc
+                            on:input=move |ev| set_item_desc.set(event_target_value(&ev)) />
+                    </div>
+                    <div class="field is-narrow">
+                        <label class="label is-small">"Betrag (€)"</label>
+                        <MoneyInput value=item_price />
+                    </div>
+                    <div class="field">
+                        <label class="label is-small">"Kategorie"</label>
+                        <div class="select is-fullwidth">
+                            <select on:change=move |ev| {
+                                set_item_cat_id.set(event_target_value(&ev).parse::<i64>().ok())
+                            }>
+                                <option value="">"– wählen –"</option>
+                                {move || categories.get().into_iter().map(|cat| view! {
+                                    <option value=cat.id.to_string()>{cat.name}</option>
+                                }).collect::<Vec<_>>()}
+                            </select>
                         </div>
                     </div>
-                    <div class="column is-2">
-                        <div class="field">
-                            <label class="label is-small">"Betrag (€)"</label>
-                            <MoneyInput value=item_price />
-                        </div>
-                    </div>
-                    <div class="column is-5">
-                        <div class="field">
-                            <label class="label is-small">"Kategorie"</label>
-                            <div class="select is-fullwidth">
-                                <select on:change=move |ev| {
-                                    set_item_cat_id.set(event_target_value(&ev).parse::<i64>().ok())
-                                }>
-                                    <option value="">"– wählen –"</option>
-                                    {move || categories.get().into_iter().map(|cat| view! {
-                                        <option value=cat.id.to_string()>{cat.name}</option>
-                                    }).collect::<Vec<_>>()}
-                                </select>
-                            </div>
-                        </div>
-                    </div>
-                    <div class="column is-1">
-                        <button class="button is-link is-fullwidth" title="Hinzufügen" on:click=add_item>
-                            <span class="icon"><i class="mdi mdi-plus"></i></span>
-                        </button>
-                    </div>
+                    <button class="button is-link" title="Hinzufügen" on:click=add_item>
+                        <span class="icon"><i class="mdi mdi-plus"></i></span>
+                    </button>
                 </div>
             </div>
 

@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "\n        SELECT o.id, o.revision, o.title, o.created_timestamp, o.committed_timestamp, o.offer_number,\n               c.id as \"contact_id?\", c.name as \"contact_name?\", c.first_name as \"contact_first_name?\"\n        FROM offer o\n        LEFT JOIN contact c ON o.customer_contact_id = c.id\n        INNER JOIN (\n            SELECT COALESCE(group_id, id) as gid, MAX(revision) as max_rev\n            FROM offer\n            GROUP BY COALESCE(group_id, id)\n        ) latest ON COALESCE(o.group_id, o.id) = latest.gid AND o.revision = latest.max_rev\n        ORDER BY o.id DESC\n        ",
+  "query": "\n            SELECT o.id, o.revision, o.title, o.created_timestamp, o.committed_timestamp, o.offer_number,\n                   c.id as \"contact_id?\", c.name as \"contact_name?\", c.first_name as \"contact_first_name?\"\n            FROM offer o\n            LEFT JOIN contact c ON o.customer_contact_id = c.id\n            INNER JOIN (\n                SELECT COALESCE(group_id, id) as gid, MAX(revision) as max_rev\n                FROM offer\n                GROUP BY COALESCE(group_id, id)\n            ) latest ON COALESCE(o.group_id, o.id) = latest.gid AND o.revision = latest.max_rev\n            ORDER BY o.id DESC\n            ",
   "describe": {
     "columns": [
       {
@@ -64,5 +64,5 @@
       true
     ]
   },
-  "hash": "28cbe0ff13a1bbaf83e7c7ce50e09960fa8a22f9f1aa3e006d724f4316785f26"
+  "hash": "c6e135658a6dde25d75d4ec09c3670e18e14d323026c7265cb6752bb123ab475"
 }

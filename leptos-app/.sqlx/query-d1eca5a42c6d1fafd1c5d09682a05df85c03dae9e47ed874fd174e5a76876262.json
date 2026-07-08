@@ -1,0 +1,22 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            SELECT COALESCE(SUM(ii.total), 0) as \"sum!\"\n            FROM invoice i\n            JOIN invoice_item ii ON ii.invoice_id = i.id\n            WHERE i.committed_timestamp IS NOT NULL\n              AND i.is_canceled = 0\n              AND i.is_cancelation = 0\n              AND i.invoice_date LIKE $1\n            ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "sum!",
+        "type_info": "Int8"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text"
+      ]
+    },
+    "nullable": [
+      null
+    ]
+  },
+  "hash": "d1eca5a42c6d1fafd1c5d09682a05df85c03dae9e47ed874fd174e5a76876262"
+}

@@ -1,11 +1,11 @@
 {
   "db_name": "PostgreSQL",
-  "query": "SELECT COALESCE(MAX(offer_number), 0) FROM offer",
+  "query": "SELECT COALESCE(MAX(offer_number), 0) as \"offer_number!\" FROM offer",
   "describe": {
     "columns": [
       {
         "ordinal": 0,
-        "name": "coalesce",
+        "name": "offer_number!",
         "type_info": "Int4"
       }
     ],
@@ -16,5 +16,5 @@
       null
     ]
   },
-  "hash": "b2b4c79793e383ca8dd353ed318f4c13950ab06936a19bd818b15a0150750ea6"
+  "hash": "11ed06c91e86376d328a2d8b96dd05226152008322cb2da80a96553f5c751be9"
 }

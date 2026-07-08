@@ -1,6 +1,42 @@
 use serde::{Deserialize, Serialize};
 use chrono::{NaiveDate, DateTime, Utc};
 
+/// A parameter a report asks for before it can run (e.g. a year, a date range).
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct ReportParamInfo {
+    pub name: String,
+    pub label: String,
+    /// "int" | "date" | "text" — how the frontend renders the input and how the
+    /// engine binds the value.
+    pub kind: String,
+    pub default: Option<String>,
+}
+
+/// A report the server offers, discovered from `templates/reports/<name>/`.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct ReportInfo {
+    /// Directory name; the stable id used to run and export the report.
+    pub name: String,
+    pub title: String,
+    pub description: Option<String>,
+    pub params: Vec<ReportParamInfo>,
+}
+
+/// The rendered report, as a self-contained HTML fragment for inline display.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct ReportRender {
+    pub html: String,
+}
+
+/// A generated report file offered for download.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct ReportDownload {
+    pub filename: String,
+    pub media_type: String,
+    /// Base64-encoded file contents.
+    pub base64: String,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct Currency {
     pub code: String,
@@ -412,6 +448,12 @@ pub struct OfferRevision {
 pub struct ReceiptItemCategoryType {
     pub id: i64,
     pub name: String,
+    /// ELSTER Kennzahl of the Anlage EÜR line this type books onto, e.g. "228".
+    /// `None` means the type predates the EÜR mapping; its money shows up in the
+    /// report's "nicht zugeordnet" list rather than in a total.
+    pub euer_kennzahl: Option<String>,
+    /// Betriebsausgabe when true, Betriebseinnahme when false.
+    pub is_expense: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]

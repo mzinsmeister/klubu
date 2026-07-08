@@ -387,7 +387,12 @@ mod tests {
         ReceiptItemCategory {
             id,
             name: name.to_string(),
-            category_type: ReceiptItemCategoryType { id: 1, name: "Ausgaben".into() },
+            category_type: ReceiptItemCategoryType {
+                id: 1,
+                name: "Ausgaben".into(),
+                euer_kennzahl: Some("183".into()),
+                is_expense: true,
+            },
         }
     }
 

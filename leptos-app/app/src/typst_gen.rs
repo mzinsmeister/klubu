@@ -120,7 +120,7 @@ pub fn load_config() -> AppConfig {
 }
 
 #[cfg(feature = "ssr")]
-fn json_to_typst(val: &serde_json::Value) -> String {
+pub(crate) fn json_to_typst(val: &serde_json::Value) -> String {
     match val {
         serde_json::Value::Null => "none".to_string(),
         serde_json::Value::Bool(b) => b.to_string(),

@@ -5,13 +5,18 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>Klubu</title>
-    <!-- Bulma CSS CDN -->
-    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bulma@1.0.0/css/bulma.min.css">
     <!-- Google Fonts Outfit -->
     <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&display=swap" rel="stylesheet">
     <!-- Material Design Icons CDN -->
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@mdi/font@7.4.47/css/materialdesignicons.min.css">
     <style>
+      /* Modern Reset */
+      *, *::before, *::after {
+        box-sizing: border-box;
+        margin: 0;
+        padding: 0;
+      }
+
       :root {
         --accent: #8c67ef;
         --accent-strong: #6f42c1;
@@ -32,18 +37,498 @@
         background-attachment: fixed;
         color: var(--text);
         min-height: 100vh;
+        line-height: 1.5;
+        -webkit-font-smoothing: antialiased;
       }
 
       h1, h2, h3, h4, h5, h6, .title, .subtitle {
         color: #ffffff !important;
       }
 
-      /* ---------------------------------------------------------------
-         App shell.
-         Deliberately not Bulma's `.columns.is-gapless`: that rule sets
-         `padding: 0 !important` on child columns and silently defeats the
-         `p-4` / `p-5` helpers, which clipped every page heading.
-         --------------------------------------------------------------- */
+      /* Layout & Spacing */
+      .container {
+        width: 100%;
+        margin-right: auto;
+        margin-left: auto;
+        max-width: 1400px;
+        padding-left: 0.75rem;
+        padding-right: 0.75rem;
+      }
+
+      .columns {
+        display: flex;
+        flex-flow: row wrap;
+        margin-left: -0.75rem;
+        margin-right: -0.75rem;
+        margin-top: -0.75rem;
+      }
+      .columns:last-child {
+        margin-bottom: -0.75rem;
+      }
+      .column {
+        display: block;
+        flex-basis: 0;
+        flex-grow: 1;
+        flex-shrink: 1;
+        padding: 0.75rem;
+      }
+      .column.is-1 { flex: none; width: 8.3333%; }
+      .column.is-2 { flex: none; width: 16.6667%; }
+      .column.is-3 { flex: none; width: 25%; }
+      .column.is-4 { flex: none; width: 33.3333%; }
+      .column.is-5 { flex: none; width: 41.6667%; }
+      .column.is-6 { flex: none; width: 50%; }
+      .column.is-7 { flex: none; width: 58.3333%; }
+      .column.is-8 { flex: none; width: 66.6667%; }
+      .column.is-9 { flex: none; width: 75%; }
+      .column.is-10 { flex: none; width: 83.3333%; }
+      .column.is-11 { flex: none; width: 91.6667%; }
+      .column.is-12 { flex: none; width: 100%; }
+
+      /* Master/detail pages (invoices, offers, receipts, contacts): each side
+         scrolls on its own rather than scrolling the whole page.
+         The master list is capped instead of taking a percentage — at 41.67% it
+         ate half the width of an already-narrow viewport and left the editor
+         unusable. Below 1100px the two panes stack. */
+      .columns.is-split {
+        display: grid;
+        grid-template-columns: minmax(0, 24rem) minmax(0, 1fr);
+        gap: 1.5rem;
+        align-items: start;
+        margin: 0;
+      }
+      .columns.is-split > .column {
+        width: auto;
+        padding: 0;
+        max-height: calc(100vh - 12rem);
+        overflow-y: auto;
+        overscroll-behavior: contain;
+      }
+      @media (max-width: 1100px) {
+        .columns.is-split {
+          grid-template-columns: minmax(0, 1fr);
+        }
+        /* Stacked — let the page scroll instead of two tiny panes. */
+        .columns.is-split > .column {
+          max-height: none;
+          overflow-y: visible;
+        }
+      }
+
+      @media (max-width: 768px) {
+        .columns {
+          flex-direction: column;
+          margin-left: 0;
+          margin-right: 0;
+          margin-top: 0;
+        }
+        .column {
+          width: 100% !important;
+          padding: 0.5rem 0;
+        }
+      }
+
+      /* Level (Flex Layout for headers, etc.) */
+      .level {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        margin-bottom: 1.5rem;
+        gap: 1rem;
+      }
+      .level-left, .level-right {
+        display: flex;
+        align-items: center;
+        flex-basis: auto;
+        flex-grow: 0;
+        flex-shrink: 0;
+        gap: 0.75rem;
+      }
+      @media (max-width: 768px) {
+        .level {
+          flex-direction: column;
+          align-items: flex-start;
+        }
+        .level-left, .level-right {
+          width: 100%;
+          justify-content: space-between;
+        }
+      }
+
+      /* Forms and Controls */
+      .field {
+        margin-bottom: 1rem;
+      }
+      .field.is-grouped {
+        display: flex;
+        justify-content: flex-start;
+        gap: 0.75rem;
+        flex-wrap: wrap;
+      }
+
+      /* Fields sitting side by side in a `.columns` row: a label that wraps to
+         two lines makes its column taller and pushes its input below the inputs
+         next to it. Pin each control to the bottom of its column so the whole
+         row of inputs stays on one line regardless of label height. */
+      .columns > .column:has(> .field:not(.is-grouped):not(.has-addons)) {
+        display: flex;
+        flex-direction: column;
+      }
+      .columns > .column > .field:not(.is-grouped):not(.has-addons) {
+        display: flex;
+        flex-direction: column;
+        flex: 1 1 auto;
+      }
+      .columns > .column > .field:not(.is-grouped):not(.has-addons) > :last-child {
+        margin-top: auto;
+      }
+      /* A bare button sharing a row with such fields (e.g. the "add item" +)
+         has no label to offset it, so bottom-align it too — matching the
+         field's 1rem bottom margin keeps it level with the inputs. */
+      .columns:has(> .column > .field) > .column > .button {
+        margin-top: auto;
+        margin-bottom: 1rem;
+      }
+      .columns:has(> .column > .field) > .column:has(> .button) {
+        display: flex;
+        flex-direction: column;
+      }
+
+      /* Form rows.
+         `.columns` percentages hold at every size, so a four-field row stays a
+         four-field row even when it lives in the detail pane of a split view on
+         a 200%-scaled laptop — each input ends up ~70px wide. `.field-row` sizes
+         its fields by ideal width instead and wraps when they no longer fit, so
+         the same markup reflows to two-up or one-up as the pane narrows.
+
+           (default)    a normal field, ~12rem before wrapping
+           .is-narrow   short values (Anrede, PLZ, Hausnummer): fixed, won't grow
+           .is-wide     the row's primary field (Straße, Beschreibung): takes the slack
+      */
+      .field-row {
+        display: flex;
+        flex-wrap: wrap;
+        column-gap: 1rem;
+      }
+      .field-row > .field {
+        display: flex;
+        flex-direction: column;
+        flex: 1 1 12rem;
+        min-width: 0;
+      }
+      .field-row > .field.is-narrow { flex: 0 1 9rem; }
+      .field-row > .field.is-wide { flex: 2 1 16rem; }
+      /* Bottom-align the controls: a label that wraps to two lines must not push
+         its input below the inputs beside it. */
+      .field-row > .field > :last-child { margin-top: auto; }
+      /* A bare button in the row (e.g. the "add item" +) has no label to offset
+         it; match the field's bottom margin so it lines up with the inputs. */
+      .field-row > .button {
+        flex: 0 0 auto;
+        align-self: flex-end;
+        margin-bottom: 1rem;
+      }
+
+      .control {
+        position: relative;
+        width: 100%;
+      }
+      .field.is-grouped .control {
+        width: auto;
+      }
+      .control.has-icons-left {
+        position: relative;
+      }
+      .control.has-icons-left .input {
+        padding-left: 2.5em;
+      }
+      .control.has-icons-left .icon.is-left {
+        left: 0;
+        position: absolute;
+        top: 0;
+        height: 100%;
+        width: 2.5em;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        color: var(--text-muted);
+        pointer-events: none;
+      }
+
+      /* Buttons & Forms elements */
+      .button {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        padding: 0.5em 1em;
+        font-size: 1rem;
+        font-weight: 500;
+        line-height: 1.5;
+        text-align: center;
+        white-space: nowrap;
+        cursor: pointer;
+        border: 1px solid transparent;
+        border-radius: 8px;
+        user-select: none;
+        background-color: rgba(255, 255, 255, 0.08);
+        color: var(--text);
+        transition: background-color 0.15s ease, border-color 0.15s ease, transform 0.2s ease, box-shadow 0.2s ease;
+        text-decoration: none;
+      }
+      .button:focus {
+        outline: none;
+        box-shadow: 0 0 0 0.125em rgba(140, 103, 239, 0.25);
+      }
+      .buttons {
+        display: flex;
+        flex-wrap: wrap;
+        justify-content: flex-start;
+        gap: 0.5rem;
+        align-items: center;
+      }
+
+      .input, .textarea {
+        width: 100%;
+        padding: 0.6em 0.8em;
+        font-size: 1rem;
+        line-height: 1.5;
+        outline: none;
+        box-sizing: border-box;
+      }
+      .textarea {
+        min-height: 100px;
+        resize: vertical;
+      }
+      
+      .select {
+        display: inline-block;
+        max-width: 100%;
+        position: relative;
+        vertical-align: top;
+        width: 100%;
+      }
+      .select select {
+        cursor: pointer;
+        display: block;
+        font-size: 1em;
+        max-width: 100%;
+        outline: none;
+        padding: 0.6em 2.5em 0.6em 0.8em;
+        width: 100%;
+        box-sizing: border-box;
+        -webkit-appearance: none;
+        -moz-appearance: none;
+        appearance: none;
+      }
+      .select:not(.is-multiple):not(.is-loading)::after {
+        border: 2px solid var(--accent) !important;
+        border-radius: 1px;
+        border-right: 0 !important;
+        border-top: 0 !important;
+        content: " ";
+        display: block;
+        height: 0.5em;
+        margin-top: -0.375em;
+        pointer-events: none;
+        position: absolute;
+        right: 1.125em;
+        top: 50%;
+        transform: rotate(-45deg);
+        transform-origin: center;
+        width: 0.5em;
+      }
+
+      /* Icons */
+      .icon {
+        align-items: center;
+        display: inline-flex;
+        justify-content: center;
+        height: 1.5rem;
+        width: 1.5rem;
+      }
+      .icon.is-small {
+        height: 1rem;
+        width: 1rem;
+      }
+
+      /* Checkboxes and Radios */
+      .checkbox, .radio {
+        cursor: pointer;
+        display: inline-flex;
+        align-items: center;
+        line-height: 1.25;
+        position: relative;
+        gap: 0.5em;
+      }
+      .checkbox input, .radio input {
+        cursor: pointer;
+      }
+
+      /* File upload helper styling */
+      .file {
+        align-items: stretch;
+        display: flex;
+        justify-content: flex-start;
+        position: relative;
+      }
+      .file.is-fullwidth {
+        width: 100%;
+      }
+      .file-label {
+        align-items: stretch;
+        display: flex;
+        cursor: pointer;
+        justify-content: flex-start;
+        position: relative;
+        width: 100%;
+      }
+      .file-input {
+        height: 100%;
+        left: 0;
+        opacity: 0;
+        outline: none;
+        position: absolute;
+        top: 0;
+        width: 100%;
+        cursor: pointer;
+      }
+      .file-cta {
+        border-radius: 8px 0 0 8px;
+        font-size: 1rem;
+        padding: 0.6em 1em;
+        white-space: nowrap;
+        display: inline-flex;
+        align-items: center;
+        gap: 0.5rem;
+      }
+      .file-name {
+        border-radius: 0 8px 8px 0;
+        display: block;
+        flex-grow: 1;
+        font-size: 1rem;
+        padding: 0.6em 1em;
+        text-align: left;
+        border-left: none !important;
+        text-overflow: ellipsis;
+        overflow: hidden;
+        white-space: nowrap;
+      }
+
+      /* Tables */
+      .table {
+        border-collapse: collapse;
+        border-spacing: 0;
+        width: 100%;
+        margin-bottom: 1.5rem;
+      }
+      .table-wrap {
+        width: 100%;
+        overflow-x: auto;
+        -webkit-overflow-scrolling: touch;
+      }
+
+      /* Tags */
+      .tag {
+        align-items: center;
+        background-color: rgba(255, 255, 255, 0.1);
+        border-radius: 4px;
+        color: var(--text);
+        display: inline-flex;
+        font-size: 0.75rem;
+        height: 2em;
+        justify-content: center;
+        line-height: 1.5;
+        padding-left: 0.75em;
+        padding-right: 0.75em;
+        white-space: nowrap;
+      }
+      .tags {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 0.5rem;
+      }
+
+      /* Messages */
+      .message {
+        background-color: var(--surface);
+        border-radius: 6px;
+        font-size: 1rem;
+        margin-bottom: 1.5rem;
+      }
+      .message-body {
+        border-radius: 6px;
+        border-left: 4px solid var(--border);
+        padding: 1.25em 1.5em;
+      }
+
+      /* Typography Helpers */
+      .title {
+        font-size: 2rem;
+        font-weight: 600;
+        line-height: 1.125;
+        margin-bottom: 1.5rem;
+      }
+      .subtitle {
+        font-size: 1.25rem;
+        font-weight: 500;
+        line-height: 1.25;
+        margin-bottom: 1.25rem;
+      }
+      .has-text-weight-bold { font-weight: 700 !important; }
+      .has-text-weight-semibold { font-weight: 600 !important; }
+      .has-text-centered { text-align: center !important; }
+      .has-text-right { text-align: right !important; }
+
+      .is-size-3 { font-size: 2rem !important; }
+      .is-size-4 { font-size: 1.5rem !important; }
+      .is-size-5 { font-size: 1.25rem !important; }
+      .is-size-6 { font-size: 1rem !important; }
+      .is-size-7 { font-size: 0.75rem !important; }
+
+      /* Spacing Helpers */
+      .p-0 { padding: 0 !important; }
+      .p-1 { padding: 0.25rem !important; }
+      .p-2 { padding: 0.5rem !important; }
+      .p-3 { padding: 0.75rem !important; }
+      .p-4 { padding: 1rem !important; }
+      .p-5 { padding: 1.5rem !important; }
+
+      .m-0 { margin: 0 !important; }
+      .m-1 { margin: 0.25rem !important; }
+      .m-2 { margin: 0.5rem !important; }
+      .m-3 { margin: 0.75rem !important; }
+      .m-4 { margin: 1rem !important; }
+      .m-5 { margin: 1.5rem !important; }
+
+      .mt-0 { margin-top: 0 !important; }
+      .mt-1 { margin-top: 0.25rem !important; }
+      .mt-2 { margin-top: 0.5rem !important; }
+      .mt-3 { margin-top: 0.75rem !important; }
+      .mt-4 { margin-top: 1rem !important; }
+      .mt-5 { margin-top: 1.5rem !important; }
+
+      .mb-0 { margin-bottom: 0 !important; }
+      .mb-1 { margin-bottom: 0.25rem !important; }
+      .mb-2 { margin-bottom: 0.5rem !important; }
+      .mb-3 { margin-bottom: 0.75rem !important; }
+      .mb-4 { margin-bottom: 1rem !important; }
+      .mb-5 { margin-bottom: 1.5rem !important; }
+
+      .ml-0 { margin-left: 0 !important; }
+      .ml-1 { margin-left: 0.25rem !important; }
+      .ml-2 { margin-left: 0.5rem !important; }
+      .ml-3 { margin-left: 0.75rem !important; }
+      .ml-4 { margin-left: 1rem !important; }
+      .ml-5 { margin-left: 1.5rem !important; }
+
+      .mr-0 { margin-right: 0 !important; }
+      .mr-1 { margin-right: 0.25rem !important; }
+      .mr-2 { margin-right: 0.5rem !important; }
+      .mr-3 { margin-right: 0.75rem !important; }
+      .mr-4 { margin-right: 1rem !important; }
+      .mr-5 { margin-right: 1.5rem !important; }
+
+      /* App Shell Styles */
       .app-shell {
         display: flex;
         align-items: stretch;
@@ -82,6 +567,14 @@
         line-height: 1.2;
       }
 
+      /* A 200%-scaled 16:10 laptop reports ~960px wide. A 250px sidebar plus
+         2.25rem of gutters left the content pane cramped; reclaim the space. */
+      @media (max-width: 1200px) {
+        :root { --sidebar-width: 200px; }
+        .app-main { padding: 1.5rem 1.25rem 3rem; }
+        .container { padding-left: 0; padding-right: 0; }
+      }
+
       @media (max-width: 900px) {
         .app-shell { flex-direction: column; }
         .app-sidebar {
@@ -98,13 +591,20 @@
         text-transform: uppercase;
         font-size: 0.75rem;
       }
+      .menu-list {
+        list-style: none;
+        margin: 0;
+        padding: 0;
+      }
       .menu-list a {
+        display: block;
         background: transparent !important;
         color: rgba(255, 255, 255, 0.75) !important;
         padding: 0.7rem 1rem;
         border-radius: 8px;
         border-left: 4px solid transparent;
         transition: background 0.2s ease, color 0.2s ease;
+        text-decoration: none;
       }
       .menu-list a:hover {
         background: rgba(140, 103, 239, 0.15) !important;
@@ -124,10 +624,10 @@
         box-shadow: 0 10px 30px rgba(0, 0, 0, 0.4);
         backdrop-filter: blur(10px);
         color: var(--text) !important;
+        padding: 1.25rem;
       }
 
-      /* Nested panel inside a .box. Replaces `has-background-white-ter`,
-         which renders as a light block on this dark theme. */
+      /* Nested panel inside a .box. Replaces `has-background-white-ter` */
       .subbox {
         background: var(--surface-raised) !important;
         border: 1px solid var(--border) !important;
@@ -154,8 +654,7 @@
         background: rgba(140, 103, 239, 0.18) !important;
       }
 
-      /* Secondary text. The old markup used a bare `gray` class, which Bulma
-         does not define, so this text rendered at full contrast. */
+      /* Secondary text. */
       .text-muted, .gray {
         color: var(--text-muted) !important;
       }
@@ -165,11 +664,11 @@
         border: none;
         color: #fff !important;
         box-shadow: 0 4px 14px rgba(140, 103, 239, 0.4);
-        transition: transform 0.2s ease, box-shadow 0.2s ease;
       }
       .button.is-link:hover:not([disabled]) {
         transform: translateY(-2px);
         box-shadow: 0 6px 20px rgba(140, 103, 239, 0.6);
+        background: linear-gradient(135deg, var(--accent), var(--accent-strong)) !important;
       }
       .button.is-link:active { transform: translateY(0); }
 
@@ -182,12 +681,31 @@
         background: rgba(255, 255, 255, 0.15) !important;
         color: #fff !important;
       }
-      .button[disabled] { opacity: 0.45; box-shadow: none; }
+      .button[disabled] { opacity: 0.45; box-shadow: none; cursor: not-allowed; }
 
       /* Outlined buttons default to dark text on this theme. */
       .button.is-outlined { background: transparent !important; }
-      .button.is-danger.is-outlined { color: #f14668 !important; border-color: #f14668 !important; }
+      /* `.button.is-danger` below has the same specificity as `.button.is-outlined`
+         and comes later, so it would re-apply a solid background here and leave a
+         red icon on a red button. Reset it from this higher-specificity rule. */
+      .button.is-danger.is-outlined { background: transparent !important; color: #f14668 !important; border-color: #f14668 !important; }
       .button.is-danger.is-outlined:hover:not([disabled]) { background: #f14668 !important; color: #fff !important; }
+
+      .button.is-danger {
+        background: #f14668 !important;
+        color: #fff !important;
+      }
+      .button.is-danger:hover:not([disabled]) {
+        background: #ff5c7c !important;
+      }
+
+      .button.is-info {
+        background: #3e8ed0 !important;
+        color: #fff !important;
+      }
+      .button.is-info:hover:not([disabled]) {
+        background: #4ea0e2 !important;
+      }
 
       .input, .textarea, .select select {
         background: rgba(10, 8, 20, 0.5) !important;
@@ -207,8 +725,8 @@
       .input[disabled], .textarea[disabled], .select select[disabled] {
         color: rgba(255, 255, 255, 0.55) !important;
         background: rgba(10, 8, 20, 0.3) !important;
+        cursor: not-allowed;
       }
-      .select:not(.is-multiple):not(.is-loading)::after { border-color: var(--accent) !important; }
       /* Native dropdown popups are rendered by the OS: force readable colors. */
       .select select option { background: #16122a; color: #fff; }
 
@@ -241,12 +759,15 @@
         border-bottom: 2px solid rgba(140, 103, 239, 0.2) !important;
         background: transparent !important;
         white-space: nowrap;
+        padding: 0.75rem 0.5rem;
+        text-align: left;
       }
       .table td {
         border-bottom: 1px solid rgba(255, 255, 255, 0.06) !important;
         vertical-align: middle;
         background: transparent !important;
         color: var(--text) !important;
+        padding: 0.75rem 0.5rem;
       }
       .table tfoot td, .table tfoot th {
         border-top: 2px solid rgba(140, 103, 239, 0.25) !important;
@@ -254,18 +775,33 @@
         color: #fff !important;
         font-weight: 600;
         background: transparent !important;
+        padding: 0.75rem 0.5rem;
       }
       .table tr:hover { background: rgba(140, 103, 239, 0.06) !important; }
       .table.is-striped tbody tr:nth-child(even) {
         background-color: rgba(140, 103, 239, 0.03) !important;
       }
-      .has-text-right { text-align: right !important; }
       .is-numeric { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
 
-      .label { color: rgba(255, 255, 255, 0.7) !important; }
-      .help { color: var(--text-muted) !important; }
+      .label {
+        display: inline-block;
+        color: rgba(255, 255, 255, 0.7) !important;
+        margin-bottom: 0.5rem;
+        font-weight: 600;
+      }
+      .help {
+        display: block;
+        font-size: 0.75rem;
+        margin-top: 0.25rem;
+        color: var(--text-muted) !important;
+      }
       .checkbox, .radio { color: var(--text) !important; }
-      hr { background-color: var(--border) !important; }
+      hr {
+        border: none;
+        height: 1px;
+        background-color: var(--border) !important;
+        margin: 1rem 0;
+      }
 
       .tag.is-success {
         background-color: rgba(72, 199, 142, 0.15) !important;
@@ -311,7 +847,8 @@
       }
 
       /* Stat cards on the overview page. */
-      .stat-card { position: relative; overflow: hidden; }
+      /* Extra left padding so the value clears the 4px accent bar below. */
+      .stat-card { position: relative; overflow: hidden; padding-left: 1.75rem; }
       .stat-card::before {
         content: "";
         position: absolute; inset: 0 auto 0 0; width: 4px;

@@ -181,16 +181,22 @@ fn InvoiceEditor(
 
             <div class="box subbox p-4 mt-3 mb-3">
                 <h3 class="has-text-weight-bold mb-3">"Empfängeradresse"</h3>
-                <div class="columns is-multiline">
-                    <div class="column is-3"><div class="field"><label class="label is-small">"Anrede"</label><div class="control"><input class="input is-small" type="text" prop:value=recipient_form_of_address on:input=move |ev| set_recipient_form_of_address.set(event_target_value(&ev)) prop:disabled=is_committed /></div></div></div>
-                    <div class="column is-3"><div class="field"><label class="label is-small">"Titel"</label><div class="control"><input class="input is-small" type="text" prop:value=recipient_title on:input=move |ev| set_recipient_title.set(event_target_value(&ev)) prop:disabled=is_committed /></div></div></div>
-                    <div class="column is-3"><div class="field"><label class="label is-small">"Vorname"</label><div class="control"><input class="input is-small" type="text" prop:value=recipient_first_name on:input=move |ev| set_recipient_first_name.set(event_target_value(&ev)) prop:disabled=is_committed /></div></div></div>
-                    <div class="column is-3"><div class="field"><label class="label is-small">"Name (Pflichtfeld)"</label><div class="control"><input class="input is-small" type="text" prop:value=recipient_name on:input=move |ev| set_recipient_name.set(event_target_value(&ev)) prop:disabled=is_committed /></div></div></div>
-                    <div class="column is-8"><div class="field"><label class="label is-small">"Straße"</label><div class="control"><input class="input is-small" type="text" prop:value=recipient_street on:input=move |ev| set_recipient_street.set(event_target_value(&ev)) prop:disabled=is_committed /></div></div></div>
-                    <div class="column is-4"><div class="field"><label class="label is-small">"Hausnummer"</label><div class="control"><input class="input is-small" type="text" prop:value=recipient_house_number on:input=move |ev| set_recipient_house_number.set(event_target_value(&ev)) prop:disabled=is_committed /></div></div></div>
-                    <div class="column is-3"><div class="field"><label class="label is-small">"PLZ"</label><div class="control"><input class="input is-small" type="text" prop:value=recipient_zip_code on:input=move |ev| set_recipient_zip_code.set(event_target_value(&ev)) prop:disabled=is_committed /></div></div></div>
-                    <div class="column is-5"><div class="field"><label class="label is-small">"Ort"</label><div class="control"><input class="input is-small" type="text" prop:value=recipient_city on:input=move |ev| set_recipient_city.set(event_target_value(&ev)) prop:disabled=is_committed /></div></div></div>
-                    <div class="column is-4"><div class="field"><label class="label is-small">"Land"</label><div class="control"><input class="input is-small" type="text" prop:value=recipient_country on:input=move |ev| set_recipient_country.set(event_target_value(&ev)) prop:disabled=is_committed /></div></div></div>
+                <div class="field-row">
+                    <div class="field is-narrow"><label class="label is-small">"Anrede"</label><div class="control"><input class="input is-small" type="text" prop:value=recipient_form_of_address on:input=move |ev| set_recipient_form_of_address.set(event_target_value(&ev)) prop:disabled=is_committed /></div></div>
+                    <div class="field is-narrow"><label class="label is-small">"Titel"</label><div class="control"><input class="input is-small" type="text" prop:value=recipient_title on:input=move |ev| set_recipient_title.set(event_target_value(&ev)) prop:disabled=is_committed /></div></div>
+                </div>
+                <div class="field-row">
+                    <div class="field"><label class="label is-small">"Vorname"</label><div class="control"><input class="input is-small" type="text" prop:value=recipient_first_name on:input=move |ev| set_recipient_first_name.set(event_target_value(&ev)) prop:disabled=is_committed /></div></div>
+                    <div class="field"><label class="label is-small">"Name (Pflichtfeld)"</label><div class="control"><input class="input is-small" type="text" prop:value=recipient_name on:input=move |ev| set_recipient_name.set(event_target_value(&ev)) prop:disabled=is_committed /></div></div>
+                </div>
+                <div class="field-row">
+                    <div class="field is-wide"><label class="label is-small">"Straße"</label><div class="control"><input class="input is-small" type="text" prop:value=recipient_street on:input=move |ev| set_recipient_street.set(event_target_value(&ev)) prop:disabled=is_committed /></div></div>
+                    <div class="field is-narrow"><label class="label is-small">"Hausnummer"</label><div class="control"><input class="input is-small" type="text" prop:value=recipient_house_number on:input=move |ev| set_recipient_house_number.set(event_target_value(&ev)) prop:disabled=is_committed /></div></div>
+                </div>
+                <div class="field-row">
+                    <div class="field is-narrow"><label class="label is-small">"PLZ"</label><div class="control"><input class="input is-small" type="text" prop:value=recipient_zip_code on:input=move |ev| set_recipient_zip_code.set(event_target_value(&ev)) prop:disabled=is_committed /></div></div>
+                    <div class="field"><label class="label is-small">"Ort"</label><div class="control"><input class="input is-small" type="text" prop:value=recipient_city on:input=move |ev| set_recipient_city.set(event_target_value(&ev)) prop:disabled=is_committed /></div></div>
+                    <div class="field"><label class="label is-small">"Land"</label><div class="control"><input class="input is-small" type="text" prop:value=recipient_country on:input=move |ev| set_recipient_country.set(event_target_value(&ev)) prop:disabled=is_committed /></div></div>
                 </div>
             </div>
 
@@ -213,18 +219,18 @@ fn InvoiceEditor(
                 view! {
                     <div class="box subbox p-4">
                         <h3 class="has-text-weight-bold mb-3">"Position hinzufügen"</h3>
-                        <div class="columns is-vcentered">
-                            <div class="column is-6"><div class="field"><label class="label is-small">"Beschreibung"</label><input class="input" type="text" placeholder="Beschreibung" prop:value=item_desc on:input=move |ev| set_item_desc.set(event_target_value(&ev)) /></div></div>
-                            <div class="column is-2"><div class="field"><label class="label is-small">"Menge"</label><QuantityInput value=item_qty /></div></div>
-                            <div class="column is-3"><div class="field"><label class="label is-small">"Einzelpreis (€)"</label><MoneyInput value=item_price /></div></div>
-                            <div class="column is-1"><button class="button is-link is-fullwidth" title="Hinzufügen" on:click=move |_| {
+                        <div class="field-row">
+                            <div class="field is-wide"><label class="label is-small">"Beschreibung"</label><input class="input" type="text" placeholder="Beschreibung" prop:value=item_desc on:input=move |ev| set_item_desc.set(event_target_value(&ev)) /></div>
+                            <div class="field is-narrow"><label class="label is-small">"Menge"</label><QuantityInput value=item_qty /></div>
+                            <div class="field is-narrow"><label class="label is-small">"Einzelpreis (€)"</label><MoneyInput value=item_price /></div>
+                            <button class="button is-link" title="Hinzufügen" on:click=move |_| {
                                 if item_desc.get().trim().is_empty() { return; }
                                 let new_item = Item { item: item_desc.get().trim().to_string(), quantity: item_qty.get(), unit: "Stk".to_string(), price: Money::new(item_price.get()) };
                                 set_items_list.update(|items| items.push(new_item));
                                 set_item_desc.set(String::new());
                                 item_qty.set(1.0);
                                 item_price.set(0);
-                            }><span class="icon"><i class="mdi mdi-plus"></i></span></button></div>
+                            }><span class="icon"><i class="mdi mdi-plus"></i></span></button>
                         </div>
                     </div>
                 }.into_view()
@@ -400,10 +406,10 @@ pub fn InvoicesPage() -> impl IntoView {
                 </div>
             </div>
 
-            <div class="columns">
+            <div class="columns is-split">
                 <div class="column is-5">
                     <div class="box">
-                        <div style="max-height: 70vh; overflow-y: auto;">
+                        <div>
                             {move || invoices.get().into_iter().map(|inv| {
                                 let inv_id = inv.id;
                                 let contact_name = inv.customer_contact.as_ref().map(Contact::display_name).unwrap_or_else(|| "Gast".to_string());

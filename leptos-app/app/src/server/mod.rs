@@ -6,6 +6,10 @@ pub mod offers;
 pub mod receipts;
 pub mod export;
 pub mod documents;
+pub mod reports;
+
+#[cfg(feature = "ssr")]
+pub mod db;
 
 // Re-export all server functions for convenience
 pub use ai::*;
@@ -15,6 +19,9 @@ pub use invoices::*;
 pub use offers::*;
 pub use receipts::*;
 pub use export::*;
+pub use reports::*;
+// `documents` exposes nothing outside of `ssr`.
+#[cfg(feature = "ssr")]
 pub use documents::*;
 
 #[cfg(feature = "ssr")]
@@ -49,4 +56,7 @@ pub fn register_server_fns() {
     let _ = leptos::server_fn::axum::register_explicit::<GetDashboardStats>();
     let _ = leptos::server_fn::axum::register_explicit::<GetAiStatus>();
     let _ = leptos::server_fn::axum::register_explicit::<PrefillReceipt>();
+    let _ = leptos::server_fn::axum::register_explicit::<ListReports>();
+    let _ = leptos::server_fn::axum::register_explicit::<RunReport>();
+    let _ = leptos::server_fn::axum::register_explicit::<ExportReportPdf>();
 }

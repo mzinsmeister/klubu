@@ -84,7 +84,7 @@ pub fn ContactsPage() -> impl IntoView {
                 </div>
             </div>
 
-            <div class="columns">
+            <div class="columns is-split">
                 // Search & List
                 <div class="column is-5">
                     <div class="box">
@@ -143,89 +143,75 @@ pub fn ContactsPage() -> impl IntoView {
                             view! {
                                 <div class="box">
                                     <h2 class="subtitle">{if is_edit { "Kontakt bearbeiten" } else { "Neuer Kontakt" }}</h2>
-                                    <div class="columns">
-                                        <div class="column is-3">
-                                            <div class="field">
-                                                <label class="label">"Anrede"</label>
-                                                <div class="control">
-                                                    <input class="input" type="text" placeholder="Herr / Frau etc" prop:value=c_form_of_address on:input=move |ev| set_c_form_of_address.set(event_target_value(&ev)) />
-                                                </div>
+                                    // Anrede and Titel are short and optional, so they get their own
+                                    // compact row rather than squeezing the two name fields.
+                                    <div class="field-row">
+                                        <div class="field is-narrow">
+                                            <label class="label">"Anrede"</label>
+                                            <div class="control">
+                                                <input class="input" type="text" placeholder="Herr / Frau etc" prop:value=c_form_of_address on:input=move |ev| set_c_form_of_address.set(event_target_value(&ev)) />
                                             </div>
                                         </div>
-                                        <div class="column is-3">
-                                            <div class="field">
-                                                <label class="label">"Titel"</label>
-                                                <div class="control">
-                                                    <input class="input" type="text" placeholder="Dr. / Prof. etc" prop:value=c_title on:input=move |ev| set_c_title.set(event_target_value(&ev)) />
-                                                </div>
-                                            </div>
-                                        </div>
-                                        <div class="column is-3">
-                                            <div class="field">
-                                                <label class="label">"Vorname"</label>
-                                                <div class="control">
-                                                    <input class="input" type="text" prop:value=c_first on:input=move |ev| set_c_first.set(event_target_value(&ev)) />
-                                                </div>
-                                            </div>
-                                        </div>
-                                        <div class="column is-3">
-                                            <div class="field">
-                                                <label class="label">"Nachname / Firmenname*"</label>
-                                                <div class="control">
-                                                    <input class="input" type="text" prop:value=c_name on:input=move |ev| set_c_name.set(event_target_value(&ev)) />
-                                                </div>
+                                        <div class="field is-narrow">
+                                            <label class="label">"Titel"</label>
+                                            <div class="control">
+                                                <input class="input" type="text" placeholder="Dr. / Prof. etc" prop:value=c_title on:input=move |ev| set_c_title.set(event_target_value(&ev)) />
                                             </div>
                                         </div>
                                     </div>
-                                    <div class="columns">
-                                        <div class="column is-6">
-                                            <div class="field">
-                                                <label class="label">"Straße"</label>
-                                                <div class="control">
-                                                    <input class="input" type="text" prop:value=c_street on:input=move |ev| set_c_street.set(event_target_value(&ev)) />
-                                                </div>
+                                    <div class="field-row">
+                                        <div class="field">
+                                            <label class="label">"Vorname"</label>
+                                            <div class="control">
+                                                <input class="input" type="text" prop:value=c_first on:input=move |ev| set_c_first.set(event_target_value(&ev)) />
                                             </div>
                                         </div>
-                                        <div class="column is-3">
-                                            <div class="field">
-                                                <label class="label">"Hausnummer"</label>
-                                                <div class="control">
-                                                    <input class="input" type="text" prop:value=c_house on:input=move |ev| set_c_house.set(event_target_value(&ev)) />
-                                                </div>
-                                            </div>
-                                        </div>
-                                        <div class="column is-3">
-                                            <div class="field">
-                                                <label class="label">"Land"</label>
-                                                <div class="control">
-                                                    <input class="input" type="text" prop:value=c_country on:input=move |ev| set_c_country.set(event_target_value(&ev)) />
-                                                </div>
+                                        <div class="field">
+                                            <label class="label">"Nachname / Firmenname*"</label>
+                                            <div class="control">
+                                                <input class="input" type="text" prop:value=c_name on:input=move |ev| set_c_name.set(event_target_value(&ev)) />
                                             </div>
                                         </div>
                                     </div>
-                                    <div class="columns">
-                                        <div class="column is-3">
-                                            <div class="field">
-                                                <label class="label">"PLZ"</label>
-                                                <div class="control">
-                                                    <input class="input" type="text" prop:value=c_zip on:input=move |ev| set_c_zip.set(event_target_value(&ev)) />
-                                                </div>
+                                    <div class="field-row">
+                                        <div class="field is-wide">
+                                            <label class="label">"Straße"</label>
+                                            <div class="control">
+                                                <input class="input" type="text" prop:value=c_street on:input=move |ev| set_c_street.set(event_target_value(&ev)) />
                                             </div>
                                         </div>
-                                        <div class="column is-5">
-                                            <div class="field">
-                                                <label class="label">"Stadt"</label>
-                                                <div class="control">
-                                                    <input class="input" type="text" prop:value=c_city on:input=move |ev| set_c_city.set(event_target_value(&ev)) />
-                                                </div>
+                                        <div class="field is-narrow">
+                                            <label class="label">"Hausnummer"</label>
+                                            <div class="control">
+                                                <input class="input" type="text" prop:value=c_house on:input=move |ev| set_c_house.set(event_target_value(&ev)) />
                                             </div>
                                         </div>
-                                        <div class="column is-4">
-                                            <div class="field">
-                                                <label class="label">"Telefonnummer"</label>
-                                                <div class="control">
-                                                    <input class="input" type="text" prop:value=c_phone on:input=move |ev| set_c_phone.set(event_target_value(&ev)) />
-                                                </div>
+                                    </div>
+                                    <div class="field-row">
+                                        <div class="field is-narrow">
+                                            <label class="label">"PLZ"</label>
+                                            <div class="control">
+                                                <input class="input" type="text" prop:value=c_zip on:input=move |ev| set_c_zip.set(event_target_value(&ev)) />
+                                            </div>
+                                        </div>
+                                        <div class="field">
+                                            <label class="label">"Stadt"</label>
+                                            <div class="control">
+                                                <input class="input" type="text" prop:value=c_city on:input=move |ev| set_c_city.set(event_target_value(&ev)) />
+                                            </div>
+                                        </div>
+                                        <div class="field">
+                                            <label class="label">"Land"</label>
+                                            <div class="control">
+                                                <input class="input" type="text" prop:value=c_country on:input=move |ev| set_c_country.set(event_target_value(&ev)) />
+                                            </div>
+                                        </div>
+                                    </div>
+                                    <div class="field-row">
+                                        <div class="field">
+                                            <label class="label">"Telefonnummer"</label>
+                                            <div class="control">
+                                                <input class="input" type="text" prop:value=c_phone on:input=move |ev| set_c_phone.set(event_target_value(&ev)) />
                                             </div>
                                         </div>
                                     </div>

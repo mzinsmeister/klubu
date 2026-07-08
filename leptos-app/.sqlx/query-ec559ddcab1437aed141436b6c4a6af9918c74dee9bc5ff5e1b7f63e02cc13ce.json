@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "INSERT INTO invoice (invoice_number, invoice_date, subject, title, header_html, footer_html, recipient_name, recipient_first_name, recipient_title, recipient_form_of_address, street, house_number, zip_code, city, country, customer_contact_id, created_timestamp, committed_timestamp, is_canceled, is_cancelation) VALUES (NULL, $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, NULL, 0, 0) RETURNING id",
+  "query": "INSERT INTO invoice (invoice_date, subject, title, header_html, footer_html, customer_contact_id, recipient_name, recipient_first_name, recipient_title, recipient_form_of_address, street, house_number, zip_code, city, country, created_timestamp, is_canceled, is_cancelation) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, 0, 0) RETURNING id",
   "describe": {
     "columns": [
       {
@@ -16,16 +16,16 @@
         "Varchar",
         "Text",
         "Text",
-        "Varchar",
-        "Varchar",
-        "Varchar",
-        "Varchar",
-        "Varchar",
-        "Varchar",
-        "Varchar",
-        "Varchar",
-        "Varchar",
         "Int4",
+        "Varchar",
+        "Varchar",
+        "Varchar",
+        "Varchar",
+        "Varchar",
+        "Varchar",
+        "Varchar",
+        "Varchar",
+        "Varchar",
         "Varchar"
       ]
     },
@@ -33,5 +33,5 @@
       false
     ]
   },
-  "hash": "d5665d12fd3b31b52c0c337ce55827d44068163242b51b2579135aec1d052d52"
+  "hash": "ec559ddcab1437aed141436b6c4a6af9918c74dee9bc5ff5e1b7f63e02cc13ce"
 }

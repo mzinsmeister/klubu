@@ -15,6 +15,8 @@ pub use typst_gen::{html_to_typst, generate_invoice_typst, generate_offer_typst}
 pub use typst_gen::{init_templates, load_config, AppConfig, BankConfig};
 #[cfg(feature = "ssr")]
 pub use server::{register_server_fns, store_new_version, delete_document};
+#[cfg(feature = "ssr")]
+pub use server::db;
 
 use pages::*;
 
@@ -37,6 +39,7 @@ pub fn App() -> impl IntoView {
                             <li><A href="/invoices">"Rechnungen"</A></li>
                             <li><A href="/offers">"Angebote"</A></li>
                             <li><A href="/receipts">"Belege"</A></li>
+                            <li><A href="/reports">"Berichte"</A></li>
                         </ul>
                     </nav>
                 </aside>
@@ -49,6 +52,7 @@ pub fn App() -> impl IntoView {
                         <Route path="invoices" view=InvoicesPage />
                         <Route path="offers" view=OffersPage />
                         <Route path="receipts" view=ReceiptsPage />
+                        <Route path="reports" view=ReportsPage />
                     </Routes>
                 </main>
             </div>

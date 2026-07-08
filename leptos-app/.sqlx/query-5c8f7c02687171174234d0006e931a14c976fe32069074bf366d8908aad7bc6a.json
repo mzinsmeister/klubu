@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "INSERT INTO receipt_item_category_type (name) VALUES ($1) RETURNING id",
+  "query": "INSERT INTO receipt_item_category_type (name, euer_kennzahl, is_expense) VALUES ($1, $2, $3) RETURNING id",
   "describe": {
     "columns": [
       {
@@ -11,12 +11,14 @@
     ],
     "parameters": {
       "Left": [
-        "Varchar"
+        "Varchar",
+        "Varchar",
+        "Int4"
       ]
     },
     "nullable": [
       false
     ]
   },
-  "hash": "36bcd6f429ae4775d6631a0b4f5aa4992127f40866f0141bfba797c2bca9815a"
+  "hash": "5c8f7c02687171174234d0006e931a14c976fe32069074bf366d8908aad7bc6a"
 }

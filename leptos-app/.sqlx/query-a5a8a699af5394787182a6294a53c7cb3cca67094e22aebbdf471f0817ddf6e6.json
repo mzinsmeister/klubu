@@ -1,0 +1,74 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            SELECT i.id, i.created_timestamp, i.invoice_number, i.is_canceled, i.is_cancelation, i.committed_timestamp, i.subject,\n                   c.id as \"contact_id?\", c.name as \"contact_name?\", c.first_name as \"contact_first_name?\"\n            FROM invoice i\n            LEFT JOIN contact c ON i.customer_contact_id = c.id\n            ORDER BY i.invoice_number DESC NULLS LAST, i.id DESC\n            ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 1,
+        "name": "created_timestamp",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 2,
+        "name": "invoice_number",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 3,
+        "name": "is_canceled",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 4,
+        "name": "is_cancelation",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 5,
+        "name": "committed_timestamp",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 6,
+        "name": "subject",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 7,
+        "name": "contact_id?",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 8,
+        "name": "contact_name?",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 9,
+        "name": "contact_first_name?",
+        "type_info": "Varchar"
+      }
+    ],
+    "parameters": {
+      "Left": []
+    },
+    "nullable": [
+      false,
+      true,
+      true,
+      false,
+      false,
+      true,
+      true,
+      false,
+      false,
+      true
+    ]
+  },
+  "hash": "a5a8a699af5394787182a6294a53c7cb3cca67094e22aebbdf471f0817ddf6e6"
+}

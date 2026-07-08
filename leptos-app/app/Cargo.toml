@@ -10,16 +10,19 @@ serde = { version = "1.0", features = ["derive"] }
 chrono = { version = "0.4", features = ["serde"] }
 shared = { path = "../shared" }
 serde_json = "1.0"
-web-sys = { version = "0.3", features = ["File", "FileList", "FileReader", "Event"] }
+web-sys = { version = "0.3", features = ["File", "FileList", "FileReader", "Event", "Window", "Document", "Element", "HtmlElement"] }
 wasm-bindgen = "0.2"
 
 
 # Server-only dependencies (enabled under ssr feature)
-sqlx = { version = "0.8.0", features = ["runtime-tokio", "postgres", "chrono"], optional = true }
-typst = { version = "0.11.0", optional = true }
-typst-pdf = { version = "0.11.0", optional = true }
+sqlx = { version = "0.8.0", features = ["runtime-tokio", "chrono"], optional = true }
+typst = { version = "0.15.0", optional = true }
+typst-pdf = { version = "0.15.0", optional = true }
+typst-html = { version = "0.15.0", optional = true }
+# Embedded fallback fonts. The templates ask for "Liberation Sans"; without a
+# bundled set, a container with no system fonts silently renders blank glyphs.
+typst-assets = { version = "0.15.0", features = ["fonts"], optional = true }
 walkdir = { version = "2.5", optional = true }
-comemo = { version = "0.4.0", optional = true }
 sha2 = { version = "0.10", optional = true }
 base64 = { version = "0.22", optional = true }
 # Local-AI receipt prefill. Talks to Ollama over plain HTTP on localhost, so no
@@ -27,6 +30,8 @@ base64 = { version = "0.22", optional = true }
 reqwest = { version = "0.12", default-features = false, features = ["json"], optional = true }
 pdf-extract = { version = "0.7", optional = true }
 tokio = { version = "1.38", features = ["rt"], optional = true }
+# `PagedDocument` lives here, not in the `typst` facade crate.
+typst-layout = { version = "0.15.0", optional = true }
 
 # Only needed so `cargo test -p app --features ssr` can compile the
 # server-fn registrations, which require server_fn's axum integration.
@@ -34,6 +39,11 @@ tokio = { version = "1.38", features = ["rt"], optional = true }
 leptos_axum = "0.6.12"
 
 [features]
+default = ["postgres"]
+# `sqlx?/` so selecting a backend does not itself pull in the optional `sqlx`
+# dependency — only `ssr` does that. Keeps wasm builds free of sqlx.
+postgres = ["sqlx?/postgres"]
+sqlite = ["sqlx?/sqlite"]
 csr = ["leptos/csr", "leptos_router/csr"]
 hydrate = ["leptos/hydrate", "leptos_router/hydrate"]
 ssr = [
@@ -42,8 +52,10 @@ ssr = [
     "dep:sqlx",
     "dep:typst",
     "dep:typst-pdf",
+    "dep:typst-html",
+    "dep:typst-layout",
+    "dep:typst-assets",
     "dep:walkdir",
-    "dep:comemo",
     "dep:sha2",
     "dep:base64",
     "dep:reqwest",
