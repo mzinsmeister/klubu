@@ -2,6 +2,7 @@ use leptos::*;
 
 use chrono::{NaiveDate, Utc};
 use shared::*;
+use crate::components::{EmptyState, MoneyInput, QuantityInput};
 use crate::server::{
     get_contacts, get_offers, get_offer, save_offer,
     commit_offer, delete_offer, export_offer_pdf,
@@ -20,9 +21,9 @@ fn OfferEditor(
     let offer_number = off.offer_number;
 
     let display_number = if is_committed {
-        format!("Angebot #{}", offer_number.unwrap_or_default())
+        format!(" • Angebot #{}", offer_number.unwrap_or_default())
     } else {
-        "ENTWURF".to_string()
+        String::new()
     };
 
     let (offer_date, set_offer_date) = create_signal(off.offer_date.map(|d| d.format("%Y-%m-%d").to_string()).unwrap_or_default());
@@ -56,8 +57,8 @@ fn OfferEditor(
     let (recipient_country, set_recipient_country) = create_signal(recipient.country.clone().unwrap_or_default());
 
     let (item_desc, set_item_desc) = create_signal(String::new());
-    let (item_qty, set_item_qty) = create_signal(1.0);
-    let (item_price, set_item_price) = create_signal(0.0);
+    let item_qty = create_rw_signal(1.0f64);
+    let item_price = create_rw_signal(0i64);
 
     let save_offer_act = create_action(move |o: &Offer| {
         let o = o.clone();
@@ -123,7 +124,7 @@ fn OfferEditor(
     view! {
         <div class="box">
             <h2 class="subtitle">
-                "Angebotsdetails • " {display_number}
+                "Angebotsdetails" {display_number}
                 {if is_committed {
                     view! { <span class="tag is-success ml-2">"Finalisiert"</span> }.into_view()
                 } else {
@@ -160,7 +161,7 @@ fn OfferEditor(
                             <option value="">"-- Kein Kunde ausgewählt --"</option>
                             {move || contacts.get().iter().map(|c| {
                                 let sel = customer_contact.get().as_ref().and_then(|cc| cc.id) == c.id;
-                                let display_name = format!("{}, {}", c.name, c.first_name.clone().unwrap_or_default());
+                                let display_name = c.display_name();
                                 view! { <option value=c.id.unwrap_or_default() selected=sel>{display_name}</option> }
                             }).collect::<Vec<_>>()}
                         </select>
@@ -168,7 +169,7 @@ fn OfferEditor(
                 </div>
             </div>
 
-            <div class="box has-background-white-bis p-4 mt-3 mb-3">
+            <div class="box subbox p-4 mt-3 mb-3">
                 <h3 class="has-text-weight-bold mb-3">"Empfängeradresse"</h3>
                 <div class="columns is-multiline">
                     <div class="column is-3"><div class="field"><label class="label is-small">"Anrede"</label><div class="control"><input class="input is-small" type="text" prop:value=recipient_form_of_address on:input=move |ev| set_recipient_form_of_address.set(event_target_value(&ev)) prop:disabled=is_committed /></div></div></div>
@@ -200,43 +201,64 @@ fn OfferEditor(
 
             {move || if !is_committed {
                 view! {
-                    <div class="box has-background-white-ter p-3">
-                        <h3 class="has-text-weight-bold mb-2">"Position hinzufügen"</h3>
-                        <div class="columns">
+                    <div class="box subbox p-4">
+                        <h3 class="has-text-weight-bold mb-3">"Position hinzufügen"</h3>
+                        <div class="columns is-vcentered">
                             <div class="column is-6"><div class="field"><label class="label is-small">"Beschreibung"</label><input class="input" type="text" placeholder="Beschreibung" prop:value=item_desc on:input=move |ev| set_item_desc.set(event_target_value(&ev)) /></div></div>
-                            <div class="column is-2"><div class="field"><label class="label is-small">"Menge (Anzahl)"</label><input class="input" type="number" placeholder="Menge" prop:value=item_qty on:input=move |ev| set_item_qty.set(event_target_value(&ev).parse::<f64>().unwrap_or(1.0)) /></div></div>
-                            <div class="column is-2"><div class="field"><label class="label is-small">"Preis (€)"</label><input class="input" type="number" placeholder="Preis (€)" prop:value=item_price on:input=move |ev| set_item_price.set(event_target_value(&ev).parse::<f64>().unwrap_or(0.0)) /></div></div>
-                            <div class="column is-2"><div class="field"><label class="label is-small">"Aktion"</label><button class="button is-link is-fullwidth" on:click=move |_| {
-                                let cents = (item_price.get() * 100.0) as i64;
-                                let new_item = Item { item: item_desc.get(), quantity: item_qty.get(), unit: "Stk".to_string(), price: Money::new(cents) };
-                                let mut current = items_list.get();
-                                current.push(new_item);
-                                set_items_list.set(current);
+                            <div class="column is-2"><div class="field"><label class="label is-small">"Menge"</label><QuantityInput value=item_qty /></div></div>
+                            <div class="column is-3"><div class="field"><label class="label is-small">"Einzelpreis (€)"</label><MoneyInput value=item_price /></div></div>
+                            <div class="column is-1"><button class="button is-link is-fullwidth" title="Hinzufügen" on:click=move |_| {
+                                if item_desc.get().trim().is_empty() { return; }
+                                let new_item = Item { item: item_desc.get().trim().to_string(), quantity: item_qty.get(), unit: "Stk".to_string(), price: Money::new(item_price.get()) };
+                                set_items_list.update(|items| items.push(new_item));
                                 set_item_desc.set(String::new());
-                                set_item_qty.set(1.0);
-                                set_item_price.set(0.0);
-                            }>{"Hinzufügen"}</button></div></div>
+                                item_qty.set(1.0);
+                                item_price.set(0);
+                            }><span class="icon"><i class="mdi mdi-plus"></i></span></button></div>
                         </div>
                     </div>
                 }.into_view()
             } else { "".into_view() }}
 
+            <div class="table-wrap mt-4">
             <table class="table is-fullwidth is-striped">
-                <thead><tr><th>"Beschreibung"</th><th>"Menge"</th><th>"Einzelpreis"</th><th>"Summe"</th></tr></thead>
+                <thead><tr><th>"Beschreibung"</th><th class="has-text-right">"Menge"</th><th class="has-text-right">"Einzelpreis"</th><th class="has-text-right">"Summe"</th><th></th></tr></thead>
                 <tbody>
-                    {move || items_list.get().iter().map(|item| {
-                        let total_euro = (item.quantity * item.price.amount_cents as f64) / 100.0;
-                        view! {
-                            <tr>
-                                <td>{item.item.clone()}</td>
-                                <td>{item.quantity} " " {item.unit.clone()}</td>
-                                <td>{format!("{:.2} €", item.price.amount_cents as f64 / 100.0)}</td>
-                                <td>{format!("{:.2} €", total_euro)}</td>
-                            </tr>
+                    {move || {
+                        let items = items_list.get();
+                        if items.is_empty() {
+                            return view! { <tr><td colspan="5" class="has-text-centered text-muted">"Noch keine Positionen."</td></tr> }.into_view();
                         }
-                    }).collect::<Vec<_>>()} 
+                        items.into_iter().enumerate().map(|(idx, item)| {
+                            let line_total = item.total_cents();
+                            view! {
+                                <tr>
+                                    <td>{item.item.clone()}</td>
+                                    <td class="is-numeric">{format_quantity(item.quantity)} " " {item.unit.clone()}</td>
+                                    <td class="is-numeric">{format_euro(item.price.amount_cents)}</td>
+                                    <td class="is-numeric">{format_euro(line_total)}</td>
+                                    <td class="has-text-right">
+                                        {(!is_committed).then(|| view! {
+                                            <button class="button is-small is-danger is-outlined" title="Position entfernen"
+                                                on:click=move |_| set_items_list.update(|items| { items.remove(idx); })>
+                                                <span class="icon is-small"><i class="mdi mdi-delete"></i></span>
+                                            </button>
+                                        })}
+                                    </td>
+                                </tr>
+                            }
+                        }).collect::<Vec<_>>().into_view()
+                    }}
                 </tbody>
+                <tfoot>
+                    <tr>
+                        <td colspan="3">"Gesamtbetrag"</td>
+                        <td class="is-numeric">{move || format_euro(items_list.get().iter().map(Item::total_cents).sum::<i64>())}</td>
+                        <td></td>
+                    </tr>
+                </tfoot>
             </table>
+            </div>
 
             <div class="field">
                 <label class="label">"Schlusstext"</label>
@@ -370,7 +392,7 @@ pub fn OffersPage() -> impl IntoView {
                     <div class="box">
                         <div style="max-height: 70vh; overflow-y: auto;">
                             {move || offers.get().into_iter().map(|off| {
-                                let contact_name = off.customer_contact.map(|c| format!("{}, {}", c.name, c.first_name.unwrap_or_default())).unwrap_or_else(|| "Gast".to_string());
+                                let contact_name = off.customer_contact.as_ref().map(Contact::display_name).unwrap_or_else(|| "Gast".to_string());
                                 let status_badge = if !off.committed {
                                     view! { <span class="tag is-warning ml-2">"ENTWURF"</span> }.into_view()
                                 } else {
@@ -386,7 +408,7 @@ pub fn OffersPage() -> impl IntoView {
                                     format!("ENTWURF - {}", off.title.clone().unwrap_or_else(|| "Angebot".to_string()))
                                 };
                                 view! {
-                                    <div class="box p-3 mb-2 is-clickable" on:click=move |_| {
+                                    <div class="box list-item p-3 mb-2" on:click=move |_| {
                                         let id = off.id;
                                         spawn_local(async move {
                                             if let Ok(full_off) = get_offer(id).await {
@@ -395,7 +417,7 @@ pub fn OffersPage() -> impl IntoView {
                                         });
                                     }>
                                         <div class="has-text-weight-bold">{display_title} {status_badge} " (Rev: " {off.revision} ")"</div>
-                                        <div class="is-size-7 gray">{contact_name}</div>
+                                        <div class="is-size-7 text-muted">{contact_name}</div>
                                     </div>
                                 }
                             }).collect::<Vec<_>>()}
@@ -406,9 +428,7 @@ pub fn OffersPage() -> impl IntoView {
                 <div class="column">
                     {move || match selected_offer.get() {
                         None => view! {
-                            <div class="box has-text-centered p-6">
-                                <p class="is-size-5 has-text-grey">"Wählen Sie ein Angebot aus."</p>
-                            </div>
+                            <EmptyState icon="file-sign" text="Wählen Sie ein Angebot aus." />
                         }.into_view(),
                         Some(off) => view! {
                             <OfferEditor off=off contacts=contacts on_change=Callback::new(move |_| load_offers.dispatch(())) set_selected_offer=set_selected_offer />

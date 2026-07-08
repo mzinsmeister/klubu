@@ -1,0 +1,71 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT * FROM offer_item WHERE offer_id = $1 AND offer_revision = $2 ORDER BY position_number",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 1,
+        "name": "offer_id",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 2,
+        "name": "offer_revision",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 3,
+        "name": "position_number",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 4,
+        "name": "item",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 5,
+        "name": "quantity",
+        "type_info": "Float8"
+      },
+      {
+        "ordinal": 6,
+        "name": "unit",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 7,
+        "name": "price",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 8,
+        "name": "total",
+        "type_info": "Int4"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int4",
+        "Int4"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "4edb14883a421156c6ffc3c3d3e90159cdeaeb97fad5cbb9d1bf7ceae37155b0"
+}

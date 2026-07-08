@@ -62,11 +62,9 @@ fn parse_properties(content: &str) -> std::collections::HashMap<String, String> 
     map
 }
 
+/// Loads `application.properties` from the first path that exists.
 #[cfg(feature = "ssr")]
-pub fn load_config() -> AppConfig {
-    let mut props = std::collections::HashMap::new();
-    
-    // Check paths for application.properties
+pub(crate) fn load_props() -> std::collections::HashMap<String, String> {
     let paths = [
         "/app/config/application.properties",
         "./config/application.properties",
@@ -74,18 +72,33 @@ pub fn load_config() -> AppConfig {
     ];
     for path in &paths {
         if let Ok(content) = std::fs::read_to_string(path) {
-            props = parse_properties(&content);
-            break;
+            return parse_properties(&content);
         }
     }
-    
+    std::collections::HashMap::new()
+}
+
+/// Environment variable wins over the properties file, which wins over the default.
+#[cfg(feature = "ssr")]
+pub(crate) fn get_prop(
+    props: &std::collections::HashMap<String, String>,
+    key: &str,
+    env_var: &str,
+    default: &str,
+) -> String {
+    std::env::var(env_var)
+        .ok()
+        .or_else(|| props.get(key).cloned())
+        .unwrap_or_else(|| default.to_string())
+}
+
+#[cfg(feature = "ssr")]
+pub fn load_config() -> AppConfig {
+    let props = load_props();
     let get_prop = |key: &str, env_var: &str, default: &str| -> String {
-        std::env::var(env_var)
-            .ok()
-            .or_else(|| props.get(key).cloned())
-            .unwrap_or_else(|| default.to_string())
+        get_prop(&props, key, env_var, default)
     };
-    
+
     AppConfig {
         name: get_prop("klubu.user.name", "KLUBU_USER_NAME", "Musterfirma"),
         street: get_prop("klubu.user.street", "KLUBU_USER_STREET", "Musterstraße"),

@@ -2,6 +2,7 @@ use leptos::*;
 
 use chrono::{NaiveDate, Utc};
 use shared::*;
+use crate::components::{EmptyState, MoneyInput, QuantityInput};
 use crate::server::{
     get_contacts, get_invoices, get_invoice, save_invoice, cancel_invoice,
     commit_invoice, delete_invoice,
@@ -20,10 +21,12 @@ fn InvoiceEditor(
     let invoice_id = inv.id;
     let invoice_number = inv.invoice_number;
 
+    // The status badge next to the heading already says ENTWURF; repeating it
+    // in the title read as a duplicate.
     let display_number = if is_committed {
-        format!("Rechnung #{}", invoice_number.unwrap_or_default())
+        format!(" • Rechnung #{}", invoice_number.unwrap_or_default())
     } else {
-        "ENTWURF".to_string()
+        String::new()
     };
 
     let (invoice_date, set_invoice_date) = create_signal(inv.invoice_date.map(|d| d.format("%Y-%m-%d").to_string()).unwrap_or_default());
@@ -57,8 +60,8 @@ fn InvoiceEditor(
     let (recipient_country, set_recipient_country) = create_signal(recipient.country.clone().unwrap_or_default());
 
     let (item_desc, set_item_desc) = create_signal(String::new());
-    let (item_qty, set_item_qty) = create_signal(1.0);
-    let (item_price, set_item_price) = create_signal(0.0);
+    let item_qty = create_rw_signal(1.0f64);
+    let item_price = create_rw_signal(0i64);
 
     let save_invoice_act = create_action(move |i: &Invoice| {
         let i = i.clone();
@@ -127,7 +130,7 @@ fn InvoiceEditor(
     view! {
         <div class="box">
             <h2 class="subtitle">
-                "Rechnungsdetails • " {display_number}
+                "Rechnungsdetails" {display_number}
                 {if is_committed {
                     if is_canceled {
                         view! { <span class="tag is-danger ml-2">"Storniert"</span> }.into_view()
@@ -168,7 +171,7 @@ fn InvoiceEditor(
                             <option value="">"-- Kein Kunde ausgewählt --"</option>
                             {move || contacts.get().iter().map(|c| {
                                 let sel = customer_contact.get().as_ref().and_then(|cc| cc.id) == c.id;
-                                let display_name = format!("{}, {}", c.name, c.first_name.clone().unwrap_or_default());
+                                let display_name = c.display_name();
                                 view! { <option value=c.id.unwrap_or_default() selected=sel>{display_name}</option> }
                             }).collect::<Vec<_>>()}
                         </select>
@@ -176,7 +179,7 @@ fn InvoiceEditor(
                 </div>
             </div>
 
-            <div class="box has-background-white-bis p-4 mt-3 mb-3">
+            <div class="box subbox p-4 mt-3 mb-3">
                 <h3 class="has-text-weight-bold mb-3">"Empfängeradresse"</h3>
                 <div class="columns is-multiline">
                     <div class="column is-3"><div class="field"><label class="label is-small">"Anrede"</label><div class="control"><input class="input is-small" type="text" prop:value=recipient_form_of_address on:input=move |ev| set_recipient_form_of_address.set(event_target_value(&ev)) prop:disabled=is_committed /></div></div></div>
@@ -208,43 +211,64 @@ fn InvoiceEditor(
 
             {move || if !is_committed {
                 view! {
-                    <div class="box has-background-white-ter p-3">
-                        <h3 class="has-text-weight-bold mb-2">"Position hinzufügen"</h3>
-                        <div class="columns">
+                    <div class="box subbox p-4">
+                        <h3 class="has-text-weight-bold mb-3">"Position hinzufügen"</h3>
+                        <div class="columns is-vcentered">
                             <div class="column is-6"><div class="field"><label class="label is-small">"Beschreibung"</label><input class="input" type="text" placeholder="Beschreibung" prop:value=item_desc on:input=move |ev| set_item_desc.set(event_target_value(&ev)) /></div></div>
-                            <div class="column is-2"><div class="field"><label class="label is-small">"Menge (Anzahl)"</label><input class="input" type="number" placeholder="Menge" prop:value=item_qty on:input=move |ev| set_item_qty.set(event_target_value(&ev).parse::<f64>().unwrap_or(1.0)) /></div></div>
-                            <div class="column is-2"><div class="field"><label class="label is-small">"Preis (€)"</label><input class="input" type="number" placeholder="Preis (€)" prop:value=item_price on:input=move |ev| set_item_price.set(event_target_value(&ev).parse::<f64>().unwrap_or(0.0)) /></div></div>
-                            <div class="column is-2"><div class="field"><label class="label is-small">"Aktion"</label><button class="button is-link is-fullwidth" on:click=move |_| {
-                                let cents = (item_price.get() * 100.0) as i64;
-                                let new_item = Item { item: item_desc.get(), quantity: item_qty.get(), unit: "Stk".to_string(), price: Money::new(cents) };
-                                let mut current = items_list.get();
-                                current.push(new_item);
-                                set_items_list.set(current);
+                            <div class="column is-2"><div class="field"><label class="label is-small">"Menge"</label><QuantityInput value=item_qty /></div></div>
+                            <div class="column is-3"><div class="field"><label class="label is-small">"Einzelpreis (€)"</label><MoneyInput value=item_price /></div></div>
+                            <div class="column is-1"><button class="button is-link is-fullwidth" title="Hinzufügen" on:click=move |_| {
+                                if item_desc.get().trim().is_empty() { return; }
+                                let new_item = Item { item: item_desc.get().trim().to_string(), quantity: item_qty.get(), unit: "Stk".to_string(), price: Money::new(item_price.get()) };
+                                set_items_list.update(|items| items.push(new_item));
                                 set_item_desc.set(String::new());
-                                set_item_qty.set(1.0);
-                                set_item_price.set(0.0);
-                            }>{"Hinzufügen"}</button></div></div>
+                                item_qty.set(1.0);
+                                item_price.set(0);
+                            }><span class="icon"><i class="mdi mdi-plus"></i></span></button></div>
                         </div>
                     </div>
                 }.into_view()
             } else { "".into_view() }}
 
+            <div class="table-wrap mt-4">
             <table class="table is-fullwidth is-striped">
-                <thead><tr><th>"Beschreibung"</th><th>"Menge"</th><th>"Einzelpreis"</th><th>"Summe"</th></tr></thead>
+                <thead><tr><th>"Beschreibung"</th><th class="has-text-right">"Menge"</th><th class="has-text-right">"Einzelpreis"</th><th class="has-text-right">"Summe"</th><th></th></tr></thead>
                 <tbody>
-                    {move || items_list.get().iter().map(|item| {
-                        let total_euro = (item.quantity * item.price.amount_cents as f64) / 100.0;
-                        view! {
-                            <tr>
-                                <td>{item.item.clone()}</td>
-                                <td>{item.quantity} " " {item.unit.clone()}</td>
-                                <td>{format!("{:.2} €", item.price.amount_cents as f64 / 100.0)}</td>
-                                <td>{format!("{:.2} €", total_euro)}</td>
-                            </tr>
+                    {move || {
+                        let items = items_list.get();
+                        if items.is_empty() {
+                            return view! { <tr><td colspan="5" class="has-text-centered text-muted">"Noch keine Positionen."</td></tr> }.into_view();
                         }
-                    }).collect::<Vec<_>>()}
+                        items.into_iter().enumerate().map(|(idx, item)| {
+                            let line_total = item.total_cents();
+                            view! {
+                                <tr>
+                                    <td>{item.item.clone()}</td>
+                                    <td class="is-numeric">{format_quantity(item.quantity)} " " {item.unit.clone()}</td>
+                                    <td class="is-numeric">{format_euro(item.price.amount_cents)}</td>
+                                    <td class="is-numeric">{format_euro(line_total)}</td>
+                                    <td class="has-text-right">
+                                        {(!is_committed).then(|| view! {
+                                            <button class="button is-small is-danger is-outlined" title="Position entfernen"
+                                                on:click=move |_| set_items_list.update(|items| { items.remove(idx); })>
+                                                <span class="icon is-small"><i class="mdi mdi-delete"></i></span>
+                                            </button>
+                                        })}
+                                    </td>
+                                </tr>
+                            }
+                        }).collect::<Vec<_>>().into_view()
+                    }}
                 </tbody>
+                <tfoot>
+                    <tr>
+                        <td colspan="3">"Gesamtbetrag"</td>
+                        <td class="is-numeric">{move || format_euro(items_list.get().iter().map(Item::total_cents).sum::<i64>())}</td>
+                        <td></td>
+                    </tr>
+                </tfoot>
             </table>
+            </div>
 
             <div class="field">
                 <label class="label">"Schlusstext"</label>
@@ -336,9 +360,6 @@ pub fn InvoicesPage() -> impl IntoView {
     load_invoices.dispatch(());
     load_contacts.dispatch(());
 
-    create_effect(move |_| {
-        logging::log!("DEBUG: selected_invoice is now {:?}", selected_invoice.get().map(|i| i.id));
-    });
 
     view! {
         <div class="container">
@@ -384,7 +405,8 @@ pub fn InvoicesPage() -> impl IntoView {
                     <div class="box">
                         <div style="max-height: 70vh; overflow-y: auto;">
                             {move || invoices.get().into_iter().map(|inv| {
-                                let contact_name = inv.customer_contact.map(|c| format!("{}, {}", c.name, c.first_name.unwrap_or_default())).unwrap_or_else(|| "Gast".to_string());
+                                let inv_id = inv.id;
+                                let contact_name = inv.customer_contact.as_ref().map(Contact::display_name).unwrap_or_else(|| "Gast".to_string());
                                 let status_badge = if !inv.committed {
                                     view! { <span class="tag is-warning ml-2">"ENTWURF"</span> }.into_view()
                                 } else if inv.is_canceled {
@@ -393,22 +415,26 @@ pub fn InvoicesPage() -> impl IntoView {
                                     view! { <span class="tag is-success ml-2">"Finalisiert"</span> }.into_view()
                                 };
                                 let display_title = inv.subject.clone().unwrap_or_else(|| "Rechnung".to_string());
-                                let display_num = if inv.committed {
+                                // The badge already says ENTWURF; show the date instead of repeating it.
+                                let secondary = if inv.committed {
                                     format!("Rechnung #{}", inv.invoice_number.unwrap_or_default())
                                 } else {
-                                    "ENTWURF".to_string()
+                                    inv.created_timestamp.format("%d.%m.%Y").to_string()
                                 };
                                 view! {
-                                    <div class="box p-3 mb-2 is-clickable" on:click=move |_| {
-                                        let id = inv.id;
-                                        spawn_local(async move {
-                                            if let Ok(full_inv) = get_invoice(id).await {
-                                                set_selected_invoice.set(Some(full_inv));
-                                            }
-                                        });
-                                    }>
+                                    <div
+                                        class="box list-item p-3 mb-2"
+                                        class:is-active=move || selected_invoice.get().and_then(|i| i.id) == Some(inv_id)
+                                        on:click=move |_| {
+                                            spawn_local(async move {
+                                                if let Ok(full_inv) = get_invoice(inv_id).await {
+                                                    set_selected_invoice.set(Some(full_inv));
+                                                }
+                                            });
+                                        }
+                                    >
                                         <div class="has-text-weight-bold">{display_title} {status_badge}</div>
-                                        <div class="is-size-7 gray">{display_num} " • " {contact_name}</div>
+                                        <div class="is-size-7 text-muted">{secondary} " • " {contact_name}</div>
                                     </div>
                                 }
                             }).collect::<Vec<_>>()}
@@ -419,9 +445,7 @@ pub fn InvoicesPage() -> impl IntoView {
                 <div class="column">
                     {move || match selected_invoice.get() {
                         None => view! {
-                            <div class="box has-text-centered p-6">
-                                <p class="is-size-5 has-text-grey">"Wählen Sie eine Rechnung aus."</p>
-                            </div>
+                            <EmptyState icon="file-document-outline" text="Wählen Sie eine Rechnung aus." />
                         }.into_view(),
                         Some(inv) => view! {
                             <InvoiceEditor inv=inv contacts=contacts on_change=Callback::new(move |_| load_invoices.dispatch(())) set_selected_invoice=set_selected_invoice />

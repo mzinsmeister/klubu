@@ -1,5 +1,6 @@
 use leptos::*;
 use shared::*;
+use crate::components::EmptyState;
 use crate::server::{get_contacts, save_contact, delete_contact};
 
 #[component]
@@ -99,12 +100,18 @@ pub fn ContactsPage() -> impl IntoView {
                         <hr/>
                         <div style="max-height: 60vh; overflow-y: auto;">
                             {move || filtered_contacts().into_iter().map(|contact| {
-                                let name = format!("{}, {}", contact.name, contact.first_name.clone().unwrap_or_default());
+                                let name = contact.display_name();
+                                let address = contact.display_address();
+                                let contact_id = contact.id;
                                 let click_contact = contact.clone();
                                 view! {
-                                    <div class="box p-3 mb-2 is-clickable" on:click=move |_| set_selected_contact.set(Some(click_contact.clone()))>
+                                    <div
+                                        class="box list-item p-3 mb-2"
+                                        class:is-active=move || selected_contact.get().and_then(|c| c.id) == contact_id && contact_id.is_some()
+                                        on:click=move |_| set_selected_contact.set(Some(click_contact.clone()))
+                                    >
                                         <div class="has-text-weight-bold">{name}</div>
-                                        <div class="is-size-7 gray">{contact.street.clone().unwrap_or_default()} " " {contact.house_number.clone().unwrap_or_default()} ", " {contact.city.clone().unwrap_or_default()}</div>
+                                        <div class="is-size-7 text-muted">{address}</div>
                                     </div>
                                 }
                             }).collect::<Vec<_>>()}
@@ -116,9 +123,7 @@ pub fn ContactsPage() -> impl IntoView {
                 <div class="column">
                     {move || match selected_contact.get() {
                         None => view! {
-                            <div class="box has-text-centered p-6">
-                                <p class="is-size-5 has-text-grey">"Wählen Sie einen Kontakt aus oder legen Sie einen neuen an."</p>
-                            </div>
+                            <EmptyState icon="account-outline" text="Wählen Sie einen Kontakt aus oder legen Sie einen neuen an." />
                         }.into_view(),
                         Some(mut contact) => {
                             let (c_name, set_c_name) = create_signal(contact.name.clone());
@@ -227,7 +232,7 @@ pub fn ContactsPage() -> impl IntoView {
                                     <div class="field">
                                         <label class="checkbox">
                                             <input type="checkbox" prop:checked=c_is_person on:change=move |ev| set_c_is_person.set(event_target_checked(&ev)) />
-                                            " Privatperson (isPerson)"
+                                            " Privatperson"
                                         </label>
                                     </div>
 

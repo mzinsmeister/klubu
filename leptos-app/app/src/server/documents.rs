@@ -20,7 +20,22 @@ pub async fn store_new_version(
 
     // 2. Determine document ID and version
     let doc_id = match document_id {
-        Some(id) => id,
+        Some(id) => {
+            // A replacement may have a different type than the original
+            // (e.g. a PDF swapped for a scan); the download route reads these
+            // columns, so they have to follow the newest version.
+            sqlx::query!(
+                "UPDATE document SET media_type = $1, extension = $2, storage_key_prefix = $3 WHERE id = $4",
+                media_type,
+                extension,
+                storage_key_prefix,
+                id
+            )
+            .execute(pool)
+            .await
+            .map_err(|e| ServerFnError::new(e.to_string()))?;
+            id
+        }
         None => {
             // Create a new document
             let doc_row = sqlx::query!(

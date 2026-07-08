@@ -261,7 +261,7 @@ pub async fn save_offer(offer: Offer) -> Result<Offer, ServerFnError> {
     
     // Insert offer items
     for (i, item) in offer.items.iter().enumerate() {
-        let total = (item.quantity * item.price.amount_cents as f64) as i64;
+        let total = item.total_cents();
         let pos_num = (i + 1) as i64;
         let item_price = item.price.amount_cents;
         
@@ -469,7 +469,7 @@ pub async fn create_offer_revision(offer_id: i64) -> Result<Offer, ServerFnError
     let new_id = new_row.id;
     
     for (i, item) in offer.items.iter().enumerate() {
-        let total = (item.quantity * item.price.amount_cents as f64) as i64;
+        let total = item.total_cents();
         let pos_num = (i + 1) as i64;
         let item_price = item.price.amount_cents;
         

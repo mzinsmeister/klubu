@@ -1,0 +1,34 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT extension, media_type, storage_key_prefix FROM document WHERE id = $1",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "extension",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 1,
+        "name": "media_type",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 2,
+        "name": "storage_key_prefix",
+        "type_info": "Varchar"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int4"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "aff1e7c75bc3c3aecc829203cf5487fd3dff39539596ea90caa353616bffaf01"
+}

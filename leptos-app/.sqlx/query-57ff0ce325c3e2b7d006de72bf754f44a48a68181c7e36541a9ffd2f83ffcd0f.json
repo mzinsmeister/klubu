@@ -1,0 +1,17 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE receipt SET receipt_number = $1, receipt_date = $2, customer_contact_id = $3 WHERE id = $4",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Varchar",
+        "Varchar",
+        "Int4",
+        "Int4"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "57ff0ce325c3e2b7d006de72bf754f44a48a68181c7e36541a9ffd2f83ffcd0f"
+}

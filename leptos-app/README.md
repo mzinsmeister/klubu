@@ -21,12 +21,51 @@ This is a Cargo workspace consisting of four crates:
 
 ## Features
 
-- **Dashboard**: Quick overview of revenues, pending invoices, and activities.
+- **Dashboard**: Real figures for the current business year — revenue, expenses, net result (Einnahmenüberschussrechnung), open and draft invoices.
 - **Contacts Management**: Create, edit, and delete client or supplier contacts.
 - **Invoices**: Create invoices, record payments, finalize (commit) them, and export to PDF.
 - **Offers**: Manage offers with revisions and export to PDF.
 - **Receipts**: Bookkeep receipts and categorize items (e.g., Miete, Bürobedarf) for tax reports.
+- **Local-AI receipt prefill** (optional, off by default): read a receipt PDF with a small language model running on your own server, and prefill supplier, date, number and positions. See [Local AI receipt prefill](#local-ai-receipt-prefill).
 - **Typst-Based PDF Rendering**: Beautiful, pixel-perfect PDF rendering compiled directly in-memory from Typst templates (no PDFBox or Apache FOP needed).
+
+Amount fields accept German and plain notation interchangeably (`3,4`, `4.5`, `1.234,56`, `12 €`) and normalise to `1.234,56` when the field loses focus. Amounts are held as integer cents throughout, so no rounding drift creeps in.
+
+---
+
+## Local AI receipt prefill
+
+Uploading a receipt PDF on the **Belege** page can prefill the form: supplier, receipt number, date and the individual positions with a category guess.
+
+Everything runs on the machine that runs the server — the receipt never leaves it. The text layer of the PDF is extracted in-process, and only that text is sent to a local [Ollama](https://ollama.com) instance.
+
+**The feature is off by default.** While it is off, the button is not rendered, nothing contacts a model, and **no model needs to exist on disk**.
+
+To switch it on:
+
+```bash
+ollama pull qwen2.5:3b                       # ~1.9 GB
+KLUBU_AI_ENABLED=true cargo run --package backend
+```
+
+### Configuration
+
+Each setting can come from an environment variable or from `config/application.properties` (the env var wins). These are the defaults:
+
+| Property | Environment variable | Default | Meaning |
+| --- | --- | --- | --- |
+| `klubu.ai.enabled` | `KLUBU_AI_ENABLED` | `false` | Master switch. Accepts `true`/`1`/`yes`/`on`. |
+| `klubu.ai.model` | `KLUBU_AI_MODEL` | `qwen2.5:3b` | Ollama model tag. |
+| `klubu.ai.url` | `KLUBU_AI_URL` | `http://localhost:11434` | Ollama base URL. |
+| `klubu.ai.timeoutSeconds` | `KLUBU_AI_TIMEOUT_SECONDS` | `120` | Request timeout. |
+
+### Notes and limits
+
+- **CPU is fine.** A 3B model answers in roughly 10–25 s on a modern CPU with no GPU. A smaller tag such as `qwen2.5:1.5b` is faster and usually still good enough; a larger one is rarely worth it for this task.
+- **The reply is schema-constrained.** Ollama is given a JSON schema, so the model cannot return prose or malformed JSON.
+- **PDFs with a text layer only.** There is no OCR stage, so scans and photos are rejected with an explanatory message rather than silently producing nonsense.
+- **The result is a suggestion.** Categories and suppliers are matched against existing rows; anything unmatched is reported as a warning and left for you to fix. Nothing is saved until you press *Speichern*.
+- If the model is missing or Ollama is not running, the UI shows exactly that instead of failing silently.
 
 ---
 
@@ -45,6 +84,52 @@ To run and build this application, you need:
    ```
 4. **PostgreSQL**: A running PostgreSQL database.
    - Default connection URL: `postgres://klubu:klubu-test@localhost:5433/klubu`
+5. **Ollama** — only if you want the [local-AI receipt prefill](#local-ai-receipt-prefill). Not needed otherwise.
+
+**You do not need a database to compile.** See [Compiling without a database](#compiling-without-a-database-sqlx-offline-mode).
+
+---
+
+## Compiling without a database (sqlx offline mode)
+
+`sqlx::query!` verifies every SQL statement against a real schema *at compile time*.
+Left to its own devices that means you cannot build without a running, already-migrated
+Postgres — which breaks fresh clones, CI and `docker build`, and is circular besides,
+since the migrations only run when the server starts.
+
+The standard sqlx answer is to commit the query metadata instead:
+
+- `.sqlx/` holds one JSON file per query, describing its parameters and result columns.
+- `.cargo/config.toml` sets `SQLX_OFFLINE = "true"`, so builds read that metadata and
+  never open a connection.
+
+So `cargo build` works on a fresh clone with no database and no `DATABASE_URL`.
+
+Migrations are applied at **startup** by `sqlx::migrate!()` in `backend/src/main.rs`.
+That is the right place for them: a compiler should not be mutating a database, and
+production databases should not be migrated as a side effect of a build.
+
+### After you change an SQL query
+
+The build will fail with a clear message (`no cached data for this query, run cargo sqlx prepare`).
+Refresh the metadata against a running database and commit the result:
+
+```bash
+cargo install sqlx-cli --no-default-features --features postgres,rustls
+sqlx migrate run --source backend/migrations   # if the schema changed
+cargo sqlx prepare --workspace -- --package backend
+```
+
+In CI, assert that nobody forgot:
+
+```bash
+cargo sqlx prepare --check --workspace -- --package backend
+```
+
+> Why not run the migrations from `build.rs`? Because Cargo caches build-script runs
+> (so they would silently not re-run), `rust-analyzer` executes build scripts (so your
+> editor would quietly mutate your dev database), and it would *still* require a live
+> database at build time — solving nothing for CI or Docker.
 
 ---
 

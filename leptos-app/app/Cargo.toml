@@ -22,6 +22,16 @@ walkdir = { version = "2.5", optional = true }
 comemo = { version = "0.4.0", optional = true }
 sha2 = { version = "0.10", optional = true }
 base64 = { version = "0.22", optional = true }
+# Local-AI receipt prefill. Talks to Ollama over plain HTTP on localhost, so no
+# TLS backend is pulled in.
+reqwest = { version = "0.12", default-features = false, features = ["json"], optional = true }
+pdf-extract = { version = "0.7", optional = true }
+tokio = { version = "1.38", features = ["rt"], optional = true }
+
+# Only needed so `cargo test -p app --features ssr` can compile the
+# server-fn registrations, which require server_fn's axum integration.
+[dev-dependencies]
+leptos_axum = "0.6.12"
 
 [features]
 csr = ["leptos/csr", "leptos_router/csr"]
@@ -35,7 +45,10 @@ ssr = [
     "dep:walkdir",
     "dep:comemo",
     "dep:sha2",
-    "dep:base64"
+    "dep:base64",
+    "dep:reqwest",
+    "dep:pdf-extract",
+    "dep:tokio"
 ]
 
 

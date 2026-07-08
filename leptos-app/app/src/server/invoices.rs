@@ -266,7 +266,7 @@ pub async fn save_invoice(invoice: Invoice) -> Result<Invoice, ServerFnError> {
     
     // Insert new items
     for (i, item) in invoice.items.iter().enumerate() {
-        let total = (item.quantity * item.price.amount_cents as f64) as i64;
+        let total = item.total_cents();
         let pos_num = (i + 1) as i64;
         let item_price = item.price.amount_cents;
         

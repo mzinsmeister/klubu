@@ -1,0 +1,34 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT id, revision, created_timestamp\n        FROM offer\n        WHERE COALESCE(group_id, id) = (\n            SELECT COALESCE(group_id, id) FROM offer WHERE id = $1\n        )\n        ORDER BY revision DESC\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 1,
+        "name": "revision",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 2,
+        "name": "created_timestamp",
+        "type_info": "Varchar"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int4"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      true
+    ]
+  },
+  "hash": "0078f9d558b6d6d1a589b8e21831ed65fbd1293b72e0b757275fe2c0fbb752df"
+}

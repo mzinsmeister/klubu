@@ -12,17 +12,18 @@ pub async fn get_receipts() -> Result<Vec<ReceiptListItem>, ServerFnError> {
         
     let rows = sqlx::query!(
         r#"
-        SELECT r.id, r.created_timestamp, r.receipt_number, r.receipt_date,
+        SELECT r.id, r.created_timestamp, r.receipt_number, r.receipt_date, r.document_id,
+               COALESCE((SELECT SUM(ri.total) FROM receipt_item ri WHERE ri.receipt_id = r.id), 0) as "total!",
                c.id as "contact_id?", c.name as "contact_name?", c.first_name as "contact_first_name?"
         FROM receipt r
         LEFT JOIN contact c ON r.customer_contact_id = c.id
-        ORDER BY r.id DESC
+        ORDER BY r.receipt_date DESC NULLS LAST, r.id DESC
         "#
     )
     .fetch_all(&pool)
     .await
     .map_err(|e| ServerFnError::new(e.to_string()))?;
-    
+
     let items = rows.into_iter().map(|r| {
         let contact = r.contact_id.map(|cid| Contact {
             id: Some(cid as i64),
@@ -38,7 +39,7 @@ pub async fn get_receipts() -> Result<Vec<ReceiptListItem>, ServerFnError> {
             phone: None,
             is_person: false,
         });
-        
+
         ReceiptListItem {
             id: r.id as i64,
             created_timestamp: chrono::DateTime::from_timestamp(r.created_timestamp.unwrap_or_default().parse::<i64>().unwrap_or_default(), 0).unwrap_or(chrono::DateTime::<Utc>::MIN_UTC),
@@ -47,9 +48,11 @@ pub async fn get_receipts() -> Result<Vec<ReceiptListItem>, ServerFnError> {
             due_date: None,
             receipt_date: NaiveDate::parse_from_str(r.receipt_date.as_deref().unwrap_or(""), "%Y-%m-%d").ok(),
             receipt_number: r.receipt_number,
+            total_cents: r.total,
+            has_document: r.document_id.is_some(),
         }
     }).collect();
-    
+
     Ok(items)
 }
 
@@ -146,11 +149,16 @@ pub async fn get_receipt(id: i64) -> Result<Receipt, ServerFnError> {
         None
     };
     
+    let parse_ts = |s: Option<&String>| {
+        s.and_then(|v| v.parse::<i64>().ok())
+            .and_then(|t| chrono::DateTime::from_timestamp(t, 0))
+    };
+
     Ok(Receipt {
         id: Some(r.id as i64),
         items,
-        created_timestamp: None,
-        committed_timestamp: None,
+        created_timestamp: parse_ts(r.created_timestamp.as_ref()),
+        committed_timestamp: parse_ts(r.committed_timestamp.as_ref()),
         receipt_number: r.receipt_number.unwrap_or_default(),
         payments,
         receipt_date: NaiveDate::parse_from_str(r.receipt_date.as_deref().unwrap_or(""), "%Y-%m-%d").ok(),
@@ -161,6 +169,33 @@ pub async fn get_receipt(id: i64) -> Result<Receipt, ServerFnError> {
     })
 }
 
+/// Removes a receipt. The attached document is tombstoned rather than
+/// erased, keeping the audit trail intact.
+#[server(name = DeleteReceipt, prefix = "/api", endpoint = "delete_receipt")]
+pub async fn delete_receipt(id: i64) -> Result<(), ServerFnError> {
+    let pool = use_context::<sqlx::PgPool>()
+        .ok_or_else(|| ServerFnError::new("Database pool not found"))?;
+
+    let id_i32 = id as i32;
+    let doc_id: Option<i32> = sqlx::query_scalar!("SELECT document_id FROM receipt WHERE id = $1", id_i32)
+        .fetch_optional(&pool)
+        .await
+        .map_err(|e| ServerFnError::new(e.to_string()))?
+        .flatten();
+
+    if let Some(did) = doc_id {
+        delete_document(&pool, did).await?;
+    }
+
+    // receipt_item / receipt_payment cascade on delete.
+    sqlx::query!("DELETE FROM receipt WHERE id = $1", id_i32)
+        .execute(&pool)
+        .await
+        .map_err(|e| ServerFnError::new(e.to_string()))?;
+
+    Ok(())
+}
+
 #[server(name = SaveReceipt, prefix = "/api", endpoint = "save_receipt")]
 pub async fn save_receipt(receipt: Receipt) -> Result<Receipt, ServerFnError> {
     let pool = use_context::<sqlx::PgPool>()
@@ -168,7 +203,20 @@ pub async fn save_receipt(receipt: Receipt) -> Result<Receipt, ServerFnError> {
         
     let supplier_contact_id = receipt.supplier_contact.as_ref().and_then(|c| c.id).map(|id| id as i32);
     let receipt_date_str = receipt.receipt_date.map(|d| d.format("%Y-%m-%d").to_string()).unwrap_or_else(|| Utc::now().naive_utc().date().format("%Y-%m-%d").to_string());
-    
+
+    // The attachment currently on record. The client cannot be trusted to
+    // report this: when it clears the attachment it sends `document: None`,
+    // so we have to look the id up ourselves to be able to tombstone it.
+    let existing_doc_id: Option<i32> = if let Some(id) = receipt.id {
+        sqlx::query_scalar!("SELECT document_id FROM receipt WHERE id = $1", id as i32)
+            .fetch_optional(&pool)
+            .await
+            .map_err(|e| ServerFnError::new(e.to_string()))?
+            .flatten()
+    } else {
+        None
+    };
+
     let final_receipt = if let Some(id) = receipt.id {
         let id_i32 = id as i32;
         sqlx::query!(
@@ -226,15 +274,18 @@ pub async fn save_receipt(receipt: Receipt) -> Result<Receipt, ServerFnError> {
     }
     
     // Handle document upload and versioning
-    let mut updated_doc_id = receipt.document.as_ref().map(|d| d.id as i32);
+    let mut updated_doc_id = existing_doc_id;
     if let Some(doc_data) = &receipt.document_data {
-        if let Ok(bytes) = base64::Engine::decode(&base64::engine::general_purpose::STANDARD, &doc_data.data) {
-            let prefix = format!("receipts/{}", final_receipt);
-            let doc = store_new_version(&pool, updated_doc_id, &doc_data.extension, &doc_data.media_type, &prefix, &bytes).await?;
-            updated_doc_id = Some(doc.id as i32);
-        }
+        // A fresh upload appends a version to the existing document chain,
+        // which is what GoBD wants: nothing is overwritten in place.
+        let bytes = base64::Engine::decode(&base64::engine::general_purpose::STANDARD, &doc_data.data)
+            .map_err(|e| ServerFnError::new(format!("Ungültige Dokumentdaten: {e}")))?;
+        let prefix = format!("receipts/{}", final_receipt);
+        let doc = store_new_version(&pool, existing_doc_id, &doc_data.extension, &doc_data.media_type, &prefix, &bytes).await?;
+        updated_doc_id = Some(doc.id as i32);
     } else if receipt.document.is_none() {
-        if let Some(did) = updated_doc_id {
+        // The client cleared the attachment: tombstone the document on record.
+        if let Some(did) = existing_doc_id {
             delete_document(&pool, did).await?;
             updated_doc_id = None;
         }

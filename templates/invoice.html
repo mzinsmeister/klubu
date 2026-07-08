@@ -1,0 +1,184 @@
+<!DOCTYPE html>
+<html>
+    <head>
+        <link rel="preconnect" href="https://fonts.googleapis.com">
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+        <link href="https://fonts.googleapis.com/css2?family=Roboto&display=swap" rel="stylesheet">
+        <style>
+            * {
+                font-family: Roboto;
+            }
+            @page {
+                margin: 42mm 20mm 40mm 20mm;
+                bleed: 0;
+                size: A4;
+            }
+            header {
+                position: running(header);
+            }
+            .documentHeaderContent {
+                padding-top: 20mm;
+            }
+            .address-extra {
+                width: 8.5cm;
+                height: 17.7mm;
+                position: relative;
+            }
+            .address-extra-content {
+                position: absolute;
+                bottom: 0;
+                font-size: 8pt;
+            }
+            .address {
+                width: 8.5cm;
+                height: 27.3mm;
+                font-size: 10pt;
+            }
+            main {
+                width: 100%;
+            }
+            .items {
+                width: 100%;
+                border-collapse: collapse;
+            }
+            .items thead {
+                text-align: left;
+            }
+            .item:nth-child(odd) {
+                background: #CCC;
+            }
+            footer {
+                width: 100%;
+                text-align: left;
+                font-size: 10pt;
+                position: running(footer);
+            }
+            .footer-flex-container {
+                display: flex;
+            }
+            .footer-left {
+                flex: 10;
+            }
+            .footer-center {
+                flex: 10;
+            }
+            .footer-right {
+                flex: 12;
+            }
+            @page {
+                @bottom-left {
+                    content: element(footer);
+                }
+                @top-left {
+                    content: element(header);
+                    vertical-align: top;
+                }
+            }
+        </style>
+    </head>
+    <body>
+        <header>
+            <div class="documentHeaderContent">
+                {{user.documents.headerName}}
+            </div>
+        </header>
+        <footer>
+            <div class="footer-flex-container">
+                <div class="footer-cell footer-left">
+                    <div>{{user.name}}</div>
+                    <div>{{user.street}} {{user.houseNumber}}</div>
+                    <div>{{user.zipCode}} {{user.city}}</div>
+                </div>
+                <div class="footer-cell footer-center">
+                    <div>Tel: {{user.phone}}</div>
+                    <div>E-Mail: {{user.email}}</div>
+                    <div>{{user.taxIdName}}: {{user.taxId}}</div>
+                </div>
+                <div class="footer-cell footer-right">
+                    <div>{{user.bank.name}}</div>
+                    <div>IBAN: {{user.bank.iban}}</div>
+                    <div>BIC: {{user.bank.bic}}</div>
+                </div>
+            </div>
+        </footer>
+
+        <div class="upper-field">
+            <table>
+                <tr>
+                    <td class="address-wrapper">
+                        <div class="address-extra">
+                            <div class="address-extra-content">
+                                <div>{{#user.firstName}}{{.}} {{/user.firstName}}{{user.name}} | {{user.street}} {{user.houseNumber}} | {{user.zipCode}} {{user.city}}</div>
+                            </div>
+                        </div>
+                        <div class="address">
+                            <div>{{recipient.formOfAddress}}</div>
+                            <div>{{#recipient.title}}{{.}} {{/recipient.title}}{{#recipient.firstName}}{{.}} {{/recipient.firstName}}{{recipient.name}}</div>
+                            <div>{{recipient.street}} {{recipient.houseNumber}}</div>
+                            <div>{{recipient.zipCode}} {{recipient.city}}</div>
+                            {{#printRecipientCountry}}<div>{{recipient.country}}</div>{{/printRecipientCountry}}
+                        </div>
+                    </td>
+                    <td class="upper-info">
+                        <table>
+                            <tr>
+                                <td>Kundennummer:</td>
+                                <td>{{customerContact.id}}</td>
+                            </tr>
+                            <tr>
+                                <td>Rechnungsnummer:</td>
+                                <td>{{invoiceNumber}}</td>
+                            </tr>
+                            <tr>
+                                <td>Rechnungsdatum:</td>
+                                <td>{{invoiceDate}}</td>
+                            </tr>
+                        </table>
+                    </td>
+                </tr>
+            </table>
+        </div>
+
+
+        <main>
+            <br><br>
+            <div><b>{{subject}}</b></div>
+            <br>
+            <div class="contentHeader">{{{headerHTML}}}</div>
+            <br>
+            <table class="items">
+                <thead>
+                <tr>
+                    <th>Position</th>
+                    <th>Beschreibung</th>
+                    <th>Menge</th>
+                    <th>Einheit</th>
+                    <th>Einzelpreis</th>
+                    <th>Betrag</th>
+                </tr>
+                </thead>
+                <tbody>
+                {{#items}}
+                <tr class="item">
+                    <td>{{positionNumber}}</td>
+                    <td>{{item}}</td>
+                    <td>{{quantity}}</td>
+                    <td>{{unit}}</td>
+                    <td>{{price}}</td>
+                    <td>{{total}}</td>
+                </tr>
+                {{/items}}
+                <tr>
+                    <td colspan="6"><i>Als Kleinunternehmer im Sinne von § 19 Abs. 1 UStG wird die Umsatzsteuer nicht berechnet!</i></td>
+                </tr>
+                <tr>
+                    <td colspan="5"><b>Summe</b></td>
+                    <td><b>{{totalPrice}}</b></td>
+                </tr>
+                </tbody>
+            </table>
+            <br>
+            <div class="contentFooter">{{{footerHTML}}}</div>
+        </main>
+    </body>
+</html>

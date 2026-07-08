@@ -1,4 +1,6 @@
+pub mod ai;
 pub mod contacts;
+pub mod dashboard;
 pub mod invoices;
 pub mod offers;
 pub mod receipts;
@@ -6,7 +8,9 @@ pub mod export;
 pub mod documents;
 
 // Re-export all server functions for convenience
+pub use ai::*;
 pub use contacts::*;
+pub use dashboard::*;
 pub use invoices::*;
 pub use offers::*;
 pub use receipts::*;
@@ -36,9 +40,13 @@ pub fn register_server_fns() {
     let _ = leptos::server_fn::axum::register_explicit::<GetReceipts>();
     let _ = leptos::server_fn::axum::register_explicit::<GetReceipt>();
     let _ = leptos::server_fn::axum::register_explicit::<SaveReceipt>();
+    let _ = leptos::server_fn::axum::register_explicit::<DeleteReceipt>();
     let _ = leptos::server_fn::axum::register_explicit::<GetCategories>();
     let _ = leptos::server_fn::axum::register_explicit::<AddReceiptPayment>();
     let _ = leptos::server_fn::axum::register_explicit::<DeleteReceiptPayment>();
     let _ = leptos::server_fn::axum::register_explicit::<ExportInvoicePdf>();
     let _ = leptos::server_fn::axum::register_explicit::<ExportOfferPdf>();
+    let _ = leptos::server_fn::axum::register_explicit::<GetDashboardStats>();
+    let _ = leptos::server_fn::axum::register_explicit::<GetAiStatus>();
+    let _ = leptos::server_fn::axum::register_explicit::<PrefillReceipt>();
 }
