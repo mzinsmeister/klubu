@@ -3,15 +3,17 @@
 .jpb/
 
 # Leptos build output and local databases
+/target/
+Cargo.lock
+**/*.rs.bk
+.direnv
+*.db
+frontend/dist/
 leptos-app/target/
-leptos-app/frontend/dist/
-leptos-app/*.db
-leptos-app/*.db-*
 
 # Local application data
 config/
 files/
-leptos-app/config/
-leptos-app/document_storage/
-leptos-app/mail_storage/
-leptos-app/backend/templates/
+document_storage/
+mail_storage/
+backend/templates/

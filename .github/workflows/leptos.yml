@@ -12,9 +12,6 @@ permissions:
 jobs:
   build:
     runs-on: ubuntu-latest
-    defaults:
-      run:
-        working-directory: leptos-app
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
@@ -22,7 +19,7 @@ jobs:
           targets: wasm32-unknown-unknown
       - uses: Swatinem/rust-cache@v2
         with:
-          workspaces: leptos-app
+          workspaces: .
       - name: Install Trunk
         run: cargo install trunk --version 0.16.0 --locked
       - name: Check formatting
@@ -33,4 +30,4 @@ jobs:
         run: cargo test --workspace
       - name: Build frontend
         run: trunk build --release
-        working-directory: leptos-app/frontend
+        working-directory: frontend

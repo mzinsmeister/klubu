@@ -32,6 +32,7 @@ base64 = { version = "0.22", optional = true }
 # TLS backend is pulled in.
 reqwest = { version = "0.12", default-features = false, features = ["json"], optional = true }
 pdf-extract = { version = "0.7", optional = true }
+tempfile = { version = "3", optional = true }
 tokio = { version = "1.38", features = ["rt"], optional = true }
 # `PagedDocument` lives here, not in the `typst` facade crate.
 typst-layout = { version = "0.15.0", optional = true }
@@ -83,6 +84,7 @@ ssr = [
     "dep:base64",
     "dep:reqwest",
     "dep:pdf-extract",
+    "dep:tempfile",
     "dep:tokio",
     "dep:leptos_axum",
     "dep:http",
@@ -93,5 +95,4 @@ ssr = [
     "dep:lopdf",
     "dep:toml"
 ]
-
 

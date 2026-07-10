@@ -20,6 +20,11 @@ fn read_file_as_base64(file: web_sys::File, on_load: impl Fn(ReceiptDocumentData
     let media_type = match file.type_().as_str() {
         // Some browsers report an empty type; fall back to the extension.
         "" if name.to_lowercase().ends_with(".pdf") => "application/pdf".to_string(),
+        "" if name.to_lowercase().ends_with(".png") => "image/png".to_string(),
+        "" if name.to_lowercase().ends_with(".jpg") || name.to_lowercase().ends_with(".jpeg") => {
+            "image/jpeg".to_string()
+        }
+        "" if name.to_lowercase().ends_with(".webp") => "image/webp".to_string(),
         "" => "application/octet-stream".to_string(),
         t => t.to_string(),
     };
@@ -581,7 +586,8 @@ fn ReceiptEditor(
         set_warnings.set(p.warnings);
     };
 
-    // Runs the uploaded file through the local model and fills the form.
+    // Runs the uploaded file through the fast local parser (or the explicitly
+    // selected LLM fallback) and fills the form.
     let prefill_act = create_action(move |doc: &ReceiptDocumentData| {
         let doc = doc.clone();
         async move {
@@ -888,7 +894,7 @@ fn ReceiptEditor(
     }
 }
 
-/// Attachment field plus the optional local-AI prefill trigger.
+/// Attachment field plus the optional local prefill trigger.
 #[component]
 fn DocumentField(
     doc_metadata: ReadSignal<Option<Document>>,
@@ -934,6 +940,7 @@ fn DocumentField(
                 }.into_view()
             } else if let Some(upload) = document_data.get() {
                 let is_pdf = upload.media_type == "application/pdf";
+                let is_image = upload.media_type.starts_with("image/");
                 view! {
                     <div class="field is-grouped is-align-items-center">
                         <div class="control">
@@ -941,16 +948,21 @@ fn DocumentField(
                                 {file_name.get().unwrap_or_else(|| "Datei ausgewählt".to_string())}
                             </span>
                         </div>
-                        // Hidden entirely when the server has AI switched off.
-                        <Show when=move || ai_status.get().enabled && !is_committed>
+                        // Uploading an image is always allowed. Only the
+                        // prefill action depends on OCR being installed.
+                        <Show when=move || {
+                            ai_status.get().enabled
+                                && !is_committed
+                                && (is_pdf || (is_image && ai_status.get().ocr_available))
+                        }>
                             <div class="control">
                                 <button
                                     class="button is-link"
-                                    prop:disabled=move || prefill_pending.get() || !is_pdf
+                                    prop:disabled=move || prefill_pending.get()
                                     title=move || if is_pdf {
-                                        format!("Lokales Modell: {}", ai_status.get().model)
+                                        format!("Lokale Auswertung: {}", ai_status.get().model)
                                     } else {
-                                        "Nur PDFs mit Textebene können ausgelesen werden".to_string()
+                                        "Bild wird per OCR und anschließend mit dem lokalen Modell ausgewertet".to_string()
                                     }
                                     // Read the upload back out of the signal rather than
                                     // capturing it: `Show`'s children must stay `Fn`.
@@ -992,7 +1004,7 @@ fn DocumentField(
                                     <input
                                         class="file-input"
                                         type="file"
-                                        accept="application/pdf,application/xml,text/xml,.xml,image/png,image/jpeg"
+                                    accept="application/pdf,application/xml,text/xml,.xml,image/png,image/jpeg,image/webp"
                                         on:change=move |ev| {
                                             let Some(target) = ev.target() else { return };
                                             let input = target.unchecked_into::<web_sys::HtmlInputElement>();

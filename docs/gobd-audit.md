@@ -1,7 +1,7 @@
 # GoBD-Audit — Klubu (Leptos-App)
 
 **Stand der Erhebung:** 2026-07-08 · **Stand der Behebung:** 2026-07-09
-**Umfang:** `leptos-app/` (Backend, App-Serverfunktionen, DB-Schema)
+**Umfang:** Repository root (Backend, App-Serverfunktionen, DB-Schema)
 
 > Die Befunde unten beschreiben den Zustand **zum Zeitpunkt der Erhebung**. Der
 > Umsetzungsstand steht in der Spalte *Status*; Abschnitt

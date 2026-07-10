@@ -912,6 +912,8 @@ impl Receipt {
 pub struct AiStatus {
     pub enabled: bool,
     pub model: String,
+    pub ocr_available: bool,
+    pub llm_available: bool,
 }
 
 /// Result of running a receipt document through the local model.

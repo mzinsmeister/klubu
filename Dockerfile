@@ -4,8 +4,7 @@ RUN rustup target add wasm32-unknown-unknown \
     && cargo install trunk --version 0.16.0 --locked
 
 WORKDIR /build
-COPY leptos-app /build/leptos-app
-WORKDIR /build/leptos-app
+COPY . /build
 
 RUN cd frontend && trunk build --release
 RUN cargo build --release --package backend
@@ -13,7 +12,7 @@ RUN cargo build --release --package backend
 FROM debian:bookworm-slim AS runtime
 
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends ca-certificates fontconfig \
+    && apt-get install -y --no-install-recommends ca-certificates fontconfig poppler-utils tesseract-ocr tesseract-ocr-deu tesseract-ocr-eng \
     && rm -rf /var/lib/apt/lists/*
 
 RUN groupadd --gid 1000 klubu \
@@ -23,9 +22,9 @@ RUN groupadd --gid 1000 klubu \
 
 WORKDIR /app
 
-COPY --from=builder /build/leptos-app/target/release/backend /app/backend
-COPY --from=builder /build/leptos-app/frontend/dist /app/frontend/dist
-COPY --from=builder /build/leptos-app/templates /app/templates
+COPY --from=builder /build/target/release/backend /app/backend
+COPY --from=builder /build/frontend/dist /app/frontend/dist
+COPY --from=builder /build/templates /app/templates
 
 ENV KLUBU_EXPORT_TEMPLATES_PATH=/app/templates \
     KLUBU_DOCUMENT_STORAGE_PATH=/app/document_storage \

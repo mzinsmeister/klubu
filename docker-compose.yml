@@ -44,7 +44,7 @@ services:
       - ollama
     environment:
       OLLAMA_HOST: http://ollama:11434
-    entrypoint: ["ollama", "pull", "qwen2.5:3b"]
+    entrypoint: ["ollama", "pull", "qwen2.5:0.5b-instruct"]
 
 volumes:
   klubu-data:

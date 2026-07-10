@@ -1,7 +1,7 @@
 # Klubu
 
-The Rust/Leptos workspace in `leptos-app/` is the only application in this
-repository. It contains the shared models, Leptos UI, Axum server, database
+The Rust/Leptos workspace at the repository root is the only application in
+this repository. It contains the shared models, Leptos UI, Axum server, database
 migrations, Typst templates, and MCP server.
 
 ## Database rules
@@ -12,8 +12,8 @@ is checked when it runs.
 
 On every schema change:
 
-1. Add the migration to both `leptos-app/backend/migrations-postgres/` and
-   `leptos-app/backend/migrations-sqlite/` with the same filename.
+1. Add the migration to both `backend/migrations-postgres/` and
+   `backend/migrations-sqlite/` with the same filename.
 2. Exercise the affected flow once against SQLite and once against PostgreSQL.
 3. Test the `migrate-db` SQLite → PostgreSQL → SQLite roundtrip on scratch
    databases and verify that the dumps remain byte-identical.
