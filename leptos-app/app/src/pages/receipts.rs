@@ -1,4 +1,5 @@
 use leptos::*;
+use leptos_router::{use_navigate, use_params_map, NavigateOptions};
 
 use chrono::{NaiveDate, Utc};
 use shared::*;
@@ -62,6 +63,47 @@ pub fn ReceiptsPage() -> impl IntoView {
     let (to_date_filter, set_to_date_filter) = create_signal(String::new());
     let (has_more_receipts, set_has_more_receipts) = create_signal(false);
     let (list_generation, set_list_generation) = create_signal(0_u64);
+    let (is_dirty, set_is_dirty) = create_signal(false);
+
+    let params = use_params_map();
+    let id_param = move || params.with(|p| p.get("id").cloned());
+
+    create_effect(move |_| {
+        let id_val = id_param();
+        match id_val.as_deref() {
+            None => {
+                set_selected_receipt.set(None);
+            }
+            Some("new") => {
+                set_selected_receipt.set(Some(Receipt {
+                    id: None,
+                    items: vec![],
+                    created_timestamp: None,
+                    committed_timestamp: None,
+                    receipt_number: String::new(),
+                    payments: vec![],
+                    receipt_date: Some(Utc::now().naive_utc().date()),
+                    due_date: None,
+                    supplier_contact: None,
+                    document: None,
+                    document_data: None,
+                }));
+            }
+            Some(id_str) => {
+                if let Ok(id) = id_str.parse::<i64>() {
+                    let already_selected =
+                        selected_receipt.get_untracked().and_then(|r| r.id) == Some(id);
+                    if !already_selected {
+                        spawn_local(async move {
+                            if let Ok(receipt) = get_receipt(id).await {
+                                set_selected_receipt.set(Some(receipt));
+                            }
+                        });
+                    }
+                }
+            }
+        }
+    });
 
     let load_receipts = create_action(
         move |(generation, offset, from, to): &(u64, u32, String, String)| {
@@ -113,22 +155,25 @@ pub fn ReceiptsPage() -> impl IntoView {
         },
     );
 
+    create_effect(move |_| {
+        if let Some(window) = web_sys::window() {
+            if let Ok(search) = window.location().search() {
+                if let Some(id) = web_sys::UrlSearchParams::new_with_str(&search)
+                    .ok()
+                    .and_then(|params| params.get("receipt_id"))
+                    .and_then(|value| value.parse::<i64>().ok())
+                {
+                    let _ =
+                        use_navigate()(&format!("/receipts/{}", id), NavigateOptions::default());
+                }
+            }
+        }
+    });
+
     load_receipts.dispatch((0, 0, String::new(), String::new()));
 
     let new_receipt = move |_| {
-        set_selected_receipt.set(Some(Receipt {
-            id: None,
-            items: vec![],
-            created_timestamp: None,
-            committed_timestamp: None,
-            receipt_number: String::new(),
-            payments: vec![],
-            receipt_date: Some(Utc::now().naive_utc().date()),
-            due_date: None,
-            supplier_contact: None,
-            document: None,
-            document_data: None,
-        }));
+        let _ = use_navigate()("/receipts/new", NavigateOptions::default());
     };
 
     // Full-screen editor: while booking a receipt the other ones are just noise.
@@ -227,12 +272,7 @@ pub fn ReceiptsPage() -> impl IntoView {
                                                 <div
                                                     class="box list-item p-3 mb-2"
                                                     on:click=move |_| {
-                                                        spawn_local(async move {
-                                                            match get_receipt(id).await {
-                                                                Ok(full) => set_selected_receipt.set(Some(full)),
-                                                                Err(e) => logging::log!("Error fetching receipt: {:?}", e),
-                                                            }
-                                                        });
+                                                        let _ = use_navigate()(&format!("/receipts/{}", id), NavigateOptions::default());
                                                     }
                                                 >
                                                     <div class="is-flex is-justify-content-space-between">
@@ -291,7 +331,18 @@ pub fn ReceiptsPage() -> impl IntoView {
                 Some(rec) => view! {
                     <div class="level">
                         <div class="level-left">
-                            <button class="button is-light" on:click=move |_| set_selected_receipt.set(None)>
+                            <button class="button is-light" on:click=move |_| {
+                                let confirm_ok = if is_dirty.get() {
+                                    web_sys::window()
+                                        .and_then(|w| w.confirm_with_message("Sie haben ungespeicherte Änderungen. Möchten Sie die Seite wirklich verlassen?").ok())
+                                        .unwrap_or(false)
+                                } else {
+                                    true
+                                };
+                                if confirm_ok {
+                                    let _ = use_navigate()("/receipts", NavigateOptions::default());
+                                }
+                            }>
                                 <span class="icon mr-1"><i class="mdi mdi-arrow-left"></i></span>
                                 "Zurück zur Übersicht"
                             </button>
@@ -317,6 +368,7 @@ pub fn ReceiptsPage() -> impl IntoView {
                             ));
                         })
                         set_selected_receipt=set_selected_receipt
+                        set_dirty=set_is_dirty
                     />
                 }.into_view(),
             }}
@@ -332,6 +384,7 @@ fn ReceiptEditor(
     ai_status: ReadSignal<AiStatus>,
     on_change: Callback<()>,
     set_selected_receipt: WriteSignal<Option<Receipt>>,
+    set_dirty: WriteSignal<bool>,
 ) -> impl IntoView {
     let receipt_id = rec.id;
     let is_committed = rec.committed_timestamp.is_some();
@@ -402,6 +455,63 @@ fn ReceiptEditor(
             .sum::<i64>()
     };
 
+    let has_unsaved_changes = {
+        let rec = rec.clone();
+        move || {
+            let orig_date = rec
+                .receipt_date
+                .map(|d| d.format("%Y-%m-%d").to_string())
+                .unwrap_or_default();
+            receipt_num.get() != rec.receipt_number
+                || receipt_date.get() != orig_date
+                || supplier_contact.get().as_ref().and_then(|c| c.id)
+                    != rec.supplier_contact.as_ref().and_then(|c| c.id)
+                || items_list.get() != rec.items
+                || document_data.get() != rec.document_data
+        }
+    };
+
+    create_effect({
+        let has_changes = has_unsaved_changes.clone();
+        move |_| {
+            set_dirty.set(has_changes());
+        }
+    });
+
+    #[cfg(target_arch = "wasm32")]
+    {
+        use wasm_bindgen::prelude::*;
+        use wasm_bindgen::JsCast;
+        let has_changes = has_unsaved_changes.clone();
+        let listener = Closure::<dyn FnMut(web_sys::BeforeUnloadEvent) -> String>::new(
+            move |e: web_sys::BeforeUnloadEvent| {
+                if has_changes() {
+                    let msg = "Sie haben ungespeicherte Änderungen.";
+                    e.set_return_value(msg);
+                    msg.to_string()
+                } else {
+                    "".to_string()
+                }
+            },
+        );
+        if let Some(w) = web_sys::window() {
+            let _ = w.add_event_listener_with_callback(
+                "beforeunload",
+                listener.as_ref().unchecked_ref(),
+            );
+            let cb_ref = listener.as_ref().clone();
+            leptos::on_cleanup(move || {
+                if let Some(w) = web_sys::window() {
+                    let _ = w.remove_event_listener_with_callback(
+                        "beforeunload",
+                        cb_ref.unchecked_ref(),
+                    );
+                }
+            });
+        }
+        listener.forget();
+    }
+
     let save_act = create_action(move |r: &Receipt| {
         let r = r.clone();
         async move {
@@ -410,6 +520,14 @@ fn ReceiptEditor(
                     on_change.call(());
                     set_error.set(None);
                     // Reflect what the server actually stored (ids, document version).
+                    let target_path = format!("/receipts/{}", saved.id.unwrap_or_default());
+                    let _ = use_navigate()(
+                        &target_path,
+                        NavigateOptions {
+                            replace: true,
+                            ..NavigateOptions::default()
+                        },
+                    );
                     set_selected_receipt.set(Some(saved));
                 }
                 Err(e) => set_error.set(Some(format!("Speichern fehlgeschlagen: {e}"))),
@@ -423,7 +541,7 @@ fn ReceiptEditor(
             match delete_receipt(id).await {
                 Ok(()) => {
                     on_change.call(());
-                    set_selected_receipt.set(None);
+                    let _ = use_navigate()("/receipts", NavigateOptions::default());
                 }
                 Err(e) => set_error.set(Some(format!("Löschen fehlgeschlagen: {e}"))),
             }

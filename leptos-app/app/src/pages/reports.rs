@@ -1,6 +1,6 @@
 use leptos::*;
-use wasm_bindgen::JsCast;
 use shared::{ReportInfo, ReportParamInfo};
+use wasm_bindgen::JsCast;
 
 use crate::components::EmptyState;
 use crate::server::{export_report_csv, export_report_pdf, list_reports, run_report};
@@ -50,7 +50,10 @@ pub fn ReportsPage() -> impl IntoView {
                     .clone()
                     .or_else(|| p.options.first().map(|o| o.value.clone()))
                     .unwrap_or_default();
-                ParamState { info: p.clone(), value: create_rw_signal(initial) }
+                ParamState {
+                    info: p.clone(),
+                    value: create_rw_signal(initial),
+                }
             })
             .collect::<Vec<_>>();
         set_params.set(states);

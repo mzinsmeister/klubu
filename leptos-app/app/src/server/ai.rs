@@ -35,7 +35,8 @@ pub struct AiConfig {
 #[cfg(feature = "ssr")]
 pub fn load_ai_config() -> AiConfig {
     let props = crate::typst_gen::load_props();
-    let get = |key: &str, env: &str, default: &str| crate::typst_gen::get_prop(&props, key, env, default);
+    let get =
+        |key: &str, env: &str, default: &str| crate::typst_gen::get_prop(&props, key, env, default);
 
     let enabled = matches!(
         get("klubu.ai.enabled", "KLUBU_AI_ENABLED", "false")
@@ -170,7 +171,11 @@ struct Extracted {
 
 /// Calls Ollama's chat endpoint with a grammar-constrained JSON schema.
 #[cfg(feature = "ssr")]
-async fn call_model(cfg: &AiConfig, text: &str, category_names: &[String]) -> Result<Extracted, ServerFnError> {
+async fn call_model(
+    cfg: &AiConfig,
+    text: &str,
+    category_names: &[String],
+) -> Result<Extracted, ServerFnError> {
     let body = serde_json::json!({
         "model": cfg.model,
         "stream": false,
@@ -229,8 +234,11 @@ async fn call_model(cfg: &AiConfig, text: &str, category_names: &[String]) -> Re
         .and_then(|v| v.as_str())
         .ok_or_else(|| ServerFnError::new("Antwort des KI-Modells enthielt keinen Inhalt"))?;
 
-    serde_json::from_str::<Extracted>(content)
-        .map_err(|e| ServerFnError::new(format!("Antwort des KI-Modells war kein gültiges JSON: {e}")))
+    serde_json::from_str::<Extracted>(content).map_err(|e| {
+        ServerFnError::new(format!(
+            "Antwort des KI-Modells war kein gültiges JSON: {e}"
+        ))
+    })
 }
 
 /// Accepts the common German date spellings the model may echo back verbatim.
@@ -285,7 +293,9 @@ pub(crate) fn match_contact(name: &str, contacts: &[Contact]) -> Option<Contact>
 // JSON input: the document arrives as a base64 blob, which url-encoded form
 // data (the server-fn default) would inflate substantially.
 #[server(name = PrefillReceipt, prefix = "/api", endpoint = "prefill_receipt", input = Json)]
-pub async fn prefill_receipt(document: ReceiptDocumentData) -> Result<ReceiptPrefill, ServerFnError> {
+pub async fn prefill_receipt(
+    document: ReceiptDocumentData,
+) -> Result<ReceiptPrefill, ServerFnError> {
     #[cfg(feature = "ssr")]
     {
         let cfg = load_ai_config();
@@ -295,8 +305,11 @@ pub async fn prefill_receipt(document: ReceiptDocumentData) -> Result<ReceiptPre
             ));
         }
 
-        let bytes = base64::Engine::decode(&base64::engine::general_purpose::STANDARD, &document.data)
-            .map_err(|e| ServerFnError::new(format!("Datei konnte nicht dekodiert werden: {e}")))?;
+        let bytes =
+            base64::Engine::decode(&base64::engine::general_purpose::STANDARD, &document.data)
+                .map_err(|e| {
+                    ServerFnError::new(format!("Datei konnte nicht dekodiert werden: {e}"))
+                })?;
 
         // pdf_extract is CPU-bound and blocking; keep it off the async runtime.
         let media_type = document.media_type.clone();
@@ -320,7 +333,8 @@ pub async fn prefill_receipt(document: ReceiptDocumentData) -> Result<ReceiptPre
             ));
         }
 
-        let supplier_name = Some(extracted.supplier_name.trim().to_string()).filter(|s| !s.is_empty());
+        let supplier_name =
+            Some(extracted.supplier_name.trim().to_string()).filter(|s| !s.is_empty());
         let supplier_contact = supplier_name
             .as_deref()
             .and_then(|n| match_contact(n, &contacts));
@@ -363,7 +377,8 @@ pub async fn prefill_receipt(document: ReceiptDocumentData) -> Result<ReceiptPre
         }
 
         Ok(ReceiptPrefill {
-            receipt_number: Some(extracted.receipt_number.trim().to_string()).filter(|s| !s.is_empty()),
+            receipt_number: Some(extracted.receipt_number.trim().to_string())
+                .filter(|s| !s.is_empty()),
             receipt_date,
             supplier_name,
             supplier_contact,
@@ -408,9 +423,10 @@ mod tests {
             city: None,
             house_number: None,
             country: None,
-            phone: None,
+            phones: Vec::new(),
             is_person: false,
             archived_timestamp: None,
+            emails: Vec::new(),
         }
     }
 
@@ -428,7 +444,10 @@ mod tests {
     fn matches_categories_case_insensitively_and_rejects_unknown() {
         let cats = vec![cat(1, "Bürobedarf"), cat(2, "Reisekosten")];
         assert_eq!(match_category("bürobedarf", &cats).map(|c| c.id), Some(1));
-        assert_eq!(match_category("  Reisekosten ", &cats).map(|c| c.id), Some(2));
+        assert_eq!(
+            match_category("  Reisekosten ", &cats).map(|c| c.id),
+            Some(2)
+        );
         assert!(match_category("Trinkgeld", &cats).is_none());
         assert!(match_category("", &cats).is_none());
     }
@@ -436,16 +455,24 @@ mod tests {
     #[test]
     fn matches_supplier_exactly_then_by_containment() {
         let contacts = vec![contact(1, "Bürobedarf Schmidt"), contact(2, "Bahn AG")];
-        assert_eq!(match_contact("Bürobedarf Schmidt", &contacts).and_then(|c| c.id), Some(1));
+        assert_eq!(
+            match_contact("Bürobedarf Schmidt", &contacts).and_then(|c| c.id),
+            Some(1)
+        );
         // Printed name carries a legal suffix the stored contact lacks.
-        assert_eq!(match_contact("Bürobedarf Schmidt GmbH", &contacts).and_then(|c| c.id), Some(1));
+        assert_eq!(
+            match_contact("Bürobedarf Schmidt GmbH", &contacts).and_then(|c| c.id),
+            Some(1)
+        );
         assert!(match_contact("Völlig Andere Firma", &contacts).is_none());
         assert!(match_contact("", &contacts).is_none());
     }
 
     #[test]
     fn rejects_images_and_texts_without_a_text_layer() {
-        let err = extract_text(b"whatever", "image/jpeg").unwrap_err().to_string();
+        let err = extract_text(b"whatever", "image/jpeg")
+            .unwrap_err()
+            .to_string();
         assert!(err.contains("OCR"), "{err}");
 
         let err = extract_text(b"kurz", "text/plain").unwrap_err().to_string();

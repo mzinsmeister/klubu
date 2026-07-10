@@ -17,8 +17,23 @@ fn escape_typst(text: &str) -> String {
     for ch in text.chars() {
         if matches!(
             ch,
-            '\\' | '#' | '$' | '*' | '_' | '`' | '<' | '>' | '@' | '[' | ']' | '~' | '=' | '+'
-                | '-' | '/' | '\''| '"'
+            '\\' | '#'
+                | '$'
+                | '*'
+                | '_'
+                | '`'
+                | '<'
+                | '>'
+                | '@'
+                | '['
+                | ']'
+                | '~'
+                | '='
+                | '+'
+                | '-'
+                | '/'
+                | '\''
+                | '"'
         ) {
             out.push('\\');
         }
@@ -81,7 +96,11 @@ pub fn markdown_to_typst(md: &str) -> String {
             }
             Event::Start(Tag::Item) => {
                 let indent = "  ".repeat(list_stack.len().saturating_sub(1));
-                let marker = if *list_stack.last().unwrap_or(&false) { "+" } else { "-" };
+                let marker = if *list_stack.last().unwrap_or(&false) {
+                    "+"
+                } else {
+                    "-"
+                };
                 out.push_str(&format!("{indent}{marker} "));
             }
             Event::End(TagEnd::Item) => out.push('\n'),
@@ -99,7 +118,10 @@ pub fn markdown_to_typst(md: &str) -> String {
             Event::End(TagEnd::CodeBlock) => out.push_str("\")\n\n"),
 
             Event::Code(text) => {
-                out.push_str(&format!("#raw(\"{}\")", text.replace('\\', "\\\\").replace('"', "\\\"")));
+                out.push_str(&format!(
+                    "#raw(\"{}\")",
+                    text.replace('\\', "\\\\").replace('"', "\\\"")
+                ));
             }
             Event::Text(text) => out.push_str(&escape_typst(&text)),
 

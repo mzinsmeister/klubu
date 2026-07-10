@@ -119,7 +119,10 @@ pub mod compiler {
         /// markup before compilation, so no template may read from disk. The only
         /// readable files are the attachments handed in explicitly.
         fn file(&self, id: FileId) -> FileResult<Bytes> {
-            self.attachments.get(&id).cloned().ok_or_else(|| not_found(id))
+            self.attachments
+                .get(&id)
+                .cloned()
+                .ok_or_else(|| not_found(id))
         }
 
         fn font(&self, index: usize) -> Option<Font> {
@@ -238,7 +241,10 @@ pub mod compiler {
     pub fn compile_typst_html(markup: String) -> Result<String, String> {
         let world = KlubuWorld::new(markup);
         let document = finish(typst::compile::<HtmlDocument>(&world).output)?;
-        finish(typst_html::html(&document, &typst_html::HtmlOptions::default()))
+        finish(typst_html::html(
+            &document,
+            &typst_html::HtmlOptions::default(),
+        ))
     }
 
     #[cfg(test)]

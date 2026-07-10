@@ -27,7 +27,9 @@ pub fn render_invoice_pdf(invoice: &shared::Invoice) -> Result<Vec<u8>, String> 
         return crate::pdf::compiler::compile_typst(markup);
     }
 
-    let ctx = CiiContext { seller: seller_from_config() };
+    let ctx = CiiContext {
+        seller: seller_from_config(),
+    };
     let xml = invoice_to_cii(invoice, &ctx)
         .map_err(|e| format!("E-Rechnung konnte nicht erzeugt werden: {e}"))?;
     crate::pdf::compiler::compile_typst_zugferd(markup, ZUGFERD_XML_NAME, xml.into_bytes())
@@ -94,6 +96,7 @@ mod tests {
             is_canceled: false,
             is_cancelation: false,
             corrected_invoice_id: None,
+            cancellation_invoice_id: None,
             customer_contact: None,
             document: None,
             recipient: Some(Recipient {
@@ -121,8 +124,14 @@ mod tests {
 
         assert!(xml.contains("urn:cen.eu:en16931:2017"), "profile missing");
         assert!(xml.contains("<ram:ID>7</ram:ID>"), "invoice number missing");
-        assert!(xml.contains("<ram:TypeCode>380</ram:TypeCode>"), "doc type missing");
-        assert!(xml.contains(r#"format="102">20260709"#), "issue date missing");
+        assert!(
+            xml.contains("<ram:TypeCode>380</ram:TypeCode>"),
+            "doc type missing"
+        );
+        assert!(
+            xml.contains(r#"format="102">20260709"#),
+            "issue date missing"
+        );
         assert!(xml.contains("Acme GmbH"), "buyer missing");
         assert!(xml.contains("Musterfirma"), "seller missing");
         // Kleinunternehmer: exempt, not zero-rated, with a stated reason.
@@ -149,7 +158,10 @@ mod tests {
     fn a_steuernummer_is_emitted_as_bt32() {
         let ctx = CiiContext { seller: seller() };
         let xml = invoice_to_cii(&invoice(), &ctx).unwrap();
-        assert!(xml.contains(r#"<ram:ID schemeID="FC">12/345/67890</ram:ID>"#), "{xml}");
+        assert!(
+            xml.contains(r#"<ram:ID schemeID="FC">12/345/67890</ram:ID>"#),
+            "{xml}"
+        );
         assert!(!xml.contains(r#"schemeID="VA""#));
     }
 
@@ -160,7 +172,10 @@ mod tests {
         let mut s = seller();
         s.tax_id = "DE123456789".into();
         let xml = invoice_to_cii(&invoice(), &CiiContext { seller: s }).unwrap();
-        assert!(xml.contains(r#"<ram:ID schemeID="VA">DE123456789</ram:ID>"#), "{xml}");
+        assert!(
+            xml.contains(r#"<ram:ID schemeID="VA">DE123456789</ram:ID>"#),
+            "{xml}"
+        );
     }
 
     /// Every line is exempt (§ 19 UStG), so EN 16931 BR-E-2 requires BT-31 or
@@ -180,16 +195,25 @@ mod tests {
     fn our_cii_round_trips_through_our_parser() {
         let ctx = CiiContext { seller: seller() };
         let xml = invoice_to_cii(&invoice(), &ctx).unwrap();
-        let parsed = parse_einvoice(xml.as_bytes(), "application/xml").unwrap().unwrap();
+        let parsed = parse_einvoice(xml.as_bytes(), "application/xml")
+            .unwrap()
+            .unwrap();
         assert_eq!(parsed.syntax, ESyntax::Cii);
         assert_eq!(parsed.prefill.receipt_number.as_deref(), Some("7"));
-        assert_eq!(parsed.prefill.receipt_date, NaiveDate::from_ymd_opt(2026, 7, 9));
+        assert_eq!(
+            parsed.prefill.receipt_date,
+            NaiveDate::from_ymd_opt(2026, 7, 9)
+        );
         assert_eq!(parsed.prefill.supplier_name.as_deref(), Some("Musterfirma"));
         assert_eq!(parsed.prefill.items.len(), 1);
         assert_eq!(parsed.prefill.items[0].item, "Beratung & Support");
         assert_eq!(parsed.prefill.items[0].price.amount_cents, 50000);
         // Kleinunternehmer: no VAT, so line sum == grand total, no mismatch warning.
-        assert!(!parsed.prefill.warnings.iter().any(|w| w.contains("Gesamtbetrag")));
+        assert!(!parsed
+            .prefill
+            .warnings
+            .iter()
+            .any(|w| w.contains("Gesamtbetrag")));
     }
 
     fn use_repo_templates() {

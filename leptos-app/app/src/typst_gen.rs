@@ -46,33 +46,57 @@ pub struct AppConfig {
 }
 
 #[cfg(feature = "ssr")]
-fn parse_properties(content: &str) -> std::collections::HashMap<String, String> {
-    let mut map = std::collections::HashMap::new();
-    for line in content.lines() {
-        let line = line.trim();
-        if line.is_empty() || line.starts_with('#') || line.starts_with(';') {
-            continue;
+fn flatten_toml(
+    map: &mut std::collections::HashMap<String, String>,
+    prefix: &str,
+    value: &toml::Value,
+) {
+    match value {
+        toml::Value::Table(table) => {
+            for (k, v) in table {
+                let next_prefix = if prefix.is_empty() {
+                    k.clone()
+                } else {
+                    format!("{}.{}", prefix, k)
+                };
+                flatten_toml(map, &next_prefix, v);
+            }
         }
-        if let Some(pos) = line.find('=') {
-            let key = line[..pos].trim().to_string();
-            let val = line[pos + 1..].trim().to_string();
-            map.insert(key, val);
+        toml::Value::Array(arr) => {
+            for (i, v) in arr.iter().enumerate() {
+                let next_prefix = format!("{}.{}", prefix, i);
+                flatten_toml(map, &next_prefix, v);
+            }
+        }
+        _ => {
+            let val_str = match value {
+                toml::Value::String(s) => s.clone(),
+                toml::Value::Integer(i) => i.to_string(),
+                toml::Value::Float(f) => f.to_string(),
+                toml::Value::Boolean(b) => b.to_string(),
+                toml::Value::Datetime(d) => d.to_string(),
+                _ => String::new(),
+            };
+            map.insert(prefix.to_string(), val_str);
         }
     }
-    map
 }
 
-/// Loads `application.properties` from the first path that exists.
+/// Loads `application.toml` from the first path that exists.
 #[cfg(feature = "ssr")]
-pub(crate) fn load_props() -> std::collections::HashMap<String, String> {
+pub fn load_props() -> std::collections::HashMap<String, String> {
     let paths = [
-        "/app/config/application.properties",
-        "./config/application.properties",
-        "backend/src/test/resources/user.properties", // dev fallback
+        "/app/config/application.toml",
+        "./config/application.toml",
+        "backend/src/test/resources/user.toml", // dev fallback
     ];
     for path in &paths {
         if let Ok(content) = std::fs::read_to_string(path) {
-            return parse_properties(&content);
+            let mut map = std::collections::HashMap::new();
+            if let Ok(value) = toml::from_str::<toml::Value>(&content) {
+                flatten_toml(&mut map, "", &value);
+                return map;
+            }
         }
     }
     std::collections::HashMap::new()
@@ -107,15 +131,31 @@ pub fn load_config() -> AppConfig {
         city: get_prop("klubu.user.city", "KLUBU_USER_CITY", "Musterstadt"),
         country: get_prop("klubu.user.country", "KLUBU_USER_COUNTRY", "Deutschland"),
         phone: get_prop("klubu.user.phone", "KLUBU_USER_PHONE", "0123-456789"),
-        email: get_prop("klubu.user.email", "KLUBU_USER_EMAIL", "info@musterfirma.de"),
-        tax_id_name: get_prop("klubu.user.taxIdName", "KLUBU_USER_TAX_ID_NAME", "Steuernummer"),
+        email: get_prop(
+            "klubu.user.email",
+            "KLUBU_USER_EMAIL",
+            "info@musterfirma.de",
+        ),
+        tax_id_name: get_prop(
+            "klubu.user.taxIdName",
+            "KLUBU_USER_TAX_ID_NAME",
+            "Steuernummer",
+        ),
         tax_id: get_prop("klubu.user.taxId", "KLUBU_USER_TAX_ID", "12/345/67890"),
         bank: BankConfig {
             name: get_prop("klubu.user.bank.name", "KLUBU_USER_BANK_NAME", "Musterbank"),
-            iban: get_prop("klubu.user.bank.iban", "KLUBU_USER_BANK_IBAN", "DE89 5003 0000 1234 5678 90"),
+            iban: get_prop(
+                "klubu.user.bank.iban",
+                "KLUBU_USER_BANK_IBAN",
+                "DE89 5003 0000 1234 5678 90",
+            ),
             bic: get_prop("klubu.user.bank.bic", "KLUBU_USER_BANK_BIC", "MUSTDE88XXX"),
         },
-        header_name: get_prop("klubu.user.documents.headerName", "KLUBU_USER_DOCUMENTS_HEADER_NAME", "Musterfirma"),
+        header_name: get_prop(
+            "klubu.user.documents.headerName",
+            "KLUBU_USER_DOCUMENTS_HEADER_NAME",
+            "Musterfirma",
+        ),
     }
 }
 
@@ -126,7 +166,8 @@ pub(crate) fn json_to_typst(val: &serde_json::Value) -> String {
         serde_json::Value::Bool(b) => b.to_string(),
         serde_json::Value::Number(n) => n.to_string(),
         serde_json::Value::String(s) => {
-            let escaped = s.replace('\\', "\\\\")
+            let escaped = s
+                .replace('\\', "\\\\")
                 .replace('"', "\\\"")
                 .replace('\n', "\\n")
                 .replace('\r', "");
@@ -144,9 +185,10 @@ pub(crate) fn json_to_typst(val: &serde_json::Value) -> String {
             if obj.is_empty() {
                 "(:)".to_string()
             } else {
-                let pairs: Vec<String> = obj.iter().map(|(k, v)| {
-                    format!("\"{}\": {}", k, json_to_typst(v))
-                }).collect();
+                let pairs: Vec<String> = obj
+                    .iter()
+                    .map(|(k, v)| format!("\"{}\": {}", k, json_to_typst(v)))
+                    .collect();
                 format!("({})", pairs.join(", "))
             }
         }
@@ -155,18 +197,18 @@ pub(crate) fn json_to_typst(val: &serde_json::Value) -> String {
 
 #[cfg(feature = "ssr")]
 fn get_template(name: &str, default_content: &str) -> String {
-    let dir = std::env::var("KLUBU_EXPORT_TEMPLATES_PATH")
-        .unwrap_or_else(|_| "./templates".to_string());
+    let dir =
+        std::env::var("KLUBU_EXPORT_TEMPLATES_PATH").unwrap_or_else(|_| "./templates".to_string());
     let path = std::path::Path::new(&dir).join(name);
-    
+
     if let Some(parent) = path.parent() {
         let _ = std::fs::create_dir_all(parent);
     }
-    
+
     if !path.exists() {
         let _ = std::fs::write(&path, default_content);
     }
-    
+
     std::fs::read_to_string(&path).unwrap_or_else(|_| default_content.to_string())
 }
 
@@ -465,7 +507,8 @@ const DEFAULT_OFFER_TEMPLATE: &str = r#"
 /// Formats a date the way a German invoice prints it.
 #[cfg(feature = "ssr")]
 fn de_date(date: Option<chrono::NaiveDate>) -> String {
-    date.map(|d| d.format("%d.%m.%Y").to_string()).unwrap_or_default()
+    date.map(|d| d.format("%d.%m.%Y").to_string())
+        .unwrap_or_default()
 }
 
 /// Resolves `{{…}}` placeholders in the free-text fields and converts the two
@@ -474,13 +517,12 @@ fn de_date(date: Option<chrono::NaiveDate>) -> String {
 /// The converted blocks land in `header_typst` / `footer_typst`; the original
 /// Markdown `header` / `footer` values stay available to custom templates.
 #[cfg(feature = "ssr")]
-fn enrich_document_text(
-    json: &mut serde_json::Value,
-    vars: &[(&str, String)],
-) {
+fn enrich_document_text(json: &mut serde_json::Value, vars: &[(&str, String)]) {
     use crate::markdown::markdown_to_typst;
 
-    let Some(obj) = json.as_object_mut() else { return };
+    let Some(obj) = json.as_object_mut() else {
+        return;
+    };
 
     for field in ["title", "subject"] {
         if let Some(s) = obj.get(field).and_then(|v| v.as_str()) {
@@ -541,13 +583,15 @@ pub fn generate_invoice_typst(invoice: &Invoice) -> String {
         } else {
             ""
         };
-        
+
         format!(
             "{}{}#let invoice = {}\n#let config = {}\n{}",
             watermark,
             // Typst page setting rule needs to be placed at the very start or merged
             "",
-            invoice_typst, config_typst, template
+            invoice_typst,
+            config_typst,
+            template
         )
     }
     #[cfg(not(feature = "ssr"))]
@@ -596,12 +640,10 @@ pub fn generate_offer_typst(offer: &Offer) -> String {
         } else {
             ""
         };
-        
+
         format!(
             "{}{}#let offer = {}\n#let config = {}\n{}",
-            watermark,
-            "",
-            offer_typst, config_typst, template
+            watermark, "", offer_typst, config_typst, template
         )
     }
     #[cfg(not(feature = "ssr"))]
@@ -631,7 +673,10 @@ mod tests {
         static ONCE: std::sync::Once = std::sync::Once::new();
         ONCE.call_once(|| {
             let dir = concat!(env!("CARGO_MANIFEST_DIR"), "/../templates");
-            assert!(std::path::Path::new(dir).is_dir(), "repo templates missing at {dir}");
+            assert!(
+                std::path::Path::new(dir).is_dir(),
+                "repo templates missing at {dir}"
+            );
             std::env::set_var("KLUBU_EXPORT_TEMPLATES_PATH", dir);
         });
     }
@@ -653,6 +698,7 @@ mod tests {
             is_canceled: false,
             is_cancelation: false,
             corrected_invoice_id: None,
+            cancellation_invoice_id: None,
             customer_contact: None,
             document: None,
             recipient: Some(Recipient {
@@ -686,12 +732,27 @@ mod tests {
 
         let markup = generate_invoice_typst(&sample_invoice());
 
-        assert!(!markup.contains("{{nummer}}"), "placeholder left unresolved");
+        assert!(
+            !markup.contains("{{nummer}}"),
+            "placeholder left unresolved"
+        );
         assert!(!markup.contains("{{summe}}"), "placeholder left unresolved");
-        assert!(markup.contains("Rechnung 7 vom 09.07.2026"), "subject not substituted");
-        assert!(markup.contains("= Zahlungsziel"), "markdown heading not converted");
-        assert!(markup.contains("Rechnung 7 über 500,00 €"), "footer placeholders not substituted");
-        assert!(markup.contains("Acme GmbH"), "header placeholder not substituted");
+        assert!(
+            markup.contains("Rechnung 7 vom 09.07.2026"),
+            "subject not substituted"
+        );
+        assert!(
+            markup.contains("= Zahlungsziel"),
+            "markdown heading not converted"
+        );
+        assert!(
+            markup.contains("Rechnung 7 über 500,00 €"),
+            "footer placeholders not substituted"
+        );
+        assert!(
+            markup.contains("Acme GmbH"),
+            "header placeholder not substituted"
+        );
 
         let pdf = crate::pdf::compiler::compile_typst(markup.clone())
             .unwrap_or_else(|e| panic!("typst failed: {e}"));

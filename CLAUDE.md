@@ -14,7 +14,7 @@ all SQL is runtime-checked only, so type or column mistakes surface when the que
 **On every schema change:**
 
 1. Add the migration to **both** directories with the **same file name**:
-   `leptos-app/backend/migrations/` (Postgres) and
+   `leptos-app/backend/migrations-postgres/` (Postgres) and
    `leptos-app/backend/migrations-sqlite/` (SQLite). `migrate-db` refuses to run when
    the version lists differ.
 2. **Test against both DBMSes**, not just one: start the server and exercise the
@@ -30,7 +30,13 @@ all SQL is runtime-checked only, so type or column mistakes surface when the que
 
 Never point `migrate-db` at a non-empty target; it refuses when `audit_log` has rows.
 
-## Other invariants
+## Language boundary
+
+- Rust identifiers, module/file names, shared types, server function names, SQL
+  identifiers, migration names, and internal error/log messages use English.
+- German is allowed in frontend labels, help text, and generated business
+  document copy. The internal name for the frontend's German “Auftrag” feature
+  is `engagement`.
 
 - SQLite runs in WAL mode with `synchronous = FULL`; teardown checkpoints and truncates
   the WAL (see `dbcopy.rs::shutdown_pool`). Keep any new exit path going through it.

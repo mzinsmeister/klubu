@@ -21,6 +21,11 @@ pub fn is_sqlite_url(db_url: &str) -> bool {
     db_url.trim_start().starts_with("sqlite:")
 }
 
+pub fn is_postgres_url(db_url: &str) -> bool {
+    let url = db_url.trim_start();
+    url.starts_with("postgres:") || url.starts_with("postgresql:")
+}
+
 /// SQLite is configured for durability rather than throughput: a bookkeeping
 /// ledger may not lose a committed transaction, and §147 AO expects the archive
 /// to still be readable in ten years.
@@ -99,12 +104,15 @@ pub async fn shutdown_pool(pool: &AnyPool, db_url: &str) {
 }
 
 /// The dialect-matching migration set. Both directories are compiled into the
-/// binary and kept in lockstep (same file names, same versions).
+/// binary and kept in lockstep (same file names, same versions). The dialect
+/// is selected explicitly from the URL; there is no implicit Postgres path.
 pub fn migrator_for(db_url: &str) -> sqlx::migrate::Migrator {
     if is_sqlite_url(db_url) {
         sqlx::migrate!("./migrations-sqlite")
+    } else if is_postgres_url(db_url) {
+        sqlx::migrate!("./migrations-postgres")
     } else {
-        sqlx::migrate!("./migrations")
+        panic!("Unsupported DATABASE_URL scheme; use sqlite:, postgres:, or postgresql:")
     }
 }
 
@@ -168,7 +176,9 @@ async fn source_tables(pool: &AnyPool, sqlite: bool) -> Result<Vec<TableMeta>, C
         )
         .fetch_all(pool)
         .await
-        .map_err(db_err("Tabellenliste (sqlite_master) konnte nicht gelesen werden"))?
+        .map_err(db_err(
+            "Tabellenliste (sqlite_master) konnte nicht gelesen werden",
+        ))?
     } else {
         sqlx::query_scalar(
             "SELECT tablename::text FROM pg_catalog.pg_tables WHERE schemaname = 'public' \
@@ -176,7 +186,9 @@ async fn source_tables(pool: &AnyPool, sqlite: bool) -> Result<Vec<TableMeta>, C
         )
         .fetch_all(pool)
         .await
-        .map_err(db_err("Tabellenliste (pg_tables) konnte nicht gelesen werden"))?
+        .map_err(db_err(
+            "Tabellenliste (pg_tables) konnte nicht gelesen werden",
+        ))?
     };
 
     let mut tables = Vec::new();
@@ -349,7 +361,10 @@ fn read_float(row: &AnyRow, index: usize) -> Result<Option<f64>, CopyError> {
 
 /// Placeholder list `$1, $2, …` — both dialects accept `$N` natively.
 fn placeholders(n: usize) -> String {
-    (1..=n).map(|i| format!("${i}")).collect::<Vec<_>>().join(", ")
+    (1..=n)
+        .map(|i| format!("${i}"))
+        .collect::<Vec<_>>()
+        .join(", ")
 }
 
 pub async fn run_db_migration(source_url: &str, target_url: &str) -> Result<(), CopyError> {
@@ -411,10 +426,9 @@ pub async fn run_db_migration(source_url: &str, target_url: &str) -> Result<(), 
         );
     }
 
-    let mut tx = target
-        .begin()
-        .await
-        .map_err(db_err("Transaktion auf dem Ziel konnte nicht gestartet werden"))?;
+    let mut tx = target.begin().await.map_err(db_err(
+        "Transaktion auf dem Ziel konnte nicht gestartet werden",
+    ))?;
 
     // Clear migration-seeded rows, dependents first. audit_log is empty (checked
     // above) and its triggers forbid DELETE, so skip it.
@@ -468,10 +482,10 @@ pub async fn run_db_migration(source_url: &str, target_url: &str) -> Result<(), 
                     Cell::Blob(v) => insert.bind(v),
                 };
             }
-            insert
-                .execute(&mut *tx)
-                .await
-                .map_err(db_err(&format!("Einfügen in {} fehlgeschlagen", table.name)))?;
+            insert.execute(&mut *tx).await.map_err(db_err(&format!(
+                "Einfügen in {} fehlgeschlagen",
+                table.name
+            )))?;
         }
         summary.insert(table.name.clone(), rows.len());
     }
@@ -543,10 +557,24 @@ mod tests {
     fn declared_types_of_both_dialects_map_to_a_transport_kind() {
         // The union of what the two migration sets actually declare.
         for declared in [
-            "INTEGER", "integer", "INT", "SERIAL", "BIGINT", "bigint", "boolean",
-            "DOUBLE PRECISION", "double precision", "REAL",
-            "TEXT", "text", "VARCHAR(255)", "character varying", "VARCHAR(50)", "VARCHAR(8)",
-            "BYTEA", "BLOB",
+            "INTEGER",
+            "integer",
+            "INT",
+            "SERIAL",
+            "BIGINT",
+            "bigint",
+            "boolean",
+            "DOUBLE PRECISION",
+            "double precision",
+            "REAL",
+            "TEXT",
+            "text",
+            "VARCHAR(255)",
+            "character varying",
+            "VARCHAR(50)",
+            "VARCHAR(8)",
+            "BYTEA",
+            "BLOB",
         ] {
             assert!(kind_of(declared).is_ok(), "unmapped type: {declared}");
         }
@@ -579,5 +607,13 @@ mod tests {
     #[test]
     fn placeholders_are_one_based_dollar_numbers() {
         assert_eq!(placeholders(3), "$1, $2, $3");
+    }
+
+    #[test]
+    fn database_scheme_selection_is_explicit() {
+        assert!(is_sqlite_url("sqlite://klubu.db?mode=rwc"));
+        assert!(is_postgres_url("postgres://klubu:secret@localhost/klubu"));
+        assert!(is_postgres_url("postgresql://klubu:secret@localhost/klubu"));
+        assert!(!is_postgres_url("mysql://localhost/klubu"));
     }
 }

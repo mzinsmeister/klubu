@@ -1,5 +1,5 @@
+use chrono::{DateTime, NaiveDate, Utc};
 use serde::{Deserialize, Serialize};
-use chrono::{NaiveDate, DateTime, Utc};
 
 /// One chunk of a stable, server-side paginated list.
 ///
@@ -58,6 +58,171 @@ pub struct ReportDownload {
     pub media_type: String,
     /// Base64-encoded file contents.
     pub base64: String,
+}
+
+/// A mailbox entry. The message bytes themselves live in the immutable `.eml`
+/// archive; this is the searchable/indexable part exposed to the web client.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct EmailSummary {
+    pub id: i64,
+    pub mailbox: String,
+    pub sender: String,
+    pub recipients: String,
+    pub subject: String,
+    pub timestamp: DateTime<Utc>,
+    pub archived_timestamp: DateTime<Utc>,
+    pub flags: Vec<String>,
+    pub raw_size: i64,
+    pub message_id: String,
+    pub delivery_status: String,
+    #[serde(default)]
+    pub attachment_count: i64,
+    #[serde(default)]
+    pub customer_contact_id: Option<i64>,
+    #[serde(default)]
+    pub customer_name: Option<String>,
+}
+
+/// A message as displayed by the browser client. HTML is deliberately not
+/// rendered as trusted markup: mail is untrusted input and is shown as text.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct EmailMessage {
+    pub summary: EmailSummary,
+    pub body_text: String,
+    pub has_html_body: bool,
+    #[serde(default)]
+    pub attachments: Vec<EmailAttachmentSummary>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct EmailDownload {
+    pub filename: String,
+    pub media_type: String,
+    pub base64: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct EmailAttachment {
+    pub filename: String,
+    pub media_type: String,
+    /// Base64-encoded attachment bytes. The server validates the decoded size.
+    pub base64: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct EmailDocumentLink {
+    pub kind: String,
+    pub entity_id: i64,
+    pub reference: Option<String>,
+    pub revision: Option<i64>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct EmailAttachmentSummary {
+    pub filename: String,
+    pub media_type: String,
+    pub raw_size: i64,
+    pub content_hash: String,
+    pub document_id: Option<i64>,
+    pub document_links: Vec<EmailDocumentLink>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct ComposeEmail {
+    pub to: String,
+    #[serde(default)]
+    pub cc: String,
+    #[serde(default)]
+    pub bcc: String,
+    pub subject: String,
+    pub body: String,
+    #[serde(default)]
+    pub attachments: Vec<EmailAttachment>,
+    /// Optional business case to which the newly archived message is linked.
+    #[serde(default)]
+    pub engagement_id: Option<i64>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct EmailSettings {
+    pub address_domain: String,
+    pub smtp_port: u16,
+    pub imap_port: u16,
+    pub relay_enabled: bool,
+    pub upstream_configured: bool,
+    pub email_enabled: bool,
+}
+
+/// A linkable business case. Links are append-only; corrections create new
+/// offers/invoices or archive new messages and never rewrite their records.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub enum EngagementLinkKind {
+    Offer,
+    Invoice,
+    Email,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct EngagementLink {
+    pub kind: EngagementLinkKind,
+    pub id: i64,
+    pub label: String,
+    pub status: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct EngagementListItem {
+    pub id: i64,
+    pub title: String,
+    pub description: Option<String>,
+    pub customer_name: Option<String>,
+    pub customer_contact_id: Option<i64>,
+    pub created_timestamp: DateTime<Utc>,
+    pub offer_count: i64,
+    pub invoice_count: i64,
+    pub email_count: i64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct Engagement {
+    pub id: Option<i64>,
+    pub title: String,
+    pub description: Option<String>,
+    pub customer_contact: Option<Contact>,
+    pub created_timestamp: Option<DateTime<Utc>>,
+    pub links: Vec<EngagementLink>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct EngagementInput {
+    pub id: Option<i64>,
+    pub title: String,
+    pub description: Option<String>,
+    pub customer_contact_id: Option<i64>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct ContactNote {
+    pub id: i64,
+    pub body: String,
+    pub author_username: String,
+    pub created_timestamp: DateTime<Utc>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct ContactCrmSummary {
+    pub contact: Contact,
+    pub notes: Vec<ContactNote>,
+    pub recent_emails: Vec<EmailSummary>,
+    #[serde(default)]
+    pub offers: Vec<OfferListItem>,
+    #[serde(default)]
+    pub invoices: Vec<InvoiceListItem>,
+    #[serde(default)]
+    pub engagements: Vec<EngagementListItem>,
+    pub offer_count: i64,
+    pub invoice_count: i64,
+    pub engagement_count: i64,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -165,7 +330,10 @@ pub fn parse_cents(input: &str) -> Option<i64> {
     };
 
     // Whatever separators survive in the integer part are thousands separators.
-    let int_digits: String = int_part.chars().filter(|c| *c != '.' && *c != ',').collect();
+    let int_digits: String = int_part
+        .chars()
+        .filter(|c| *c != '.' && *c != ',')
+        .collect();
     if !int_digits.chars().all(|c| c.is_ascii_digit()) {
         return None;
     }
@@ -190,7 +358,11 @@ pub fn parse_cents(input: &str) -> Option<i64> {
         _ => {
             let two: i64 = frac_part[..2].parse().ok()?;
             let next: i64 = frac_part[2..3].parse().ok()?;
-            if next >= 5 { two + 1 } else { two }
+            if next >= 5 {
+                two + 1
+            } else {
+                two
+            }
         }
     };
 
@@ -453,7 +625,11 @@ pub struct Contact {
     pub city: Option<String>,
     pub house_number: Option<String>,
     pub country: Option<String>,
-    pub phone: Option<String>,
+    #[serde(default)]
+    pub phones: Vec<String>,
+    /// All known addresses for the contact, in display/order priority order.
+    #[serde(default)]
+    pub emails: Vec<String>,
     #[serde(default)]
     pub is_person: bool,
     /// An archived contact keeps its id (the Kundennummer printed on committed
@@ -518,6 +694,8 @@ pub struct Invoice {
     #[serde(default)]
     pub is_cancelation: bool,
     pub corrected_invoice_id: Option<i64>,
+    #[serde(default)]
+    pub cancellation_invoice_id: Option<i64>,
     pub customer_contact: Option<Contact>,
     pub document: Option<Document>,
     pub recipient: Option<Recipient>,

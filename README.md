@@ -14,7 +14,25 @@ Here's a list of features Klubu already has or is intended to have:
 - Create Reports, most importantly the operating result with the net-income method needed for taxes
 - Create beautiful PDF/A documents for Invoices and Offers with customizable templates
 
-## Architecture
+## Active development application
+
+The actively developed application is the Rust/Leptos app in [`leptos-app`](./leptos-app).
+SQLite is the default for local development and requires no database service:
+
+```bash
+cd leptos-app
+DATABASE_URL=sqlite://klubu.db?mode=rwc cargo run --package backend
+```
+
+PostgreSQL remains supported, but must be selected explicitly with a
+`postgres://` or `postgresql://` `DATABASE_URL`. The Leptos app keeps matching
+migrations in `leptos-app/backend/migrations-sqlite/` and
+`leptos-app/backend/migrations-postgres/`.
+
+The rest of this file describes the legacy Kotlin/Spring + Vue application. For
+current development, follow [`leptos-app/README.md`](./leptos-app/README.md).
+
+## Legacy architecture
 A basic overview of the architecutre is the following:
 
 It's designed as a webapp that should later also be useable as a standalone Desktop App through Electron.
@@ -48,7 +66,7 @@ This data, for now, is configured in a config file on the server. This is obviou
 For now KluBu is available under the GNU Affero Gneral Public Licence (AGPL). This is mostly a default to one of
 the most restrictive licences to give me more time to think about the lincence I actually want to use long term.
 
-## Development
+## Legacy development
 You will need a JDK 17 or higher and npm (latest lts should work). For development of the webapp use
 ```    
 npm run dev
@@ -59,7 +77,7 @@ and for development of the Kotlin backend use
 ```
 To quickly start a development database, you can use the docker-compose.yml file inside the backend directory.
 
-## Installation
+## Legacy installation
 Linux is the only inteded environment for production. Theoretically windows should also work 
 (it does work for development) but might take some fiddling. A Docker image can be built and used 
 (Is currently not available in any docker repository but might be uploaded to DockerHub once the project is more 
@@ -101,7 +119,7 @@ in the root directory and a docker image should be built and run in combination 
 For production use, you can create a docker-compose.yml file similar to that one. In general the whole installation
 experience still needs some work.
 
-## Database
+## Legacy database
 
 Liquibase is integrated now. However it's not sure whether this actually works properly in all cases. This will allow KluBu to
 be used with almost any RDBMS but only Postgres (and SQLite once (and if) a standalone Desktop version is introduced)

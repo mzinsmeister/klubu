@@ -36,6 +36,57 @@ aufbewahrungspflichtigen Daten — flankiert von **Zugriffsschutz**,
 | 9 | Keine getrennten Datumsfelder (Beleg-/Buchungs-/Erfassungsdatum) | **Niedrig** | Zeitgerechte Buchung | ✅ ausgeräumt (s. Nachtrag) |
 | ✓ | Dokument-Versionierung ist append-only mit Tombstones | *konform* | Unveränderbarkeit | — |
 
+## E-Mail-Archiv
+
+E-Mails werden nicht als frei editierbarer Nachrichtentext behandelt. SMTP
+DATA, Web-Compose und IMAP APPEND führen denselben Archivpfad aus:
+
+1. Die unveränderten RFC-5322-Bytes werden als content-addressed `.eml`-Datei
+   geschrieben und per SHA-256 gegen spätere Lesefehler geprüft.
+2. `mail_message` speichert die Zuordnung zum Benutzer/Postfach, Message-ID,
+   Absender, Empfänger, Betreff, Erfassungs-/Sendezeit, Quelle, Hash, Größe und
+   Transportstatus.
+3. Archivierung, Statusänderungen und IMAP-Flags werden dem angemeldeten
+   Benutzer zugeordnet und in `audit_log` journalisiert.
+4. Der Mailinhalt und seine Archivadresse sind per Datenbanktrigger
+   unveränderbar. `EXPUNGE` löscht keine Bytes, sondern schreibt einen
+   Tombstone; die Originaldatei bleibt für die Aufbewahrung erhalten.
+
+Der lokale SMTP/IMAP-Relay ist standardmäßig an `127.0.0.1` gebunden und
+unterstützt selbst kein TLS. Für einen externen Zugriff sind TLS-Termination,
+Zugriffsschutz, Backups und die konkrete zehnjährige Aufbewahrung in der
+Verfahrensdokumentation des Betriebs zu regeln. Diese technische Umsetzung ist
+keine steuerliche oder rechtliche Konformitätsbestätigung.
+
+Es gibt bewusst keinen Löschpfad für `mail_message`, `mail_attachment` und
+`contact_note` — auch nicht für Betroffenenanfragen nach Art. 17 DSGVO. Das ist
+nur haltbar, wenn die Verfahrensdokumentation das Postfach als rein
+geschäftlich deklariert (Aufbewahrungspflicht als Ausnahme nach Art. 17 Abs. 3
+lit. b DSGVO); private Nutzung des archivierten Postfachs ist auszuschließen.
+
+## Aufträge und E-Mail-Versand von Belegen
+
+Das Frontend-Konzept „Auftrag“ heißt im Schema `engagement` (englische
+SQL-Bezeichner). Die Tabellen `engagement_offer`, `engagement_invoice` und
+`engagement_mail` verknüpfen Angebote (auch einzelne Revisionen), Rechnungen
+und archivierte E-Mails. Das ändert keine Festschreibung und kopiert keine
+Belegdaten in eine zweite, divergierende Quelle.
+
+Verknüpfungen auf **festgeschriebene** Belege und auf E-Mails sind append-only
+(Trigger verbieten UPDATE und DELETE). Eine Verknüpfung auf einen **Entwurf**
+darf dagegen zusammen mit dem Entwurf entfernt werden: Entwürfe sind nicht
+aufbewahrungspflichtig, und das Löschen samt Verknüpfung wird als
+`unlink`-/`delete`-Ereignis journalisiert. Was tatsächlich kommuniziert wurde,
+bleibt unabhängig davon als unveränderlicher PDF-Anhang der archivierten E-Mail
+erhalten — wie ein von Hand hochgeladener Anhang.
+
+Beim Versand eines finalisierten Angebots oder einer finalisierten Rechnung
+erzeugt der Server den PDF-Anhang, baut daraus die MIME-Nachricht und führt sie
+durch denselben unveränderlichen Mail-Archivpfad wie SMTP, IMAP und Webmail.
+Ein Auftrag kann dabei direkt als Ziel der Verknüpfung angegeben werden. Eine
+stornierte Rechnung wird nicht erneut versendet; an ihre Stelle tritt die
+Stornorechnung.
+
 ---
 
 ## Befunde
@@ -125,7 +176,8 @@ bereits finalisierte Rechnungen.
 `commit_invoice` (`app/src/server/db/repository.rs:807`) liest
 `MAX(invoice_number)+1` (`:826`) und schreibt die Nummer in einem **separaten**
 `UPDATE` (`:836`) — ohne umschließende Transaktion. Auf `invoice_number` liegt
-**kein UNIQUE-Constraint** (`backend/migrations/202606151452_init.sql`). Zwei
+**kein UNIQUE-Constraint** (`backend/migrations-postgres/202606151452_init.sql`;
+the SQLite equivalent lives in `backend/migrations-sqlite/`). Zwei
 zeitgleiche Finalisierungen können dieselbe Nummer vergeben; eine fehlgeschlagene
 Finalisierung nach dem Zählerzug kann eine Lücke hinterlassen.
 

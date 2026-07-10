@@ -56,7 +56,11 @@ fn cii_date(date: chrono::NaiveDate) -> String {
 fn quantity(q: f64) -> String {
     let s = format!("{q:.4}");
     let s = s.trim_end_matches('0').trim_end_matches('.').to_string();
-    if s.is_empty() || s == "-" { "0".to_string() } else { s }
+    if s.is_empty() || s == "-" {
+        "0".to_string()
+    } else {
+        s
+    }
 }
 
 /// Seller identity, from the same `application.properties` the PDF header uses.
@@ -156,7 +160,10 @@ pub fn invoice_to_cii(invoice: &Invoice, ctx: &CiiContext) -> Result<String, Str
         cii_date(date)
     ));
     if let Some(note) = invoice.subject.as_deref().filter(|s| !s.trim().is_empty()) {
-        xml.push_str(&format!(r#"<ram:IncludedNote><ram:Content>{}</ram:Content></ram:IncludedNote>"#, esc(note)));
+        xml.push_str(&format!(
+            r#"<ram:IncludedNote><ram:Content>{}</ram:Content></ram:IncludedNote>"#,
+            esc(note)
+        ));
     }
     xml.push_str("</rsm:ExchangedDocument>");
 
@@ -207,7 +214,11 @@ pub fn invoice_to_cii(invoice: &Invoice, ctx: &CiiContext) -> Result<String, Str
     }
     // VA = USt-IdNr. (BT-31), FC = Steuernummer (BT-32). A Kleinunternehmer has
     // the latter; the emptiness case was already refused above.
-    let scheme = if looks_like_vat_id(&s.tax_id) { "VA" } else { "FC" };
+    let scheme = if looks_like_vat_id(&s.tax_id) {
+        "VA"
+    } else {
+        "FC"
+    };
     xml.push_str(&format!(
         r#"<ram:SpecifiedTaxRegistration><ram:ID schemeID="{scheme}">{}</ram:ID></ram:SpecifiedTaxRegistration>"#,
         esc(&s.tax_id)
@@ -321,6 +332,9 @@ mod tests {
 
     #[test]
     fn xml_special_characters_are_escaped() {
-        assert_eq!(esc("Müller & Söhne <GmbH>"), "Müller &amp; Söhne &lt;GmbH&gt;");
+        assert_eq!(
+            esc("Müller & Söhne <GmbH>"),
+            "Müller &amp; Söhne &lt;GmbH&gt;"
+        );
     }
 }

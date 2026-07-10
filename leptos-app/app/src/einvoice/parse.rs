@@ -76,7 +76,11 @@ pub fn parse_einvoice(bytes: &[u8], media_type: &str) -> Result<Option<ParsedEIn
         ESyntax::Ubl => from_ubl(&doc),
     };
 
-    Ok(Some(ParsedEInvoice { prefill, syntax, from_pdf }))
+    Ok(Some(ParsedEInvoice {
+        prefill,
+        syntax,
+        from_pdf,
+    }))
 }
 
 fn looks_like_pdf(bytes: &[u8], media_type: &str) -> bool {
@@ -126,7 +130,9 @@ fn extract_embedded_xml(pdf: &[u8]) -> Option<String> {
             Object::Stream(s) => s,
             _ => return None,
         };
-        let data = stream.decompressed_content().unwrap_or_else(|_| stream.content.clone());
+        let data = stream
+            .decompressed_content()
+            .unwrap_or_else(|_| stream.content.clone());
         String::from_utf8(data).ok()
     }
 
@@ -139,20 +145,26 @@ fn extract_embedded_xml(pdf: &[u8]) -> Option<String> {
 }
 
 fn pdf_string(obj: &lopdf::Object) -> Option<String> {
-    obj.as_str().ok().map(|b| String::from_utf8_lossy(b).to_string())
+    obj.as_str()
+        .ok()
+        .map(|b| String::from_utf8_lossy(b).to_string())
 }
 
 /// First descendant with this local name, namespace ignored.
 fn find<'a, 'i>(doc: &'a roxmltree::Document<'i>, name: &str) -> Option<roxmltree::Node<'a, 'i>> {
-    doc.descendants().find(|n| n.is_element() && n.tag_name().name() == name)
+    doc.descendants()
+        .find(|n| n.is_element() && n.tag_name().name() == name)
 }
 
 fn find_in<'a, 'i>(node: roxmltree::Node<'a, 'i>, name: &str) -> Option<roxmltree::Node<'a, 'i>> {
-    node.descendants().find(|n| n.is_element() && n.tag_name().name() == name)
+    node.descendants()
+        .find(|n| n.is_element() && n.tag_name().name() == name)
 }
 
 fn text_of(node: Option<roxmltree::Node>) -> Option<String> {
-    node.and_then(|n| n.text()).map(|t| t.trim().to_string()).filter(|s| !s.is_empty())
+    node.and_then(|n| n.text())
+        .map(|t| t.trim().to_string())
+        .filter(|s| !s.is_empty())
 }
 
 /// Parses a decimal amount into cents. Accepts `123`, `123.4`, `123.45`.
@@ -219,19 +231,38 @@ fn from_cii(doc: &roxmltree::Document) -> ReceiptPrefill {
         let total = find_in(line, "LineTotalAmount")
             .and_then(|n| n.text())
             .and_then(cents)
-            .or_else(|| find_in(line, "ChargeAmount").and_then(|n| n.text()).and_then(cents));
+            .or_else(|| {
+                find_in(line, "ChargeAmount")
+                    .and_then(|n| n.text())
+                    .and_then(cents)
+            });
         let tax_rate = find_in(line, "RateApplicablePercent")
             .and_then(|n| n.text())
             .and_then(|t| t.trim().parse::<f64>().ok());
         match total {
-            Some(c) => lines.push(ParsedLine { name, net_cents: c, tax_rate }),
-            None => warnings.push(format!("Position \"{name}\" ohne lesbaren Betrag übersprungen.")),
+            Some(c) => lines.push(ParsedLine {
+                name,
+                net_cents: c,
+                tax_rate,
+            }),
+            None => warnings.push(format!(
+                "Position \"{name}\" ohne lesbaren Betrag übersprungen."
+            )),
         }
     }
 
     // BT-112: the gross invoice total, before any prepayment is subtracted.
-    let total = find(doc, "GrandTotalAmount").and_then(|n| n.text()).and_then(cents);
-    finish(receipt_number, receipt_date, supplier_name, lines, warnings, total)
+    let total = find(doc, "GrandTotalAmount")
+        .and_then(|n| n.text())
+        .and_then(cents);
+    finish(
+        receipt_number,
+        receipt_date,
+        supplier_name,
+        lines,
+        warnings,
+        total,
+    )
 }
 
 fn from_ubl(doc: &roxmltree::Document) -> ReceiptPrefill {
@@ -254,27 +285,38 @@ fn from_ubl(doc: &roxmltree::Document) -> ReceiptPrefill {
         .and_then(|n| n.text())
         .and_then(parse_date);
 
-    let supplier_name = find(doc, "AccountingSupplierParty")
-        .and_then(|p| find_in(p, "PartyName").and_then(|pn| text_of(find_in(pn, "Name"))).or_else(|| {
-            find_in(p, "PartyLegalEntity").and_then(|pl| text_of(find_in(pl, "RegistrationName")))
-        }));
+    let supplier_name = find(doc, "AccountingSupplierParty").and_then(|p| {
+        find_in(p, "PartyName")
+            .and_then(|pn| text_of(find_in(pn, "Name")))
+            .or_else(|| {
+                find_in(p, "PartyLegalEntity")
+                    .and_then(|pl| text_of(find_in(pl, "RegistrationName")))
+            })
+    });
 
     let mut lines = Vec::new();
-    for line in doc
-        .descendants()
-        .filter(|n| n.is_element() && matches!(n.tag_name().name(), "InvoiceLine" | "CreditNoteLine"))
-    {
+    for line in doc.descendants().filter(|n| {
+        n.is_element() && matches!(n.tag_name().name(), "InvoiceLine" | "CreditNoteLine")
+    }) {
         let name = find_in(line, "Item")
             .and_then(|i| text_of(find_in(i, "Name")))
             .unwrap_or_else(|| "Position".to_string());
-        let total = find_in(line, "LineExtensionAmount").and_then(|n| n.text()).and_then(cents);
+        let total = find_in(line, "LineExtensionAmount")
+            .and_then(|n| n.text())
+            .and_then(cents);
         let tax_rate = find_in(line, "ClassifiedTaxCategory")
             .and_then(|c| find_in(c, "Percent"))
             .and_then(|n| n.text())
             .and_then(|t| t.trim().parse::<f64>().ok());
         match total {
-            Some(c) => lines.push(ParsedLine { name, net_cents: c, tax_rate }),
-            None => warnings.push(format!("Position \"{name}\" ohne lesbaren Betrag übersprungen.")),
+            Some(c) => lines.push(ParsedLine {
+                name,
+                net_cents: c,
+                tax_rate,
+            }),
+            None => warnings.push(format!(
+                "Position \"{name}\" ohne lesbaren Betrag übersprungen."
+            )),
         }
     }
 
@@ -285,7 +327,14 @@ fn from_ubl(doc: &roxmltree::Document) -> ReceiptPrefill {
         .or_else(|| find(doc, "PayableAmount"))
         .and_then(|n| n.text())
         .and_then(cents);
-    finish(receipt_number, receipt_date, supplier_name, lines, warnings, total)
+    finish(
+        receipt_number,
+        receipt_date,
+        supplier_name,
+        lines,
+        warnings,
+        total,
+    )
 }
 
 /// Grosses a net line up by the VAT rate the supplier applied.
@@ -469,17 +518,26 @@ mod tests {
 
     #[test]
     fn reads_cii() {
-        let p = parse_einvoice(CII.as_bytes(), "application/xml").unwrap().unwrap();
+        let p = parse_einvoice(CII.as_bytes(), "application/xml")
+            .unwrap()
+            .unwrap();
         assert_eq!(p.syntax, ESyntax::Cii);
         assert!(!p.from_pdf);
         assert_eq!(p.prefill.receipt_number.as_deref(), Some("RE-2026-14"));
-        assert_eq!(p.prefill.receipt_date, chrono::NaiveDate::from_ymd_opt(2026, 3, 15));
+        assert_eq!(
+            p.prefill.receipt_date,
+            chrono::NaiveDate::from_ymd_opt(2026, 3, 15)
+        );
         assert_eq!(p.prefill.supplier_name.as_deref(), Some("Serverhaus GmbH"));
         assert_eq!(p.prefill.items.len(), 1);
         // 100.00 net at 19 % is booked as the 119.00 that leaves the bank account:
         // a Kleinunternehmer may not deduct the input VAT, so it is part of the expense.
         assert_eq!(p.prefill.items[0].price.amount_cents, 11900);
-        assert!(!p.prefill.warnings.iter().any(|w| w.contains("Gesamtbetrag")));
+        assert!(!p
+            .prefill
+            .warnings
+            .iter()
+            .any(|w| w.contains("Gesamtbetrag")));
         assert!(p.prefill.warnings.iter().any(|w| w.contains("brutto")));
     }
 
@@ -487,7 +545,9 @@ mod tests {
     /// the remainder must still be booked rather than dropped.
     #[test]
     fn vat_is_booked_even_when_lines_carry_no_rate() {
-        let p = parse_einvoice(CII_NO_LINE_RATE.as_bytes(), "application/xml").unwrap().unwrap();
+        let p = parse_einvoice(CII_NO_LINE_RATE.as_bytes(), "application/xml")
+            .unwrap()
+            .unwrap();
         let booked: i64 = p.prefill.items.iter().map(|i| i.price.amount_cents).sum();
         assert_eq!(booked, 11900, "expense must equal the invoiced gross total");
         assert_eq!(p.prefill.items.len(), 2);
@@ -497,13 +557,19 @@ mod tests {
 
     #[test]
     fn reads_ubl() {
-        let p = parse_einvoice(UBL.as_bytes(), "application/xml").unwrap().unwrap();
+        let p = parse_einvoice(UBL.as_bytes(), "application/xml")
+            .unwrap()
+            .unwrap();
         assert_eq!(p.syntax, ESyntax::Ubl);
         assert_eq!(p.prefill.receipt_number.as_deref(), Some("2026-0007"));
         assert_eq!(p.prefill.supplier_name.as_deref(), Some("Bürobedarf AG"));
         assert_eq!(p.prefill.items[0].price.amount_cents, 5000);
         // Totals agree and no VAT is charged, so nothing to reconcile or gross up.
-        assert!(!p.prefill.warnings.iter().any(|w| w.contains("Gesamtbetrag")));
+        assert!(!p
+            .prefill
+            .warnings
+            .iter()
+            .any(|w| w.contains("Gesamtbetrag")));
         assert!(!p.prefill.warnings.iter().any(|w| w.contains("brutto")));
     }
 
@@ -520,9 +586,15 @@ mod tests {
                <cbc:PayableAmount>30.00</cbc:PayableAmount>\
              </cac:LegalMonetaryTotal>",
         );
-        let p = parse_einvoice(ubl.as_bytes(), "application/xml").unwrap().unwrap();
+        let p = parse_einvoice(ubl.as_bytes(), "application/xml")
+            .unwrap()
+            .unwrap();
         assert_eq!(p.prefill.items[0].price.amount_cents, 5000);
-        assert!(!p.prefill.warnings.iter().any(|w| w.contains("Gesamtbetrag")));
+        assert!(!p
+            .prefill
+            .warnings
+            .iter()
+            .any(|w| w.contains("Gesamtbetrag")));
     }
 
     /// When no line could be parsed there is no VAT "remainder" to book — the
@@ -531,10 +603,20 @@ mod tests {
     #[test]
     fn an_invoice_without_readable_lines_does_not_invent_a_vat_item() {
         let cii = CII_NO_LINE_RATE.replace("LineTotalAmount>", "Broken>");
-        let p = parse_einvoice(cii.as_bytes(), "application/xml").unwrap().unwrap();
+        let p = parse_einvoice(cii.as_bytes(), "application/xml")
+            .unwrap()
+            .unwrap();
         assert!(p.prefill.items.is_empty(), "{:?}", p.prefill.items);
-        assert!(p.prefill.warnings.iter().any(|w| w.contains("keine Positionen")));
-        assert!(p.prefill.warnings.iter().any(|w| w.contains("Gesamtbetrag")));
+        assert!(p
+            .prefill
+            .warnings
+            .iter()
+            .any(|w| w.contains("keine Positionen")));
+        assert!(p
+            .prefill
+            .warnings
+            .iter()
+            .any(|w| w.contains("Gesamtbetrag")));
     }
 
     /// A UBL line states its rate under `cac:ClassifiedTaxCategory/cbc:Percent`.
@@ -546,15 +628,27 @@ mod tests {
                 "<cac:Item><cbc:Name>Papier</cbc:Name><cac:ClassifiedTaxCategory><cbc:Percent>19.00</cbc:Percent></cac:ClassifiedTaxCategory></cac:Item>",
             )
             .replace("<cbc:PayableAmount>50.00", "<cbc:PayableAmount>59.50");
-        let p = parse_einvoice(ubl.as_bytes(), "application/xml").unwrap().unwrap();
+        let p = parse_einvoice(ubl.as_bytes(), "application/xml")
+            .unwrap()
+            .unwrap();
         assert_eq!(p.prefill.items[0].price.amount_cents, 5950);
-        assert!(!p.prefill.warnings.iter().any(|w| w.contains("Gesamtbetrag")));
+        assert!(!p
+            .prefill
+            .warnings
+            .iter()
+            .any(|w| w.contains("Gesamtbetrag")));
     }
 
     #[test]
     fn non_einvoice_input_is_not_an_error() {
-        assert!(parse_einvoice(b"just a scan", "text/plain").unwrap().is_none());
-        assert!(parse_einvoice(b"<html><body/></html>", "text/html").unwrap().is_none());
-        assert!(parse_einvoice(b"%PDF-1.7 not really", "application/pdf").unwrap().is_none());
+        assert!(parse_einvoice(b"just a scan", "text/plain")
+            .unwrap()
+            .is_none());
+        assert!(parse_einvoice(b"<html><body/></html>", "text/html")
+            .unwrap()
+            .is_none());
+        assert!(parse_einvoice(b"%PDF-1.7 not really", "application/pdf")
+            .unwrap()
+            .is_none());
     }
 }

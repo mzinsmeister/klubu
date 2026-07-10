@@ -1148,6 +1148,103 @@ pub async fn download_managed_document_version(
     }
 }
 
+#[server(
+    name = GetManagedDocument,
+    prefix = "/api",
+    endpoint = "get_managed_document"
+)]
+pub async fn get_managed_document(id: i64) -> Result<ManagedDocument, ServerFnError> {
+    #[cfg(feature = "ssr")]
+    {
+        use sqlx::Row;
+        let repo = use_context::<super::db::ActiveRepository>()
+            .ok_or_else(|| ServerFnError::new("Repository not found"))?;
+        let row = sqlx::query(
+            r#"
+            SELECT CAST(d.id AS BIGINT) AS id,
+                   d.extension,
+                   d.media_type,
+                   d.storage_key_prefix,
+                   (SELECT CAST(v.version AS BIGINT)
+                      FROM document_version v
+                     WHERE v.document_id = d.id
+                     ORDER BY v.version DESC LIMIT 1) AS latest_version,
+                   (SELECT CAST(COUNT(*) AS BIGINT)
+                      FROM document_version v
+                     WHERE v.document_id = d.id) AS version_count,
+                   (SELECT v.created_timestamp
+                      FROM document_version v
+                     WHERE v.document_id = d.id
+                       AND v.is_tombstone = 0
+                       AND v.created_timestamp IS NOT NULL
+                     ORDER BY v.version DESC LIMIT 1) AS latest_uploaded_timestamp,
+                   (SELECT v.created_timestamp
+                      FROM document_version v
+                     WHERE v.document_id = d.id
+                     ORDER BY v.version DESC LIMIT 1) AS latest_activity_timestamp,
+                   (SELECT CAST(v.is_tombstone AS BIGINT)
+                      FROM document_version v
+                     WHERE v.document_id = d.id
+                     ORDER BY v.version DESC LIMIT 1) AS latest_is_tombstone
+              FROM document d
+             WHERE d.id = $1
+            "#,
+        )
+        .bind(id)
+        .fetch_optional(repo.pool())
+        .await
+        .map_err(db_error("Dokument konnte nicht gelesen werden"))?
+        .ok_or_else(|| ServerFnError::new("Dokument nicht gefunden"))?;
+
+        let extension = row
+            .try_get::<String, _>("extension")
+            .map_err(|error| ServerFnError::new(error.to_string()))?;
+        let storage_key_prefix = row
+            .try_get::<String, _>("storage_key_prefix")
+            .map_err(|error| ServerFnError::new(error.to_string()))?;
+        let mut document = ManagedDocument {
+            id,
+            display_name: display_name(&storage_key_prefix, &extension, id),
+            extension,
+            media_type: row
+                .try_get::<String, _>("media_type")
+                .map_err(|error| ServerFnError::new(error.to_string()))?,
+            storage_key_prefix,
+            latest_version: row
+                .try_get::<Option<i64>, _>("latest_version")
+                .map_err(|error| ServerFnError::new(error.to_string()))?
+                .map(|value| value as i32),
+            version_count: row
+                .try_get::<i64, _>("version_count")
+                .map_err(|error| ServerFnError::new(error.to_string()))?
+                .max(0) as u32,
+            latest_uploaded_timestamp: parse_db_timestamp(
+                row.try_get::<Option<String>, _>("latest_uploaded_timestamp")
+                    .map_err(|error| ServerFnError::new(error.to_string()))?,
+            ),
+            latest_activity_timestamp: parse_db_timestamp(
+                row.try_get::<Option<String>, _>("latest_activity_timestamp")
+                    .map_err(|error| ServerFnError::new(error.to_string()))?,
+            ),
+            is_deleted: row
+                .try_get::<Option<i64>, _>("latest_is_tombstone")
+                .map_err(|error| ServerFnError::new(error.to_string()))?
+                == Some(1),
+            links: Vec::new(),
+        };
+
+        let mut links = links_for_documents(&repo, &[id]).await?;
+        document.links = links.remove(&id).unwrap_or_default();
+
+        Ok(document)
+    }
+    #[cfg(not(feature = "ssr"))]
+    {
+        let _ = id;
+        Err(ServerFnError::new("Client side DB access not supported"))
+    }
+}
+
 #[cfg(all(test, feature = "ssr"))]
 mod tests {
     use super::*;

@@ -2,34 +2,36 @@ use leptos::*;
 use leptos_router::*;
 
 #[cfg(feature = "ssr")]
-pub mod pdf;
+pub mod einvoice;
 #[cfg(feature = "ssr")]
 pub mod markdown;
 #[cfg(feature = "ssr")]
-pub mod einvoice;
+pub mod pdf;
 
-pub mod typst_gen;
-pub mod server;
-pub mod pages;
 pub mod components;
+pub mod pages;
+pub mod server;
+pub mod typst_gen;
 
 // Re-export for backend usage
-pub use typst_gen::{html_to_typst, generate_invoice_typst, generate_offer_typst};
-#[cfg(feature = "ssr")]
-pub use typst_gen::{init_templates, load_config, AppConfig, BankConfig};
-#[cfg(feature = "ssr")]
-pub use server::{register_server_fns, store_new_version, delete_document};
 #[cfg(feature = "ssr")]
 pub use server::db;
+#[cfg(feature = "ssr")]
+pub use server::{delete_document, register_server_fns, store_new_version};
+pub use typst_gen::{generate_invoice_typst, generate_offer_typst, html_to_typst};
+#[cfg(feature = "ssr")]
+pub use typst_gen::{init_templates, load_config, AppConfig, BankConfig};
 
+use crate::server::{check_setup_required, get_current_user, get_email_settings, logout};
 use pages::*;
-use crate::server::{check_setup_required, get_current_user, logout};
+use shared::EmailSettings;
 
 #[component]
 pub fn App() -> impl IntoView {
     let (user, set_user) = create_signal(None::<String>);
     let (setup_required, set_setup_required) = create_signal(false);
     let (loading, set_loading) = create_signal(true);
+    let (email_settings, set_email_settings) = create_signal(None::<EmailSettings>);
 
     // Fetch auth status on mount
     create_effect(move |_| {
@@ -40,15 +42,16 @@ pub fn App() -> impl IntoView {
             if let Ok(opt_user) = get_current_user().await {
                 set_user.set(opt_user);
             }
+            if let Ok(settings) = get_email_settings().await {
+                set_email_settings.set(Some(settings));
+            }
             set_loading.set(false);
         });
     });
 
-    let logout_action = create_action(move |_: &()| {
-        async move {
-            if logout().await.is_ok() {
-                set_user.set(None);
-            }
+    let logout_action = create_action(move |_: &()| async move {
+        if logout().await.is_ok() {
+            set_user.set(None);
         }
     });
 
@@ -80,7 +83,7 @@ pub fn App() -> impl IntoView {
                             // Sidebar Navigation
                             <aside class="app-sidebar" style="display: flex; flex-direction: column;">
                                 <div class="app-brand">
-                                    <span class="icon"><i class="mdi mdi-account-group"></i></span>
+                                    <span class="icon"><i class="mdi mdi-briefcase"></i></span>
                                     "Klubu"
                                 </div>
                                 <nav class="menu" style="flex-grow: 1;">
@@ -92,6 +95,13 @@ pub fn App() -> impl IntoView {
                                         <li><A href="/offers">"Angebote"</A></li>
                                         <li><A href="/receipts">"Belege"</A></li>
                                         <li><A href="/documents">"Dokumente"</A></li>
+                                        {move || email_settings.get()
+                                            .map(|settings| settings.email_enabled)
+                                            .unwrap_or(false)
+                                            .then(|| view! {
+                                                <li><A href="/email">"E-Mail"</A></li>
+                                            })}
+                                        <li><A href="/engagements">"Aufträge"</A></li>
                                         <li><A href="/reports">"Berichte"</A></li>
                                     </ul>
                                 </nav>
@@ -113,10 +123,29 @@ pub fn App() -> impl IntoView {
                                 <Routes>
                                     <Route path="" view=DashboardPage />
                                     <Route path="contacts" view=ContactsPage />
+                                    <Route path="contacts/:id" view=ContactsPage />
                                     <Route path="invoices" view=InvoicesPage />
+                                    <Route path="invoices/:id" view=InvoicesPage />
                                     <Route path="offers" view=OffersPage />
+                                    <Route path="offers/:id" view=OffersPage />
                                     <Route path="receipts" view=ReceiptsPage />
+                                    <Route path="receipts/:id" view=ReceiptsPage />
                                     <Route path="documents" view=DocumentsPage />
+                                    <Route path="documents/:id" view=DocumentsPage />
+                                     <Route path="email" view=move || {
+                                         if email_settings.get().map(|s| s.email_enabled).unwrap_or(false) {
+                                             view! { <EmailPage /> }.into_view()
+                                         } else {
+                                             view! {
+                                                 <div class="container p-5">
+                                                     <div class="notification is-warning">
+                                                         "E-Mail-Funktion ist in dieser Instanz nicht aktiviert."
+                                                     </div>
+                                                 </div>
+                                             }.into_view()
+                                         }
+                                     } />
+                                    <Route path="engagements" view=EngagementsPage />
                                     <Route path="reports" view=ReportsPage />
                                 </Routes>
                             </main>
@@ -127,4 +156,3 @@ pub fn App() -> impl IntoView {
         </Router>
     }
 }
-

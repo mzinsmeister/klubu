@@ -1,5 +1,5 @@
+use crate::server::{initialize_admin, login};
 use leptos::*;
-use crate::server::{login, initialize_admin};
 
 #[component]
 pub fn LoginPage<F>(on_login: F) -> impl IntoView
@@ -15,15 +15,17 @@ where
         ev.prevent_default();
         let u = username.get();
         let p = password.get();
-        
+
         if u.trim().is_empty() || p.trim().is_empty() {
-            set_error.set(Some("Bitte Benutzername und Passwort eingeben.".to_string()));
+            set_error.set(Some(
+                "Bitte Benutzername und Passwort eingeben.".to_string(),
+            ));
             return;
         }
-        
+
         set_loading.set(true);
         set_error.set(None);
-        
+
         let on_login_clone = on_login.clone();
         spawn_local(async move {
             match login(u.clone(), p).await {
@@ -31,7 +33,12 @@ where
                     on_login_clone(u);
                 }
                 Err(e) => {
-                    set_error.set(Some(e.to_string().replace("ServerFnErrorErr:", "").trim().to_string()));
+                    set_error.set(Some(
+                        e.to_string()
+                            .replace("ServerFnErrorErr:", "")
+                            .trim()
+                            .to_string(),
+                    ));
                     set_loading.set(false);
                 }
             }
@@ -42,11 +49,11 @@ where
         <div class="auth-container">
             <div class="auth-card">
                 <div class="auth-brand">
-                    <span class="icon is-large text-link"><i class="mdi mdi-account-group mdi-36px"></i></span>
+                    <span class="icon is-large text-link"><i class="mdi mdi-briefcase mdi-36px"></i></span>
                     <h1 class="title">"Klubu"</h1>
-                    <p class="subtitle">"Anmelden für Rechnungs- und Vereinsverwaltung"</p>
+                    <p class="subtitle">"Anmelden für Rechnungs- und Belegverwaltung"</p>
                 </div>
-                
+
                 {move || error.get().map(|e| view! {
                     <div class="message is-danger py-2 px-3 is-size-7 mb-4">
                         <div class="message-body">{e}</div>
@@ -118,19 +125,21 @@ where
         let t = token.get();
         let u = username.get();
         let p = password.get();
-        
+
         if t.trim().is_empty() || u.trim().is_empty() || p.trim().is_empty() {
             set_error.set(Some("Bitte füllen Sie alle Felder aus.".to_string()));
             return;
         }
         if p.chars().count() < 12 {
-            set_error.set(Some("Das Passwort muss mindestens 12 Zeichen lang sein.".to_string()));
+            set_error.set(Some(
+                "Das Passwort muss mindestens 12 Zeichen lang sein.".to_string(),
+            ));
             return;
         }
 
         set_loading.set(true);
         set_error.set(None);
-        
+
         let on_init_clone = on_initialized.clone();
         spawn_local(async move {
             match initialize_admin(t, u, p).await {
@@ -138,10 +147,20 @@ where
                     set_success.set(true);
                     set_loading.set(false);
                     let on_init_clone2 = on_init_clone.clone();
-                    leptos::set_timeout(move || { on_init_clone2(); }, std::time::Duration::from_millis(1500));
+                    leptos::set_timeout(
+                        move || {
+                            on_init_clone2();
+                        },
+                        std::time::Duration::from_millis(1500),
+                    );
                 }
                 Err(e) => {
-                    set_error.set(Some(e.to_string().replace("ServerFnErrorErr:", "").trim().to_string()));
+                    set_error.set(Some(
+                        e.to_string()
+                            .replace("ServerFnErrorErr:", "")
+                            .trim()
+                            .to_string(),
+                    ));
                     set_loading.set(false);
                 }
             }
@@ -156,7 +175,7 @@ where
                     <h1 class="title">"Klubu Einrichten"</h1>
                     <p class="subtitle">"Initialen Administrator-Account anlegen"</p>
                 </div>
-                
+
                 {move || error.get().map(|e| view! {
                     <div class="message is-danger py-2 px-3 is-size-7 mb-4">
                         <div class="message-body">{e}</div>

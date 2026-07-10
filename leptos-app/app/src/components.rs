@@ -109,7 +109,8 @@ pub fn PaymentsPanel(
     on_delete: Callback<i64>,
 ) -> impl IntoView {
     let amount = create_rw_signal(0i64);
-    let (date, set_date) = create_signal(Utc::now().naive_utc().date().format("%Y-%m-%d").to_string());
+    let (date, set_date) =
+        create_signal(Utc::now().naive_utc().date().format("%Y-%m-%d").to_string());
     let (error, set_error) = create_signal(None::<String>);
 
     let submit = move |_| {

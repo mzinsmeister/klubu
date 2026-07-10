@@ -139,12 +139,11 @@ pub async fn lookup_session(
     use sqlx::Row;
     let now = chrono::Utc::now().timestamp();
     let token_hash = hash_session_token(token);
-    let row =
-        sqlx::query("SELECT username FROM session WHERE token_hash = $1 AND expires_at > $2")
-            .bind(token_hash)
-            .bind(now)
-            .fetch_optional(pool)
-            .await?;
+    let row = sqlx::query("SELECT username FROM session WHERE token_hash = $1 AND expires_at > $2")
+        .bind(token_hash)
+        .bind(now)
+        .fetch_optional(pool)
+        .await?;
 
     row.map(|r| r.try_get::<String, _>("username")).transpose()
 }

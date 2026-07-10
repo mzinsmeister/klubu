@@ -212,7 +212,9 @@ fn parse_block_header(line: &str, origin: &str) -> Option<Result<BlockHeader, St
     let mut dialect = None;
     for tok in tokens {
         let Some((key, value)) = tok.split_once('=') else {
-            return Some(Err(format!("{origin}: block attribute '{tok}' must be key=value")));
+            return Some(Err(format!(
+                "{origin}: block attribute '{tok}' must be key=value"
+            )));
         };
         match (&kind, key) {
             (BlockKind::Query | BlockKind::Options, "name") => name = value.to_string(),
@@ -228,9 +230,15 @@ fn parse_block_header(line: &str, origin: &str) -> Option<Result<BlockHeader, St
     // An options block is always referenced by name; defaulting it to `main`
     // would silently collide with the report's own query.
     if matches!(kind, BlockKind::Options) && name == MAIN_QUERY {
-        return Some(Err(format!("{origin}: an options block needs an explicit name=…")));
+        return Some(Err(format!(
+            "{origin}: an options block needs an explicit name=…"
+        )));
     }
-    Some(Ok(BlockHeader { kind, name, dialect }))
+    Some(Ok(BlockHeader {
+        kind,
+        name,
+        dialect,
+    }))
 }
 
 /// Parses the `.report` format described in the module docs.
@@ -273,7 +281,11 @@ fn parse_report(text: &str, origin: &str) -> Result<ReportManifest, String> {
                     return Err(format!(
                         "{origin}: duplicate {what} '{}'{}",
                         header.name,
-                        header.dialect.as_deref().map(|d| format!(" ({d})")).unwrap_or_default()
+                        header
+                            .dialect
+                            .as_deref()
+                            .map(|d| format!(" ({d})"))
+                            .unwrap_or_default()
                     ));
                 }
                 *slot = Some(content);
@@ -357,10 +369,7 @@ fn parse_report(text: &str, origin: &str) -> Result<ReportManifest, String> {
 /// Parses `value` or `query(name)` on the right of a `=`.
 #[cfg(feature = "ssr")]
 fn parse_value_spec(raw: &str) -> ValueSpec {
-    match raw
-        .strip_prefix("query(")
-        .and_then(|r| r.strip_suffix(')'))
-    {
+    match raw.strip_prefix("query(").and_then(|r| r.strip_suffix(')')) {
         Some(q) => ValueSpec::Query(q.trim().to_string()),
         None => ValueSpec::Literal(raw.to_string()),
     }
@@ -416,15 +425,17 @@ fn parse_param(rest: &str, origin: &str) -> Result<ParamManifest, String> {
     let kind = tail[..kind_end].trim().to_string();
     tail = tail[kind_end..].trim();
     if !matches!(kind.as_str(), "int" | "date" | "text") {
-        return Err(format!("{origin}: param '{name}' has unknown kind '{kind}'"));
+        return Err(format!(
+            "{origin}: param '{name}' has unknown kind '{kind}'"
+        ));
     }
 
     let mut options = OptionsSpec::Free;
     if let Some(after) = tail.strip_prefix("options=") {
         let (spec, remainder) = if let Some(inner) = after.strip_prefix('[') {
-            let close = inner
-                .find(']')
-                .ok_or_else(|| format!("{origin}: param '{name}': options list is missing its ']'"))?;
+            let close = inner.find(']').ok_or_else(|| {
+                format!("{origin}: param '{name}': options list is missing its ']'")
+            })?;
             let values: Vec<String> = inner[..close]
                 .split(',')
                 .map(|s| s.trim().to_string())
@@ -471,8 +482,8 @@ fn parse_param(rest: &str, origin: &str) -> Result<ParamManifest, String> {
 
 #[cfg(feature = "ssr")]
 fn reports_dir() -> std::path::PathBuf {
-    let dir = std::env::var("KLUBU_EXPORT_TEMPLATES_PATH")
-        .unwrap_or_else(|_| "./templates".to_string());
+    let dir =
+        std::env::var("KLUBU_EXPORT_TEMPLATES_PATH").unwrap_or_else(|_| "./templates".to_string());
     std::path::Path::new(&dir).join("reports")
 }
 
@@ -499,7 +510,11 @@ fn load_manifest(name: &str) -> Result<ReportManifest, ServerFnError> {
 }
 
 #[cfg(feature = "ssr")]
-fn manifest_to_info(name: String, m: ReportManifest, params: Vec<shared::ReportParamInfo>) -> ReportInfo {
+fn manifest_to_info(
+    name: String,
+    m: ReportManifest,
+    params: Vec<shared::ReportParamInfo>,
+) -> ReportInfo {
     ReportInfo {
         name,
         title: m.title,
@@ -548,14 +563,17 @@ fn bind_values(
                 )));
             }
             match p.kind.as_str() {
-                "int" => raw
-                    .trim()
-                    .parse::<i64>()
-                    .map(Bound::Int)
-                    .map_err(|_| ServerFnError::new(format!("Parameter '{}' must be an integer", p.name))),
+                "int" => raw.trim().parse::<i64>().map(Bound::Int).map_err(|_| {
+                    ServerFnError::new(format!("Parameter '{}' must be an integer", p.name))
+                }),
                 "date" => chrono::NaiveDate::parse_from_str(raw.trim(), "%Y-%m-%d")
                     .map(Bound::Date)
-                    .map_err(|_| ServerFnError::new(format!("Parameter '{}' must be a date (YYYY-MM-DD)", p.name))),
+                    .map_err(|_| {
+                        ServerFnError::new(format!(
+                            "Parameter '{}' must be a date (YYYY-MM-DD)",
+                            p.name
+                        ))
+                    }),
                 _ => Ok(Bound::Text(raw.to_string())),
             }
         })
@@ -636,10 +654,19 @@ async fn fetch_rows(
 
     if super::db::dialect(pool) == "postgres" {
         let mut tx = pool.begin().await.map_err(err)?;
-        sqlx::query("SET TRANSACTION READ ONLY").execute(&mut *tx).await.map_err(err)?;
-        sqlx::query("SET LOCAL statement_timeout = '15s'").execute(&mut *tx).await.map_err(err)?;
+        sqlx::query("SET TRANSACTION READ ONLY")
+            .execute(&mut *tx)
+            .await
+            .map_err(err)?;
+        sqlx::query("SET LOCAL statement_timeout = '15s'")
+            .execute(&mut *tx)
+            .await
+            .map_err(err)?;
 
-        let rows = bind_all(sqlx::query(sql), bound).fetch_all(&mut *tx).await.map_err(err)?;
+        let rows = bind_all(sqlx::query(sql), bound)
+            .fetch_all(&mut *tx)
+            .await
+            .map_err(err)?;
         // Report queries only read; rolling back keeps that a hard guarantee even
         // if a function-based side effect slipped through.
         let _ = tx.rollback().await;
@@ -648,10 +675,17 @@ async fn fetch_rows(
         // `query_only` is connection-scoped, so pin one connection, arm it, run,
         // and disarm before it returns to the pool.
         let mut conn = pool.acquire().await.map_err(err)?;
-        sqlx::query("PRAGMA query_only = ON").execute(&mut *conn).await.map_err(err)?;
+        sqlx::query("PRAGMA query_only = ON")
+            .execute(&mut *conn)
+            .await
+            .map_err(err)?;
 
-        let result = bind_all(sqlx::query(sql), bound).fetch_all(&mut *conn).await;
-        let _ = sqlx::query("PRAGMA query_only = OFF").execute(&mut *conn).await;
+        let result = bind_all(sqlx::query(sql), bound)
+            .fetch_all(&mut *conn)
+            .await;
+        let _ = sqlx::query("PRAGMA query_only = OFF")
+            .execute(&mut *conn)
+            .await;
         result.map_err(err)
     }
 }
@@ -681,7 +715,9 @@ async fn fetch_options(
         .get(qname)
         .ok_or_else(|| ServerFnError::new(format!("Unknown options query '{qname}'")))?;
     let sql = spec.for_dialect(dialect).ok_or_else(|| {
-        ServerFnError::new(format!("Options query '{qname}' has no SQL for dialect '{dialect}'"))
+        ServerFnError::new(format!(
+            "Options query '{qname}' has no SQL for dialect '{dialect}'"
+        ))
     })?;
 
     let rows = fetch_rows(pool, sql, &[]).await?;
@@ -737,7 +773,10 @@ async fn resolve_params(
             OptionsSpec::Free => Vec::new(),
             OptionsSpec::Fixed(values) => values
                 .iter()
-                .map(|v| shared::ReportParamOption { value: v.clone(), label: v.clone() })
+                .map(|v| shared::ReportParamOption {
+                    value: v.clone(),
+                    label: v.clone(),
+                })
                 .collect(),
             OptionsSpec::Query(q) => cache.get(q).cloned().unwrap_or_default(),
         };
@@ -747,7 +786,10 @@ async fn resolve_params(
             Some(ValueSpec::Literal(s)) => Some(s.clone()),
             // An empty lookup yields no default rather than an error: the report
             // is simply not runnable until there is data, and the form says so.
-            Some(ValueSpec::Query(q)) => cache.get(q).and_then(|o| o.first()).map(|o| o.value.clone()),
+            Some(ValueSpec::Query(q)) => cache
+                .get(q)
+                .and_then(|o| o.first())
+                .map(|o| o.value.clone()),
         };
 
         out.push(shared::ReportParamInfo {
@@ -770,9 +812,8 @@ fn csv_field(v: &serde_json::Value) -> String {
         serde_json::Value::String(s) => s.clone(),
         other => other.to_string(),
     };
-    let needs_quotes = raw.contains([',', '"', '\n', '\r'])
-        || raw.starts_with(' ')
-        || raw.ends_with(' ');
+    let needs_quotes =
+        raw.contains([',', '"', '\n', '\r']) || raw.starts_with(' ') || raw.ends_with(' ');
     if needs_quotes {
         format!("\"{}\"", raw.replace('"', "\"\""))
     } else {
@@ -888,7 +929,10 @@ pub async fn render_markup(
                 "Report '{name}': query '{qname}' has no SQL for dialect '{dialect}'"
             ))
         })?;
-        data.insert(qname.clone(), rows_to_json(&fetch_rows(pool, sql, &bound).await?));
+        data.insert(
+            qname.clone(),
+            rows_to_json(&fetch_rows(pool, sql, &bound).await?),
+        );
     }
 
     Ok(assemble_markup(
@@ -919,10 +963,7 @@ fn effective_params(
 }
 
 #[cfg(feature = "ssr")]
-async fn render(
-    name: &str,
-    supplied: &[(String, String)],
-) -> Result<String, ServerFnError> {
+async fn render(name: &str, supplied: &[(String, String)]) -> Result<String, ServerFnError> {
     let repo = use_context::<super::db::ActiveRepository>()
         .ok_or_else(|| ServerFnError::new("Repository not found"))?;
     render_markup(name, supplied, repo.pool()).await
@@ -945,7 +986,10 @@ pub async fn list_reports() -> Result<Vec<ReportInfo>, ServerFnError> {
                 if path.extension().map_or(true, |e| e != "report") {
                     continue;
                 }
-                let Some(name) = path.file_stem().and_then(|s| s.to_str()).map(str::to_string)
+                let Some(name) = path
+                    .file_stem()
+                    .and_then(|s| s.to_str())
+                    .map(str::to_string)
                 else {
                     continue;
                 };
@@ -1125,11 +1169,20 @@ SELECT 3;
         let mut names: Vec<&String> = m.queries.keys().collect();
         names.sort();
         assert_eq!(names, ["expenses", "income"]);
-        assert_eq!(m.queries["income"].for_dialect("postgres"), Some("SELECT 1;"));
+        assert_eq!(
+            m.queries["income"].for_dialect("postgres"),
+            Some("SELECT 1;")
+        );
         assert_eq!(m.queries["income"].for_dialect("sqlite"), Some("SELECT 2;"));
         // "expenses" is portable: same SQL for both dialects.
-        assert_eq!(m.queries["expenses"].for_dialect("postgres"), Some("SELECT 3;"));
-        assert_eq!(m.queries["expenses"].for_dialect("sqlite"), Some("SELECT 3;"));
+        assert_eq!(
+            m.queries["expenses"].for_dialect("postgres"),
+            Some("SELECT 3;")
+        );
+        assert_eq!(
+            m.queries["expenses"].for_dialect("sqlite"),
+            Some("SELECT 3;")
+        );
     }
 
     #[test]
@@ -1232,14 +1285,16 @@ x
     /// report's own queries; a name that resolves to neither is a load error.
     #[test]
     fn a_param_referring_to_a_missing_options_block_is_an_error() {
-        let src = "title: T\nparam y: int = query(nope)\n--- query ---\nSELECT 1;\n--- template ---\nx\n";
+        let src =
+            "title: T\nparam y: int = query(nope)\n--- query ---\nSELECT 1;\n--- template ---\nx\n";
         let err = parse_report(src, "t").unwrap_err();
         assert!(err.contains("options name=nope"), "{err}");
     }
 
     #[test]
     fn an_options_block_needs_a_name() {
-        let src = "title: T\n--- options ---\nSELECT 1;\n--- query ---\nSELECT 1;\n--- template ---\nx\n";
+        let src =
+            "title: T\n--- options ---\nSELECT 1;\n--- query ---\nSELECT 1;\n--- template ---\nx\n";
         let err = parse_report(src, "t").unwrap_err();
         assert!(err.contains("explicit name"), "{err}");
     }

@@ -1,8 +1,8 @@
-use shared::*;
+use super::{DbPool, DbRow, DbTransaction, KlubuRepository};
 use chrono::{NaiveDate, Utc};
 use leptos::ServerFnError;
+use shared::*;
 use sqlx::Row;
-use super::{DbPool, DbRow, KlubuRepository};
 
 const MAX_PAGE_SIZE: u32 = 200;
 
@@ -129,12 +129,94 @@ fn contact_from_row(row: &DbRow) -> Result<Contact, ServerFnError> {
         country: row
             .try_get("country")
             .map_err(|e| ServerFnError::new(e.to_string()))?,
-        phone: row
-            .try_get("phone")
-            .map_err(|e| ServerFnError::new(e.to_string()))?,
+        phones: Vec::new(),
+        emails: Vec::new(),
         is_person: row_i64(row, "is_person")? != 0,
         archived_timestamp: row_timestamp(row, "archived_timestamp")?,
     })
+}
+
+pub(crate) async fn load_contact_emails(
+    pool: &DbPool,
+    contact_id: i64,
+) -> Result<Vec<String>, ServerFnError> {
+    let rows = sqlx::query("SELECT address FROM contact_email WHERE contact_id = $1 ORDER BY id")
+        .bind(contact_id)
+        .fetch_all(pool)
+        .await
+        .map_err(|e| ServerFnError::new(e.to_string()))?;
+    rows.iter().map(|row| row_str(row, "address")).collect()
+}
+
+async fn replace_contact_emails(
+    tx: &mut DbTransaction<'_>,
+    contact_id: i64,
+    emails: &[String],
+) -> Result<(), ServerFnError> {
+    sqlx::query("DELETE FROM contact_email WHERE contact_id = $1")
+        .bind(contact_id)
+        .execute(&mut **tx)
+        .await
+        .map_err(|e| ServerFnError::new(e.to_string()))?;
+    let timestamp = Utc::now().timestamp().to_string();
+    for email in emails {
+        sqlx::query(
+            "INSERT INTO contact_email (contact_id, address, address_key, created_timestamp) VALUES ($1, $2, $3, $4)",
+        )
+        .bind(contact_id)
+        .bind(email)
+        .bind(email.to_ascii_lowercase())
+        .bind(&timestamp)
+        .execute(&mut **tx)
+        .await
+        .map_err(|e| {
+            if e.to_string().to_ascii_lowercase().contains("unique") {
+                ServerFnError::new(
+                    "Die E-Mail-Adresse ist bereits einem anderen Kontakt zugeordnet",
+                )
+            } else {
+                ServerFnError::new(e.to_string())
+            }
+        })?;
+    }
+    Ok(())
+}
+
+pub(crate) async fn load_contact_phones(
+    pool: &DbPool,
+    contact_id: i64,
+) -> Result<Vec<String>, ServerFnError> {
+    let rows = sqlx::query("SELECT phone FROM contact_phone WHERE contact_id = $1 ORDER BY id")
+        .bind(contact_id)
+        .fetch_all(pool)
+        .await
+        .map_err(|e| ServerFnError::new(e.to_string()))?;
+    rows.iter().map(|row| row_str(row, "phone")).collect()
+}
+
+async fn replace_contact_phones(
+    tx: &mut DbTransaction<'_>,
+    contact_id: i64,
+    phones: &[String],
+) -> Result<(), ServerFnError> {
+    sqlx::query("DELETE FROM contact_phone WHERE contact_id = $1")
+        .bind(contact_id)
+        .execute(&mut **tx)
+        .await
+        .map_err(|e| ServerFnError::new(e.to_string()))?;
+    let timestamp = Utc::now().timestamp().to_string();
+    for phone in phones {
+        sqlx::query(
+            "INSERT INTO contact_phone (contact_id, phone, created_timestamp) VALUES ($1, $2, $3)",
+        )
+        .bind(contact_id)
+        .bind(phone)
+        .bind(&timestamp)
+        .execute(&mut **tx)
+        .await
+        .map_err(|e| ServerFnError::new(e.to_string()))?;
+    }
+    Ok(())
 }
 
 fn contact_change_audit_changes(
@@ -279,12 +361,7 @@ const SEED_CATEGORY_TYPES: &[(&str, bool, &str, &[&str])] = &[
         "Werbekosten",
         &["Website", "Anzeigen", "Visitenkarten"],
     ),
-    (
-        "185",
-        true,
-        "Gezahlte Vorsteuerbeträge",
-        &["Vorsteuer"],
-    ),
+    ("185", true, "Gezahlte Vorsteuerbeträge", &["Vorsteuer"]),
     (
         "183",
         true,
@@ -381,7 +458,9 @@ impl KlubuRepository for SqlRepository {
                         ELSE archived_timestamp IS NULL END)
               AND ($2 IS NULL
                    OR LOWER(name) LIKE $2
-                   OR LOWER(COALESCE(first_name, '')) LIKE $2)
+                   OR LOWER(COALESCE(first_name, '')) LIKE $2
+                   OR EXISTS (SELECT 1 FROM contact_email email WHERE email.contact_id = contact.id AND LOWER(email.address) LIKE $2)
+                   OR EXISTS (SELECT 1 FROM contact_phone cp WHERE cp.contact_id = contact.id AND cp.phone LIKE $2))
             ORDER BY LOWER(name), LOWER(COALESCE(first_name, '')), id
             LIMIT $3 OFFSET $4
             "#,
@@ -398,6 +477,12 @@ impl KlubuRepository for SqlRepository {
             .iter()
             .map(contact_from_row)
             .collect::<Result<Vec<_>, _>>()?;
+        for contact in &mut contacts {
+            if let Some(id) = contact.id {
+                contact.emails = load_contact_emails(&self.pool, id).await?;
+                contact.phones = load_contact_phones(&self.pool, id).await?;
+            }
+        }
         let has_more = contacts.len() > limit as usize;
         contacts.truncate(limit as usize);
 
@@ -407,7 +492,54 @@ impl KlubuRepository for SqlRepository {
         })
     }
 
+    async fn get_contact(&self, id: i64) -> Result<Contact, ServerFnError> {
+        let row = sqlx::query(
+            "SELECT id, form_of_address, title, name, first_name, street, zip_code, city, house_number, country, phone, is_person, archived_timestamp FROM contact WHERE id = $1",
+        )
+        .bind(id)
+        .fetch_optional(&self.pool)
+        .await
+        .map_err(|e| ServerFnError::new(e.to_string()))?
+        .ok_or_else(|| ServerFnError::new("Contact not found"))?;
+        let mut contact = contact_from_row(&row)?;
+        contact.emails = load_contact_emails(&self.pool, id).await?;
+        contact.phones = load_contact_phones(&self.pool, id).await?;
+        Ok(contact)
+    }
+
     async fn save_contact(&self, contact: Contact) -> Result<Contact, ServerFnError> {
+        let mut contact = contact;
+        contact.emails = contact
+            .emails
+            .iter()
+            .map(|email| email.trim().to_string())
+            .filter(|email| !email.is_empty())
+            .collect();
+        if contact.emails.iter().any(|email| {
+            email.contains(['\r', '\n']) || !email.contains('@') || email.contains(' ')
+        }) {
+            return Err(ServerFnError::new(
+                "Mindestens eine E-Mail-Adresse ist ungültig",
+            ));
+        }
+        let mut seen = std::collections::HashSet::new();
+        contact
+            .emails
+            .retain(|email| seen.insert(email.to_ascii_lowercase()));
+
+        contact.phones = contact
+            .phones
+            .iter()
+            .map(|phone| phone.trim().to_string())
+            .filter(|phone| !phone.is_empty())
+            .collect();
+        let mut seen_phones = std::collections::HashSet::new();
+        contact
+            .phones
+            .retain(|phone| seen_phones.insert(phone.clone()));
+
+        let primary_phone = contact.phones.first().cloned();
+
         let mut tx = self
             .pool
             .begin()
@@ -418,14 +550,32 @@ impl KlubuRepository for SqlRepository {
             let id_i32 = id as i32;
             let is_person_val = if contact.is_person { 1 } else { 0 };
             let before_row = sqlx::query(
-                "SELECT id, form_of_address, title, name, first_name, street, zip_code, city, house_number, country, phone, is_person FROM contact WHERE id = $1",
+                "SELECT id, form_of_address, title, name, first_name, street, zip_code, city, house_number, country, phone, is_person, archived_timestamp FROM contact WHERE id = $1",
             )
             .bind(id_i32)
             .fetch_optional(&mut *tx)
             .await
             .map_err(|e| ServerFnError::new(e.to_string()))?
             .ok_or_else(|| ServerFnError::new("Kontakt nicht gefunden"))?;
-            let before = contact_from_row(&before_row)?;
+            let mut before = contact_from_row(&before_row)?;
+            before.emails =
+                sqlx::query("SELECT address FROM contact_email WHERE contact_id = $1 ORDER BY id")
+                    .bind(id_i32)
+                    .fetch_all(&mut *tx)
+                    .await
+                    .map_err(|e| ServerFnError::new(e.to_string()))?
+                    .iter()
+                    .map(|row| row_str(row, "address"))
+                    .collect::<Result<Vec<_>, _>>()?;
+            before.phones =
+                sqlx::query("SELECT phone FROM contact_phone WHERE contact_id = $1 ORDER BY id")
+                    .bind(id_i32)
+                    .fetch_all(&mut *tx)
+                    .await
+                    .map_err(|e| ServerFnError::new(e.to_string()))?
+                    .iter()
+                    .map(|row| row_str(row, "phone"))
+                    .collect::<Result<Vec<_>, _>>()?;
 
             let updated = sqlx::query(
                 "UPDATE contact SET form_of_address = $1, title = $2, name = $3, first_name = $4, street = $5, zip_code = $6, city = $7, house_number = $8, country = $9, phone = $10, is_person = $11 WHERE id = $12")
@@ -438,7 +588,7 @@ impl KlubuRepository for SqlRepository {
         .bind(&contact.city)
         .bind(&contact.house_number)
         .bind(&contact.country)
-        .bind(&contact.phone)
+        .bind(&primary_phone)
         .bind(is_person_val)
         .bind(id_i32)
             .execute(&mut *tx)
@@ -448,6 +598,9 @@ impl KlubuRepository for SqlRepository {
             if updated.rows_affected() != 1 {
                 return Err(ServerFnError::new("Kontakt nicht gefunden"));
             }
+
+            replace_contact_emails(&mut tx, id, &contact.emails).await?;
+            replace_contact_phones(&mut tx, id, &contact.phones).await?;
 
             let changes = contact_change_audit_changes(Some(&before), &contact)?;
             self.write_audit_log(&mut tx, "contact", id_i32, "update", &changes)
@@ -469,7 +622,7 @@ impl KlubuRepository for SqlRepository {
         .bind(&contact.city)
         .bind(&contact.house_number)
         .bind(&contact.country)
-        .bind(&contact.phone)
+        .bind(&primary_phone)
         .bind(is_person_val)
             .fetch_one(&mut *tx)
             .await
@@ -478,6 +631,8 @@ impl KlubuRepository for SqlRepository {
             let new_id64 = row_i64(&row, "id")?;
             let mut new_contact = contact;
             new_contact.id = Some(new_id64);
+            replace_contact_emails(&mut tx, new_id64, &new_contact.emails).await?;
+            replace_contact_phones(&mut tx, new_id64, &new_contact.phones).await?;
             let new_id = new_id64 as i32;
             let changes = contact_change_audit_changes(None, &new_contact)?;
             self.write_audit_log(&mut tx, "contact", new_id, "create", &changes)
@@ -510,7 +665,9 @@ impl KlubuRepository for SqlRepository {
         .await
         .map_err(|e| ServerFnError::new(e.to_string()))?
         .ok_or_else(|| ServerFnError::new("Kontakt nicht gefunden"))?;
-        let before = contact_from_row(&before_row)?;
+        let mut before = contact_from_row(&before_row)?;
+        before.emails = load_contact_emails(&self.pool, id).await?;
+        before.phones = load_contact_phones(&self.pool, id).await?;
 
         let invoice_rows = sqlx::query(
             "SELECT id, committed_timestamp FROM invoice WHERE customer_contact_id = $1 ORDER BY id",
@@ -606,7 +763,11 @@ impl KlubuRepository for SqlRepository {
     // --- DASHBOARD ---
 
     async fn get_dashboard_stats(&self) -> Result<DashboardStats, ServerFnError> {
-        let year = chrono::Utc::now().naive_utc().date().format("%Y").to_string();
+        let year = chrono::Utc::now()
+            .naive_utc()
+            .date()
+            .format("%Y")
+            .to_string();
         let year_prefix = format!("{year}-%");
 
         let revenue_cents: i64 = sqlx::query_scalar(
@@ -618,7 +779,8 @@ impl KlubuRepository for SqlRepository {
               AND i.is_canceled = 0
               AND i.is_cancelation = 0
               AND i.invoice_date LIKE $1
-            "#)
+            "#,
+        )
         .bind(&year_prefix)
         .fetch_one(&self.pool)
         .await
@@ -633,7 +795,8 @@ impl KlubuRepository for SqlRepository {
             JOIN receipt_item_category_type t ON c.category_type_id = t.id
             WHERE t.is_expense = 1
               AND r.receipt_date LIKE $1
-            "#)
+            "#,
+        )
         .bind(&year_prefix)
         .fetch_one(&self.pool)
         .await
@@ -662,19 +825,18 @@ impl KlubuRepository for SqlRepository {
         .await
         .map_err(|e| ServerFnError::new(e.to_string()))?;
 
-        let draft_invoice_count: i64 = sqlx::query_scalar(
-            r#"SELECT COUNT(*) FROM invoice WHERE committed_timestamp IS NULL"#
-        )
-        .fetch_one(&self.pool)
-        .await
-        .map_err(|e| ServerFnError::new(e.to_string()))?;
+        let draft_invoice_count: i64 =
+            sqlx::query_scalar(r#"SELECT COUNT(*) FROM invoice WHERE committed_timestamp IS NULL"#)
+                .fetch_one(&self.pool)
+                .await
+                .map_err(|e| ServerFnError::new(e.to_string()))?;
 
-        let receipt_count: i64 = sqlx::query_scalar(
-            r#"SELECT COUNT(*) FROM receipt WHERE receipt_date LIKE $1"#)
-        .bind(&year_prefix)
-        .fetch_one(&self.pool)
-        .await
-        .map_err(|e| ServerFnError::new(e.to_string()))?;
+        let receipt_count: i64 =
+            sqlx::query_scalar(r#"SELECT COUNT(*) FROM receipt WHERE receipt_date LIKE $1"#)
+                .bind(&year_prefix)
+                .fetch_one(&self.pool)
+                .await
+                .map_err(|e| ServerFnError::new(e.to_string()))?;
 
         let contact_count: i64 = sqlx::query_scalar(r#"SELECT COUNT(*) FROM contact"#)
             .fetch_one(&self.pool)
@@ -703,7 +865,7 @@ impl KlubuRepository for SqlRepository {
         storage_key_prefix: &str,
         data: &[u8],
     ) -> Result<shared::Document, ServerFnError> {
-        use sha2::{Sha256, Digest};
+        use sha2::{Digest, Sha256};
         use std::io::Write;
 
         let mut hasher = Sha256::new();
@@ -738,7 +900,8 @@ impl KlubuRepository for SqlRepository {
         };
 
         let last_version: i64 = sqlx::query_scalar(
-            "SELECT COALESCE(MAX(version), 0) FROM document_version WHERE document_id = $1")
+            "SELECT COALESCE(MAX(version), 0) FROM document_version WHERE document_id = $1",
+        )
         .bind(doc_id)
         .fetch_one(&self.pool)
         .await
@@ -748,7 +911,7 @@ impl KlubuRepository for SqlRepository {
 
         let storage_dir = std::env::var("KLUBU_DOCUMENT_STORAGE_PATH")
             .unwrap_or_else(|_| "./document_storage".to_string());
-        
+
         let file_name = format!("{}_{}.{}", storage_key_prefix, next_version, extension);
         let file_path = std::path::Path::new(&storage_dir).join(&file_name);
 
@@ -756,8 +919,10 @@ impl KlubuRepository for SqlRepository {
             std::fs::create_dir_all(parent).map_err(|e| ServerFnError::new(e.to_string()))?;
         }
 
-        let mut file = std::fs::File::create(&file_path).map_err(|e| ServerFnError::new(e.to_string()))?;
-        file.write_all(data).map_err(|e| ServerFnError::new(e.to_string()))?;
+        let mut file =
+            std::fs::File::create(&file_path).map_err(|e| ServerFnError::new(e.to_string()))?;
+        file.write_all(data)
+            .map_err(|e| ServerFnError::new(e.to_string()))?;
 
         sqlx::query(
             "INSERT INTO document_version (document_id, version, checksum, is_tombstone) VALUES ($1, $2, $3, $4)")
@@ -790,7 +955,8 @@ impl KlubuRepository for SqlRepository {
         }
 
         let last_version: i64 = sqlx::query_scalar(
-            "SELECT COALESCE(MAX(version), 0) FROM document_version WHERE document_id = $1")
+            "SELECT COALESCE(MAX(version), 0) FROM document_version WHERE document_id = $1",
+        )
         .bind(document_id)
         .fetch_one(&self.pool)
         .await
@@ -811,66 +977,94 @@ impl KlubuRepository for SqlRepository {
         Ok(())
     }
 
-    async fn get_document_meta(&self, doc_id: i32) -> Result<Option<(String, String, String)>, ServerFnError> {
+    async fn get_document_meta(
+        &self,
+        doc_id: i32,
+    ) -> Result<Option<(String, String, String)>, ServerFnError> {
         let row = sqlx::query(
-            "SELECT extension, media_type, storage_key_prefix FROM document WHERE id = $1")
+            "SELECT extension, media_type, storage_key_prefix FROM document WHERE id = $1",
+        )
         .bind(doc_id)
         .fetch_optional(&self.pool)
         .await
         .map_err(|e| ServerFnError::new(e.to_string()))?;
-        
+
         row.map(|r| -> Result<_, ServerFnError> {
             Ok((
-                r.try_get("extension").map_err(|e| ServerFnError::new(e.to_string()))?,
-                r.try_get("media_type").map_err(|e| ServerFnError::new(e.to_string()))?,
-                r.try_get("storage_key_prefix").map_err(|e| ServerFnError::new(e.to_string()))?,
+                r.try_get("extension")
+                    .map_err(|e| ServerFnError::new(e.to_string()))?,
+                r.try_get("media_type")
+                    .map_err(|e| ServerFnError::new(e.to_string()))?,
+                r.try_get("storage_key_prefix")
+                    .map_err(|e| ServerFnError::new(e.to_string()))?,
             ))
         })
         .transpose()
     }
 
-    async fn get_latest_document_version(&self, doc_id: i32) -> Result<Option<(i32, i32)>, ServerFnError> {
+    async fn get_latest_document_version(
+        &self,
+        doc_id: i32,
+    ) -> Result<Option<(i32, i32)>, ServerFnError> {
         let row = sqlx::query(
             "SELECT version, is_tombstone FROM document_version WHERE document_id = $1 ORDER BY version DESC LIMIT 1")
         .bind(doc_id)
         .fetch_optional(&self.pool)
         .await
         .map_err(|e| ServerFnError::new(e.to_string()))?;
-        
-        row.map(|r| Ok((row_i64(&r, "version")? as i32, row_i64(&r, "is_tombstone")? as i32)))
-            .transpose()
+
+        row.map(|r| {
+            Ok((
+                row_i64(&r, "version")? as i32,
+                row_i64(&r, "is_tombstone")? as i32,
+            ))
+        })
+        .transpose()
     }
 
     // --- EXPORTS ---
 
-    async fn update_invoice_document(&self, invoice_id: i64, doc_id: i32) -> Result<(), ServerFnError> {
+    async fn update_invoice_document(
+        &self,
+        invoice_id: i64,
+        doc_id: i32,
+    ) -> Result<(), ServerFnError> {
         let invoice_id_i32 = invoice_id as i32;
         sqlx::query("UPDATE invoice SET document_id = $1 WHERE id = $2")
-        .bind(doc_id)
-        .bind(invoice_id_i32)
+            .bind(doc_id)
+            .bind(invoice_id_i32)
             .execute(&self.pool)
             .await
             .map_err(|e| ServerFnError::new(e.to_string()))?;
         Ok(())
     }
 
-    async fn update_offer_document(&self, offer_id: i64, doc_id: i32, revision: i32) -> Result<(), ServerFnError> {
+    async fn update_offer_document(
+        &self,
+        offer_id: i64,
+        doc_id: i32,
+        revision: i32,
+    ) -> Result<(), ServerFnError> {
         let offer_id_i32 = offer_id as i32;
         sqlx::query("UPDATE offer SET document_id = $1 WHERE id = $2 AND revision = $3")
-        .bind(doc_id)
-        .bind(offer_id_i32)
-        .bind(revision)
+            .bind(doc_id)
+            .bind(offer_id_i32)
+            .bind(revision)
             .execute(&self.pool)
             .await
             .map_err(|e| ServerFnError::new(e.to_string()))?;
         Ok(())
     }
 
-    async fn update_receipt_document(&self, receipt_id: i64, doc_id: i32) -> Result<(), ServerFnError> {
+    async fn update_receipt_document(
+        &self,
+        receipt_id: i64,
+        doc_id: i32,
+    ) -> Result<(), ServerFnError> {
         let receipt_id_i32 = receipt_id as i32;
         sqlx::query("UPDATE receipt SET document_id = $1 WHERE id = $2")
-        .bind(doc_id)
-        .bind(receipt_id_i32)
+            .bind(doc_id)
+            .bind(receipt_id_i32)
             .execute(&self.pool)
             .await
             .map_err(|e| ServerFnError::new(e.to_string()))?;
@@ -885,6 +1079,7 @@ impl KlubuRepository for SqlRepository {
         limit: u32,
         from_date: Option<NaiveDate>,
         to_date: Option<NaiveDate>,
+        customer_contact_id: Option<i64>,
     ) -> Result<Page<InvoiceListItem>, ServerFnError> {
         let limit = page_size(limit);
         let fetch_limit = i64::from(limit) + 1;
@@ -902,6 +1097,7 @@ impl KlubuRepository for SqlRepository {
             LEFT JOIN contact c ON i.customer_contact_id = c.id
             WHERE ($1 IS NULL OR i.invoice_date >= $1)
               AND ($2 IS NULL OR i.invoice_date <= $2)
+              AND ($5 IS NULL OR i.customer_contact_id = $5)
             ORDER BY i.invoice_number DESC NULLS LAST, i.id DESC
             LIMIT $3 OFFSET $4
             "#,
@@ -910,6 +1106,7 @@ impl KlubuRepository for SqlRepository {
         .bind(to_date.as_deref())
         .bind(fetch_limit)
         .bind(offset)
+        .bind(customer_contact_id)
         .fetch_all(&self.pool)
         .await
         .map_err(|e| ServerFnError::new(e.to_string()))?;
@@ -926,6 +1123,7 @@ impl KlubuRepository for SqlRepository {
                 FROM invoice i
                 WHERE ($1 IS NULL OR i.invoice_date >= $1)
                   AND ($2 IS NULL OR i.invoice_date <= $2)
+                  AND ($5 IS NULL OR i.customer_contact_id = $5)
                 ORDER BY i.invoice_number DESC NULLS LAST, i.id DESC
                 LIMIT $3 OFFSET $4
             ) page ON page.id = p.invoice_id
@@ -936,6 +1134,7 @@ impl KlubuRepository for SqlRepository {
         .bind(to_date.as_deref())
         .bind(fetch_limit)
         .bind(offset)
+        .bind(customer_contact_id)
         .fetch_all(&self.pool)
         .await
         .map_err(|e| ServerFnError::new(e.to_string()))?;
@@ -947,87 +1146,88 @@ impl KlubuRepository for SqlRepository {
                 .entry(row_i64(&row, "invoice_id")?)
                 .or_default()
                 .push(Payment {
-                id: None,
-                date: NaiveDate::parse_from_str(
-                    &row.try_get::<String, _>("payment_date")
-                        .map_err(|e| ServerFnError::new(e.to_string()))?,
-                    "%Y-%m-%d",
-                )
-                .unwrap_or_default(),
-                amount_cents: row_i64(&row, "amount")?,
-            });
+                    id: None,
+                    date: NaiveDate::parse_from_str(
+                        &row.try_get::<String, _>("payment_date")
+                            .map_err(|e| ServerFnError::new(e.to_string()))?,
+                        "%Y-%m-%d",
+                    )
+                    .unwrap_or_default(),
+                    amount_cents: row_i64(&row, "amount")?,
+                });
         }
 
         let mut items = rows
             .iter()
             .map(|row| -> Result<InvoiceListItem, ServerFnError> {
-            let contact = row_optional_i64(row, "contact_id")?.map(|contact_id| Contact {
-                id: Some(contact_id),
-                name: row
-                    .try_get::<Option<String>, _>("contact_name")
-                    .ok()
-                    .flatten()
-                    .unwrap_or_default(),
-                first_name: row
-                    .try_get::<Option<String>, _>("contact_first_name")
-                    .ok()
-                    .flatten(),
-                form_of_address: None,
-                title: None,
-                street: None,
-                zip_code: None,
-                city: None,
-                house_number: None,
-                country: None,
-                phone: None,
-                is_person: false,
-                archived_timestamp: None,
-            });
+                let contact = row_optional_i64(row, "contact_id")?.map(|contact_id| Contact {
+                    id: Some(contact_id),
+                    name: row
+                        .try_get::<Option<String>, _>("contact_name")
+                        .ok()
+                        .flatten()
+                        .unwrap_or_default(),
+                    first_name: row
+                        .try_get::<Option<String>, _>("contact_first_name")
+                        .ok()
+                        .flatten(),
+                    form_of_address: None,
+                    title: None,
+                    street: None,
+                    zip_code: None,
+                    city: None,
+                    house_number: None,
+                    country: None,
+                    phones: Vec::new(),
+                    is_person: false,
+                    archived_timestamp: None,
+                    emails: Vec::new(),
+                });
 
-            let id = row_i64(row, "id")?;
-            let total = row
-                .try_get::<i64, _>("total")
-                .map_err(|e| ServerFnError::new(e.to_string()))?;
-            let payments = payments_by_invoice
-                .get(&id)
-                .map(Vec::as_slice)
-                .unwrap_or(&[]);
-            let created_timestamp = row
-                .try_get::<Option<String>, _>("created_timestamp")
-                .map_err(|e| ServerFnError::new(e.to_string()))?
-                .unwrap_or_default();
-            let invoice_date = row
-                .try_get::<Option<String>, _>("invoice_date")
-                .map_err(|e| ServerFnError::new(e.to_string()))?
-                .and_then(|date| NaiveDate::parse_from_str(&date, "%Y-%m-%d").ok());
-
-            Ok(InvoiceListItem {
-                id,
-                created_timestamp: chrono::DateTime::from_timestamp(
-                    created_timestamp.parse::<i64>().unwrap_or_default(),
-                    0,
-                )
-                .unwrap_or(chrono::DateTime::<Utc>::MIN_UTC),
-                invoice_date,
-                customer_contact: contact,
-                paid_date: settled_on(payments, total),
-                committed: row
-                    .try_get::<Option<String>, _>("committed_timestamp")
+                let id = row_i64(row, "id")?;
+                let total = row
+                    .try_get::<i64, _>("total")
+                    .map_err(|e| ServerFnError::new(e.to_string()))?;
+                let payments = payments_by_invoice
+                    .get(&id)
+                    .map(Vec::as_slice)
+                    .unwrap_or(&[]);
+                let created_timestamp = row
+                    .try_get::<Option<String>, _>("created_timestamp")
                     .map_err(|e| ServerFnError::new(e.to_string()))?
-                    .is_some(),
-                invoice_number: row_optional_i64(row, "invoice_number")?,
-                is_canceled: row_i64(row, "is_canceled")? != 0,
-                is_cancelation: row_i64(row, "is_cancelation")? != 0,
-                subject: row
-                    .try_get("subject")
-                    .map_err(|e| ServerFnError::new(e.to_string()))?,
-                total_cents: total,
-                paid_cents: row
-                    .try_get::<i64, _>("paid")
-                    .map_err(|e| ServerFnError::new(e.to_string()))?,
+                    .unwrap_or_default();
+                let invoice_date = row
+                    .try_get::<Option<String>, _>("invoice_date")
+                    .map_err(|e| ServerFnError::new(e.to_string()))?
+                    .and_then(|date| NaiveDate::parse_from_str(&date, "%Y-%m-%d").ok());
+
+                Ok(InvoiceListItem {
+                    id,
+                    created_timestamp: chrono::DateTime::from_timestamp(
+                        created_timestamp.parse::<i64>().unwrap_or_default(),
+                        0,
+                    )
+                    .unwrap_or(chrono::DateTime::<Utc>::MIN_UTC),
+                    invoice_date,
+                    customer_contact: contact,
+                    paid_date: settled_on(payments, total),
+                    committed: row
+                        .try_get::<Option<String>, _>("committed_timestamp")
+                        .map_err(|e| ServerFnError::new(e.to_string()))?
+                        .is_some(),
+                    invoice_number: row_optional_i64(row, "invoice_number")?,
+                    is_canceled: row_i64(row, "is_canceled")? != 0,
+                    is_cancelation: row_i64(row, "is_cancelation")? != 0,
+                    subject: row
+                        .try_get("subject")
+                        .map_err(|e| ServerFnError::new(e.to_string()))?,
+                    total_cents: total,
+                    paid_cents: row
+                        .try_get::<i64, _>("paid")
+                        .map_err(|e| ServerFnError::new(e.to_string()))?,
+                })
             })
-        })
-        .collect::<Result<Vec<_>, _>>()?;
+            .collect::<Result<Vec<_>, _>>()?;
 
         let has_more = items.len() > limit as usize;
         items.truncate(limit as usize);
@@ -1036,28 +1236,29 @@ impl KlubuRepository for SqlRepository {
 
     async fn get_invoice(&self, id: i64) -> Result<Invoice, ServerFnError> {
         let id_i32 = id as i32;
-        let i = sqlx::query(
-            "SELECT * FROM invoice WHERE id = $1")
-        .bind(id_i32)
-        .fetch_optional(&self.pool)
-        .await
-        .map_err(|e| ServerFnError::new(e.to_string()))?
-        .ok_or_else(|| ServerFnError::new("Invoice not found"))?;
-        
+        let i = sqlx::query("SELECT * FROM invoice WHERE id = $1")
+            .bind(id_i32)
+            .fetch_optional(&self.pool)
+            .await
+            .map_err(|e| ServerFnError::new(e.to_string()))?
+            .ok_or_else(|| ServerFnError::new("Invoice not found"))?;
+
         let items_rows = sqlx::query(
-            "SELECT * FROM invoice_item WHERE invoice_id = $1 ORDER BY position_number")
+            "SELECT * FROM invoice_item WHERE invoice_id = $1 ORDER BY position_number",
+        )
         .bind(id_i32)
         .fetch_all(&self.pool)
         .await
         .map_err(|e| ServerFnError::new(e.to_string()))?;
-        
+
         let items = items_rows
             .iter()
             .map(item_from_row)
             .collect::<Result<Vec<_>, _>>()?;
 
         let payments_rows = sqlx::query(
-            "SELECT * FROM invoice_payment WHERE invoice_id = $1 ORDER BY payment_date, id")
+            "SELECT * FROM invoice_payment WHERE invoice_id = $1 ORDER BY payment_date, id",
+        )
         .bind(id_i32)
         .fetch_all(&self.pool)
         .await
@@ -1068,7 +1269,7 @@ impl KlubuRepository for SqlRepository {
             .map(payment_from_row)
             .collect::<Result<Vec<_>, _>>()?;
 
-        let contact = match row_optional_i64(&i, "customer_contact_id")? {
+        let mut contact = match row_optional_i64(&i, "customer_contact_id")? {
             Some(ccid) => sqlx::query("SELECT * FROM contact WHERE id = $1")
                 .bind(ccid as i32)
                 .fetch_optional(&self.pool)
@@ -1079,6 +1280,12 @@ impl KlubuRepository for SqlRepository {
                 .transpose()?,
             None => None,
         };
+        if let Some(contact) = &mut contact {
+            if let Some(contact_id) = contact.id {
+                contact.emails = load_contact_emails(&self.pool, contact_id).await?;
+                contact.phones = load_contact_phones(&self.pool, contact_id).await?;
+            }
+        }
 
         let doc = row_optional_i64(&i, "document_id")?.map(|did| Document {
             id: did,
@@ -1102,6 +1309,7 @@ impl KlubuRepository for SqlRepository {
             is_canceled: row_i64(&i, "is_canceled")? != 0,
             is_cancelation: row_i64(&i, "is_cancelation")? != 0,
             corrected_invoice_id: row_optional_i64(&i, "corrected_invoice_id")?,
+            cancellation_invoice_id: row_optional_i64(&i, "cancellation_invoice_id")?,
             customer_contact: contact,
             document: doc,
             recipient: Some(recipient_from_row(&i)?),
@@ -1124,26 +1332,38 @@ impl KlubuRepository for SqlRepository {
             house_number: None,
             country: None,
         });
-        
-        let contact_id = invoice.customer_contact.as_ref().and_then(|c| c.id).map(|id| id as i32);
-        let date_str = invoice.invoice_date.map(|d| d.format("%Y-%m-%d").to_string());
-        
-        let mut tx = self.pool.begin().await.map_err(|e| ServerFnError::new(e.to_string()))?;
+
+        let contact_id = invoice
+            .customer_contact
+            .as_ref()
+            .and_then(|c| c.id)
+            .map(|id| id as i32);
+        let date_str = invoice
+            .invoice_date
+            .map(|d| d.format("%Y-%m-%d").to_string());
+
+        let mut tx = self
+            .pool
+            .begin()
+            .await
+            .map_err(|e| ServerFnError::new(e.to_string()))?;
         let is_new = invoice.id.is_none();
-        
+
         let invoice_id = if let Some(id) = invoice.id {
             let id_i32 = id as i32;
 
-            let committed_timestamp: Option<String> = sqlx::query_scalar(
-                "SELECT committed_timestamp FROM invoice WHERE id = $1")
-        .bind(id_i32)
-            .fetch_optional(&mut *tx)
-            .await
-            .map_err(|e| ServerFnError::new(e.to_string()))?
-            .ok_or_else(|| ServerFnError::new("Rechnung nicht gefunden"))?;
+            let committed_timestamp: Option<String> =
+                sqlx::query_scalar("SELECT committed_timestamp FROM invoice WHERE id = $1")
+                    .bind(id_i32)
+                    .fetch_optional(&mut *tx)
+                    .await
+                    .map_err(|e| ServerFnError::new(e.to_string()))?
+                    .ok_or_else(|| ServerFnError::new("Rechnung nicht gefunden"))?;
 
             if committed_timestamp.is_some() {
-                return Err(ServerFnError::new("Finalisierte Rechnungen können nicht bearbeitet werden"));
+                return Err(ServerFnError::new(
+                    "Finalisierte Rechnungen können nicht bearbeitet werden",
+                ));
             }
 
             sqlx::query(
@@ -1167,13 +1387,13 @@ impl KlubuRepository for SqlRepository {
             .execute(&mut *tx)
             .await
             .map_err(|e| ServerFnError::new(e.to_string()))?;
-            
+
             sqlx::query("DELETE FROM invoice_item WHERE invoice_id = $1")
-        .bind(id_i32)
+                .bind(id_i32)
                 .execute(&mut *tx)
                 .await
                 .map_err(|e| ServerFnError::new(e.to_string()))?;
-                
+
             id_i32
         } else {
             let created_ts = Utc::now().timestamp().to_string();
@@ -1201,7 +1421,7 @@ impl KlubuRepository for SqlRepository {
 
             row_i64(&row, "id")? as i32
         };
-        
+
         for (idx, item) in invoice.items.iter().enumerate() {
             let price_cents = item.price.amount_cents as i32;
             let total_cents = (item.price.amount_cents as f64 * item.quantity).round() as i32;
@@ -1219,22 +1439,29 @@ impl KlubuRepository for SqlRepository {
             .await
             .map_err(|e| ServerFnError::new(e.to_string()))?;
         }
-        
+
         let mut updated = invoice;
         updated.id = Some(invoice_id as i64);
-        
+
         let changes_str = serde_json::to_string(&updated).unwrap_or_default();
         let action = if is_new { "create" } else { "update" };
-        self.write_audit_log(&mut tx, "invoice", invoice_id, action, &changes_str).await?;
-        
-        tx.commit().await.map_err(|e| ServerFnError::new(e.to_string()))?;
+        self.write_audit_log(&mut tx, "invoice", invoice_id, action, &changes_str)
+            .await?;
+
+        tx.commit()
+            .await
+            .map_err(|e| ServerFnError::new(e.to_string()))?;
         Ok(updated)
     }
 
-    async fn cancel_invoice(&self, id: i64) -> Result<(), ServerFnError> {
+    async fn cancel_invoice(&self, id: i64) -> Result<Invoice, ServerFnError> {
         let id_i32 = id as i32;
-        let mut tx = self.pool.begin().await.map_err(|e| ServerFnError::new(e.to_string()))?;
-        
+        let mut tx = self
+            .pool
+            .begin()
+            .await
+            .map_err(|e| ServerFnError::new(e.to_string()))?;
+
         let orig = sqlx::query(
             "SELECT committed_timestamp, is_canceled, is_cancelation, customer_contact_id, invoice_date, subject, title, header, footer, recipient_name, recipient_first_name, recipient_title, recipient_form_of_address, street, house_number, zip_code, city, country, invoice_number FROM invoice WHERE id = $1")
         .bind(id_i32)
@@ -1244,7 +1471,9 @@ impl KlubuRepository for SqlRepository {
         .ok_or_else(|| ServerFnError::new("Rechnung nicht gefunden"))?;
 
         if row_optional_str(&orig, "committed_timestamp")?.is_none() {
-            return Err(ServerFnError::new("Nur finalisierte Rechnungen können storniert werden"));
+            return Err(ServerFnError::new(
+                "Nur finalisierte Rechnungen können storniert werden",
+            ));
         }
         if row_i64(&orig, "is_canceled")? != 0 {
             return Err(ServerFnError::new("Rechnung ist bereits storniert"));
@@ -1254,28 +1483,29 @@ impl KlubuRepository for SqlRepository {
         // repeated indefinitely, burning a number each time. A storno is
         // corrected by issuing a fresh invoice, not by undoing it.
         if row_i64(&orig, "is_cancelation")? != 0 {
-            return Err(ServerFnError::new("Eine Stornorechnung kann nicht storniert werden"));
+            return Err(ServerFnError::new(
+                "Eine Stornorechnung kann nicht storniert werden",
+            ));
         }
 
         sqlx::query("UPDATE invoice SET is_canceled = 1 WHERE id = $1")
-        .bind(id_i32)
+            .bind(id_i32)
             .execute(&mut *tx)
             .await
             .map_err(|e| ServerFnError::new(e.to_string()))?;
 
         sqlx::query(
-            "UPDATE document_counter SET next_value = next_value + 1 WHERE key = 'invoice'"
+            "UPDATE document_counter SET next_value = next_value + 1 WHERE key = 'invoice'",
         )
         .execute(&mut *tx)
         .await
         .map_err(|e| ServerFnError::new(e.to_string()))?;
 
-        let storno_number: i64 = sqlx::query_scalar(
-            "SELECT next_value - 1 FROM document_counter WHERE key = 'invoice'"
-        )
-        .fetch_one(&mut *tx)
-        .await
-        .map_err(|e| ServerFnError::new(e.to_string()))?;
+        let storno_number: i64 =
+            sqlx::query_scalar("SELECT next_value - 1 FROM document_counter WHERE key = 'invoice'")
+                .fetch_one(&mut *tx)
+                .await
+                .map_err(|e| ServerFnError::new(e.to_string()))?;
         let storno_number_i32 = storno_number as i32;
 
         let created_ts = Utc::now().timestamp().to_string();
@@ -1311,8 +1541,45 @@ impl KlubuRepository for SqlRepository {
 
         let storno_id_i32 = row_i64(&row, "id")? as i32;
 
+        sqlx::query("UPDATE invoice SET cancellation_invoice_id = $1 WHERE id = $2")
+            .bind(storno_id_i32)
+            .bind(id_i32)
+            .execute(&mut *tx)
+            .await
+            .map_err(|e| ServerFnError::new(e.to_string()))?;
+
+        let engagement_ids = sqlx::query_scalar::<_, i64>(
+            "SELECT engagement_id FROM engagement_invoice WHERE invoice_id = $1 ORDER BY engagement_id",
+        )
+        .bind(id_i32)
+        .fetch_all(&mut *tx)
+        .await
+        .map_err(|e| ServerFnError::new(e.to_string()))?;
+        for engagement_id in engagement_ids {
+            let inserted = sqlx::query(
+                "INSERT INTO engagement_invoice (engagement_id, invoice_id, created_timestamp) VALUES ($1, $2, $3) ON CONFLICT (engagement_id, invoice_id) DO NOTHING",
+            )
+            .bind(engagement_id)
+            .bind(storno_id_i32)
+            .bind(&created_ts)
+            .execute(&mut *tx)
+            .await
+            .map_err(|e| ServerFnError::new(e.to_string()))?;
+            if inserted.rows_affected() > 0 {
+                self.write_audit_log(
+                    &mut tx,
+                    "engagement",
+                    engagement_id as i32,
+                    "link",
+                    &format!("invoice {storno_id_i32} copied from invoice {id_i32}"),
+                )
+                .await?;
+            }
+        }
+
         let orig_items = sqlx::query(
-            "SELECT * FROM invoice_item WHERE invoice_id = $1 ORDER BY position_number")
+            "SELECT * FROM invoice_item WHERE invoice_id = $1 ORDER BY position_number",
+        )
         .bind(id_i32)
         .fetch_all(&mut *tx)
         .await
@@ -1334,18 +1601,42 @@ impl KlubuRepository for SqlRepository {
             .await
             .map_err(|e| ServerFnError::new(e.to_string()))?;
         }
-        
-        self.write_audit_log(&mut tx, "invoice", id_i32, "cancel", &format!("Invoice Nr. {} canceled", orig_num_str)).await?;
-        self.write_audit_log(&mut tx, "invoice", storno_id_i32, "create_storno", &format!("Stornorechnung Nr. {} created for invoice ID {}", storno_number_i32, id_i32)).await?;
-        
-        tx.commit().await.map_err(|e| ServerFnError::new(e.to_string()))?;
-        Ok(())
+
+        self.write_audit_log(
+            &mut tx,
+            "invoice",
+            id_i32,
+            "cancel",
+            &format!("Invoice Nr. {} canceled", orig_num_str),
+        )
+        .await?;
+        self.write_audit_log(
+            &mut tx,
+            "invoice",
+            storno_id_i32,
+            "create_storno",
+            &format!(
+                "Stornorechnung Nr. {} created for invoice ID {}",
+                storno_number_i32, id_i32
+            ),
+        )
+        .await?;
+
+        tx.commit()
+            .await
+            .map_err(|e| ServerFnError::new(e.to_string()))?;
+        self.get_invoice(id).await
     }
 
     /// Books one tranche. An invoice may be settled in any number of them.
     /// A negative amount is a refund or a correction of an earlier mistake —
     /// the only way to fix a payment once the invoice is festgeschrieben.
-    async fn add_invoice_payment(&self, invoice_id: i64, amount_cents: i64, date: NaiveDate) -> Result<(), ServerFnError> {
+    async fn add_invoice_payment(
+        &self,
+        invoice_id: i64,
+        amount_cents: i64,
+        date: NaiveDate,
+    ) -> Result<(), ServerFnError> {
         if amount_cents == 0 {
             return Err(ServerFnError::new("Der Zahlungsbetrag darf nicht 0 sein"));
         }
@@ -1353,12 +1644,16 @@ impl KlubuRepository for SqlRepository {
         let invoice_id_i32 = invoice_id as i32;
         let amount_i32 = amount_cents as i32;
 
-        let mut tx = self.pool.begin().await.map_err(|e| ServerFnError::new(e.to_string()))?;
+        let mut tx = self
+            .pool
+            .begin()
+            .await
+            .map_err(|e| ServerFnError::new(e.to_string()))?;
 
         // A payment against a non-existent invoice would otherwise fail only on
         // the foreign key, with an opaque database error.
         sqlx::query_scalar::<_, i64>("SELECT id FROM invoice WHERE id = $1")
-        .bind(invoice_id_i32)
+            .bind(invoice_id_i32)
             .fetch_optional(&mut *tx)
             .await
             .map_err(|e| ServerFnError::new(e.to_string()))?
@@ -1374,7 +1669,7 @@ impl KlubuRepository for SqlRepository {
         .map_err(|e| ServerFnError::new(e.to_string()))?;
 
         let payment_id = row_i64(&row, "id")? as i32;
-        
+
         self.write_audit_log(
             &mut tx,
             "invoice_payment",
@@ -1382,20 +1677,30 @@ impl KlubuRepository for SqlRepository {
             "create",
             // The date makes the entry self-contained: together with the delete
             // entry's, the journal alone can reconstruct the booking's history.
-            &format!("Payment of {} cents dated {} added to invoice {}", amount_cents, date_str, invoice_id),
+            &format!(
+                "Payment of {} cents dated {} added to invoice {}",
+                amount_cents, date_str, invoice_id
+            ),
         )
         .await?;
-        
-        tx.commit().await.map_err(|e| ServerFnError::new(e.to_string()))?;
+
+        tx.commit()
+            .await
+            .map_err(|e| ServerFnError::new(e.to_string()))?;
         Ok(())
     }
 
     async fn delete_invoice_payment(&self, id: i64) -> Result<(), ServerFnError> {
         let id_i32 = id as i32;
-        let mut tx = self.pool.begin().await.map_err(|e| ServerFnError::new(e.to_string()))?;
-        
+        let mut tx = self
+            .pool
+            .begin()
+            .await
+            .map_err(|e| ServerFnError::new(e.to_string()))?;
+
         let row = sqlx::query(
-            "SELECT p.invoice_id, p.amount, p.payment_date FROM invoice_payment p WHERE p.id = $1")
+            "SELECT p.invoice_id, p.amount, p.payment_date FROM invoice_payment p WHERE p.id = $1",
+        )
         .bind(id_i32)
         .fetch_optional(&mut *tx)
         .await
@@ -1405,7 +1710,7 @@ impl KlubuRepository for SqlRepository {
         // The SELECT above saw a snapshot; if a concurrent delete won the race,
         // bail out rather than journal a deletion that did not happen here.
         let deleted = sqlx::query("DELETE FROM invoice_payment WHERE id = $1")
-        .bind(id_i32)
+            .bind(id_i32)
             .execute(&mut *tx)
             .await
             .map_err(|e| ServerFnError::new(e.to_string()))?;
@@ -1431,56 +1736,64 @@ impl KlubuRepository for SqlRepository {
         )
         .await?;
 
-        tx.commit().await.map_err(|e| ServerFnError::new(e.to_string()))?;
+        tx.commit()
+            .await
+            .map_err(|e| ServerFnError::new(e.to_string()))?;
         Ok(())
     }
 
-
     async fn commit_invoice(&self, id: i64) -> Result<(), ServerFnError> {
         let id_i32 = id as i32;
-        let mut tx = self.pool.begin().await.map_err(|e| ServerFnError::new(e.to_string()))?;
-        
+        let mut tx = self
+            .pool
+            .begin()
+            .await
+            .map_err(|e| ServerFnError::new(e.to_string()))?;
+
         let row = sqlx::query(
-            "SELECT committed_timestamp, customer_contact_id FROM invoice WHERE id = $1")
+            "SELECT committed_timestamp, customer_contact_id FROM invoice WHERE id = $1",
+        )
         .bind(id_i32)
         .fetch_optional(&mut *tx)
         .await
         .map_err(|e| ServerFnError::new(e.to_string()))?
         .ok_or_else(|| ServerFnError::new("Invoice not found"))?;
-        
+
         if row_optional_str(&row, "committed_timestamp")?.is_some() {
             return Err(ServerFnError::new("Invoice is already finalized"));
         }
 
         if row_optional_i64(&row, "customer_contact_id")?.is_none() {
-            return Err(ServerFnError::new("Cannot finalize invoice without an assigned customer contact"));
+            return Err(ServerFnError::new(
+                "Cannot finalize invoice without an assigned customer contact",
+            ));
         }
 
         sqlx::query(
-            "UPDATE document_counter SET next_value = next_value + 1 WHERE key = 'invoice'"
+            "UPDATE document_counter SET next_value = next_value + 1 WHERE key = 'invoice'",
         )
         .execute(&mut *tx)
         .await
         .map_err(|e| ServerFnError::new(e.to_string()))?;
 
-        let next_number: i64 = sqlx::query_scalar(
-            "SELECT next_value - 1 FROM document_counter WHERE key = 'invoice'"
-        )
-        .fetch_one(&mut *tx)
-        .await
-        .map_err(|e| ServerFnError::new(e.to_string()))?;
+        let next_number: i64 =
+            sqlx::query_scalar("SELECT next_value - 1 FROM document_counter WHERE key = 'invoice'")
+                .fetch_one(&mut *tx)
+                .await
+                .map_err(|e| ServerFnError::new(e.to_string()))?;
         let next_number_i32 = next_number as i32;
         let committed_ts = Utc::now().timestamp().to_string();
 
         sqlx::query(
-            "UPDATE invoice SET invoice_number = $1, committed_timestamp = $2 WHERE id = $3")
+            "UPDATE invoice SET invoice_number = $1, committed_timestamp = $2 WHERE id = $3",
+        )
         .bind(next_number_i32)
         .bind(&committed_ts)
         .bind(id_i32)
         .execute(&mut *tx)
         .await
         .map_err(|e| ServerFnError::new(e.to_string()))?;
-        
+
         self.write_audit_log(
             &mut tx,
             "invoice",
@@ -1489,32 +1802,69 @@ impl KlubuRepository for SqlRepository {
             &format!("Invoice finalized with number {}", next_number_i32),
         )
         .await?;
-        
-        tx.commit().await.map_err(|e| ServerFnError::new(e.to_string()))?;
+
+        tx.commit()
+            .await
+            .map_err(|e| ServerFnError::new(e.to_string()))?;
         Ok(())
     }
 
     async fn delete_invoice(&self, id: i64) -> Result<(), ServerFnError> {
         let id_i32 = id as i32;
-        let mut tx = self.pool.begin().await.map_err(|e| ServerFnError::new(e.to_string()))?;
-        
-        let committed_timestamp: Option<Option<String>> = sqlx::query_scalar(
-            "SELECT committed_timestamp FROM invoice WHERE id = $1")
+        let mut tx = self
+            .pool
+            .begin()
+            .await
+            .map_err(|e| ServerFnError::new(e.to_string()))?;
+
+        let committed_timestamp: Option<Option<String>> =
+            sqlx::query_scalar("SELECT committed_timestamp FROM invoice WHERE id = $1")
+                .bind(id_i32)
+                .fetch_optional(&mut *tx)
+                .await
+                .map_err(|e| ServerFnError::new(e.to_string()))?;
+
+        if let Some(Some(_)) = committed_timestamp {
+            return Err(ServerFnError::new(
+                "Finalisierte Rechnungen können nicht gelöscht werden",
+            ));
+        }
+
+        // A draft may be linked to Aufträge (engagement_invoice references it
+        // with ON DELETE RESTRICT). The draft itself is not subject to
+        // retention, so remove the links with it and record each unlink; a sent
+        // PDF stays available as an immutable attachment in the mail archive.
+        let engagement_ids = sqlx::query_scalar::<_, i64>(
+            "SELECT engagement_id FROM engagement_invoice WHERE invoice_id = $1 ORDER BY engagement_id",
+        )
         .bind(id_i32)
-        .fetch_optional(&mut *tx)
+        .fetch_all(&mut *tx)
         .await
         .map_err(|e| ServerFnError::new(e.to_string()))?;
-        
-        if let Some(Some(_)) = committed_timestamp {
-            return Err(ServerFnError::new("Finalisierte Rechnungen können nicht gelöscht werden"));
+        if !engagement_ids.is_empty() {
+            sqlx::query("DELETE FROM engagement_invoice WHERE invoice_id = $1")
+                .bind(id_i32)
+                .execute(&mut *tx)
+                .await
+                .map_err(|e| ServerFnError::new(e.to_string()))?;
+            for engagement_id in engagement_ids {
+                self.write_audit_log(
+                    &mut tx,
+                    "engagement",
+                    engagement_id as i32,
+                    "unlink",
+                    &format!("draft invoice {id_i32} deleted, link removed"),
+                )
+                .await?;
+            }
         }
-        
+
         sqlx::query("DELETE FROM invoice WHERE id = $1")
-        .bind(id_i32)
+            .bind(id_i32)
             .execute(&mut *tx)
             .await
             .map_err(|e| ServerFnError::new(e.to_string()))?;
-            
+
         self.write_audit_log(
             &mut tx,
             "invoice",
@@ -1523,8 +1873,10 @@ impl KlubuRepository for SqlRepository {
             "Draft invoice deleted",
         )
         .await?;
-            
-        tx.commit().await.map_err(|e| ServerFnError::new(e.to_string()))?;
+
+        tx.commit()
+            .await
+            .map_err(|e| ServerFnError::new(e.to_string()))?;
         Ok(())
     }
 
@@ -1536,6 +1888,7 @@ impl KlubuRepository for SqlRepository {
         limit: u32,
         from_date: Option<NaiveDate>,
         to_date: Option<NaiveDate>,
+        customer_contact_id: Option<i64>,
     ) -> Result<Page<OfferListItem>, ServerFnError> {
         let limit = page_size(limit);
         let fetch_limit = i64::from(limit) + 1;
@@ -1556,6 +1909,7 @@ impl KlubuRepository for SqlRepository {
             ) latest ON COALESCE(o.group_id, o.id) = latest.gid AND o.revision = latest.max_rev
             WHERE ($1 IS NULL OR o.offer_date >= $1)
               AND ($2 IS NULL OR o.offer_date <= $2)
+              AND ($5 IS NULL OR o.customer_contact_id = $5)
             ORDER BY o.offer_date DESC NULLS LAST, o.id DESC
             LIMIT $3 OFFSET $4
             "#,
@@ -1564,6 +1918,7 @@ impl KlubuRepository for SqlRepository {
         .bind(to_date.as_deref())
         .bind(fetch_limit)
         .bind(offset)
+        .bind(customer_contact_id)
         .fetch_all(&self.pool)
         .await
         .map_err(|e| ServerFnError::new(e.to_string()))?;
@@ -1571,59 +1926,60 @@ impl KlubuRepository for SqlRepository {
         let mut items = rows
             .iter()
             .map(|row| -> Result<OfferListItem, ServerFnError> {
-            let contact = row_optional_i64(row, "contact_id")?.map(|contact_id| Contact {
-                id: Some(contact_id),
-                name: row
-                    .try_get::<Option<String>, _>("contact_name")
-                    .ok()
-                    .flatten()
-                    .unwrap_or_default(),
-                first_name: row
-                    .try_get::<Option<String>, _>("contact_first_name")
-                    .ok()
-                    .flatten(),
-                form_of_address: None,
-                title: None,
-                street: None,
-                zip_code: None,
-                city: None,
-                house_number: None,
-                country: None,
-                phone: None,
-                is_person: false,
-                archived_timestamp: None,
-            });
+                let contact = row_optional_i64(row, "contact_id")?.map(|contact_id| Contact {
+                    id: Some(contact_id),
+                    name: row
+                        .try_get::<Option<String>, _>("contact_name")
+                        .ok()
+                        .flatten()
+                        .unwrap_or_default(),
+                    first_name: row
+                        .try_get::<Option<String>, _>("contact_first_name")
+                        .ok()
+                        .flatten(),
+                    form_of_address: None,
+                    title: None,
+                    street: None,
+                    zip_code: None,
+                    city: None,
+                    house_number: None,
+                    country: None,
+                    phones: Vec::new(),
+                    is_person: false,
+                    archived_timestamp: None,
+                    emails: Vec::new(),
+                });
 
-            let created_timestamp = row
-                .try_get::<Option<String>, _>("created_timestamp")
-                .map_err(|e| ServerFnError::new(e.to_string()))?
-                .unwrap_or_default();
-            let offer_date = row
-                .try_get::<Option<String>, _>("offer_date")
-                .map_err(|e| ServerFnError::new(e.to_string()))?
-                .and_then(|date| NaiveDate::parse_from_str(&date, "%Y-%m-%d").ok());
-
-            Ok(OfferListItem {
-                id: row_i64(row, "id")?,
-                revision: row_i64(row, "revision")?,
-                title: row
-                    .try_get("title")
-                    .map_err(|e| ServerFnError::new(e.to_string()))?,
-                created_timestamp: chrono::DateTime::from_timestamp(
-                    created_timestamp.parse::<i64>().unwrap_or_default(),
-                    0,
-                )
-                .unwrap_or(chrono::DateTime::<Utc>::MIN_UTC),
-                offer_date,
-                customer_contact: contact,
-                committed: row
-                    .try_get::<Option<String>, _>("committed_timestamp")
+                let created_timestamp = row
+                    .try_get::<Option<String>, _>("created_timestamp")
                     .map_err(|e| ServerFnError::new(e.to_string()))?
-                    .is_some(),
-                offer_number: row_optional_i64(row, "offer_number")?,
+                    .unwrap_or_default();
+                let offer_date = row
+                    .try_get::<Option<String>, _>("offer_date")
+                    .map_err(|e| ServerFnError::new(e.to_string()))?
+                    .and_then(|date| NaiveDate::parse_from_str(&date, "%Y-%m-%d").ok());
+
+                Ok(OfferListItem {
+                    id: row_i64(row, "id")?,
+                    revision: row_i64(row, "revision")?,
+                    title: row
+                        .try_get("title")
+                        .map_err(|e| ServerFnError::new(e.to_string()))?,
+                    created_timestamp: chrono::DateTime::from_timestamp(
+                        created_timestamp.parse::<i64>().unwrap_or_default(),
+                        0,
+                    )
+                    .unwrap_or(chrono::DateTime::<Utc>::MIN_UTC),
+                    offer_date,
+                    customer_contact: contact,
+                    committed: row
+                        .try_get::<Option<String>, _>("committed_timestamp")
+                        .map_err(|e| ServerFnError::new(e.to_string()))?
+                        .is_some(),
+                    offer_number: row_optional_i64(row, "offer_number")?,
+                })
             })
-        })
-        .collect::<Result<Vec<_>, _>>()?;
+            .collect::<Result<Vec<_>, _>>()?;
 
         let has_more = items.len() > limit as usize;
         items.truncate(limit as usize);
@@ -1632,14 +1988,13 @@ impl KlubuRepository for SqlRepository {
 
     async fn get_offer(&self, id: i64) -> Result<Offer, ServerFnError> {
         let id_i32 = id as i32;
-        let o = sqlx::query(
-            "SELECT * FROM offer WHERE id = $1")
-        .bind(id_i32)
-        .fetch_optional(&self.pool)
-        .await
-        .map_err(|e| ServerFnError::new(e.to_string()))?
-        .ok_or_else(|| ServerFnError::new("Offer not found"))?;
-        
+        let o = sqlx::query("SELECT * FROM offer WHERE id = $1")
+            .bind(id_i32)
+            .fetch_optional(&self.pool)
+            .await
+            .map_err(|e| ServerFnError::new(e.to_string()))?
+            .ok_or_else(|| ServerFnError::new("Offer not found"))?;
+
         let items_rows = sqlx::query(
             "SELECT * FROM offer_item WHERE offer_id = $1 AND offer_revision = $2 ORDER BY position_number")
         .bind(id_i32)
@@ -1653,7 +2008,7 @@ impl KlubuRepository for SqlRepository {
             .map(item_from_row)
             .collect::<Result<Vec<_>, _>>()?;
 
-        let contact = match row_optional_i64(&o, "customer_contact_id")? {
+        let mut contact = match row_optional_i64(&o, "customer_contact_id")? {
             Some(ccid) => sqlx::query("SELECT * FROM contact WHERE id = $1")
                 .bind(ccid as i32)
                 .fetch_optional(&self.pool)
@@ -1664,6 +2019,12 @@ impl KlubuRepository for SqlRepository {
                 .transpose()?,
             None => None,
         };
+        if let Some(contact) = &mut contact {
+            if let Some(contact_id) = contact.id {
+                contact.emails = load_contact_emails(&self.pool, contact_id).await?;
+                contact.phones = load_contact_phones(&self.pool, contact_id).await?;
+            }
+        }
 
         let doc = row_optional_i64(&o, "document_id")?.map(|did| Document {
             id: did,
@@ -1707,26 +2068,36 @@ impl KlubuRepository for SqlRepository {
             house_number: None,
             country: None,
         });
-        
-        let contact_id = offer.customer_contact.as_ref().and_then(|c| c.id).map(|id| id as i32);
+
+        let contact_id = offer
+            .customer_contact
+            .as_ref()
+            .and_then(|c| c.id)
+            .map(|id| id as i32);
         let date_str = offer.offer_date.map(|d| d.format("%Y-%m-%d").to_string());
-        
-        let mut tx = self.pool.begin().await.map_err(|e| ServerFnError::new(e.to_string()))?;
+
+        let mut tx = self
+            .pool
+            .begin()
+            .await
+            .map_err(|e| ServerFnError::new(e.to_string()))?;
         let is_new = offer.id.is_none();
-        
+
         let (offer_id, revision) = if let Some(id) = offer.id {
             let id_i32 = id as i32;
 
-            let existing = sqlx::query(
-                "SELECT revision, committed_timestamp FROM offer WHERE id = $1")
-        .bind(id_i32)
-            .fetch_optional(&mut *tx)
-            .await
-            .map_err(|e| ServerFnError::new(e.to_string()))?
-            .ok_or_else(|| ServerFnError::new("Angebot nicht gefunden"))?;
+            let existing =
+                sqlx::query("SELECT revision, committed_timestamp FROM offer WHERE id = $1")
+                    .bind(id_i32)
+                    .fetch_optional(&mut *tx)
+                    .await
+                    .map_err(|e| ServerFnError::new(e.to_string()))?
+                    .ok_or_else(|| ServerFnError::new("Angebot nicht gefunden"))?;
 
             if row_optional_str(&existing, "committed_timestamp")?.is_some() {
-                return Err(ServerFnError::new("Finalisierte Angebote können nicht bearbeitet werden"));
+                return Err(ServerFnError::new(
+                    "Finalisierte Angebote können nicht bearbeitet werden",
+                ));
             }
 
             let rev_i32 = row_i64(&existing, "revision")? as i32;
@@ -1754,7 +2125,7 @@ impl KlubuRepository for SqlRepository {
             .map_err(|e| ServerFnError::new(e.to_string()))?;
 
             sqlx::query("DELETE FROM offer_item WHERE offer_id = $1")
-        .bind(id_i32)
+                .bind(id_i32)
                 .execute(&mut *tx)
                 .await
                 .map_err(|e| ServerFnError::new(e.to_string()))?;
@@ -1786,7 +2157,7 @@ impl KlubuRepository for SqlRepository {
 
             (row_i64(&row, "id")? as i32, 1)
         };
-        
+
         for (idx, item) in offer.items.iter().enumerate() {
             let price_cents = item.price.amount_cents as i32;
             let total_cents = (item.price.amount_cents as f64 * item.quantity).round() as i32;
@@ -1809,60 +2180,65 @@ impl KlubuRepository for SqlRepository {
         let mut updated = offer;
         updated.id = Some(offer_id as i64);
         updated.revision = Some(revision as i64);
-        
+
         let changes_str = serde_json::to_string(&updated).unwrap_or_default();
         let action = if is_new { "create" } else { "update" };
-        self.write_audit_log(&mut tx, "offer", offer_id, action, &changes_str).await?;
-        
-        tx.commit().await.map_err(|e| ServerFnError::new(e.to_string()))?;
+        self.write_audit_log(&mut tx, "offer", offer_id, action, &changes_str)
+            .await?;
+
+        tx.commit()
+            .await
+            .map_err(|e| ServerFnError::new(e.to_string()))?;
         Ok(updated)
     }
 
     async fn commit_offer(&self, id: i64) -> Result<(), ServerFnError> {
         let id_i32 = id as i32;
-        let mut tx = self.pool.begin().await.map_err(|e| ServerFnError::new(e.to_string()))?;
-        
-        let row = sqlx::query(
-            "SELECT committed_timestamp, customer_contact_id FROM offer WHERE id = $1")
-        .bind(id_i32)
-        .fetch_optional(&mut *tx)
-        .await
-        .map_err(|e| ServerFnError::new(e.to_string()))?
-        .ok_or_else(|| ServerFnError::new("Offer not found"))?;
-        
+        let mut tx = self
+            .pool
+            .begin()
+            .await
+            .map_err(|e| ServerFnError::new(e.to_string()))?;
+
+        let row =
+            sqlx::query("SELECT committed_timestamp, customer_contact_id FROM offer WHERE id = $1")
+                .bind(id_i32)
+                .fetch_optional(&mut *tx)
+                .await
+                .map_err(|e| ServerFnError::new(e.to_string()))?
+                .ok_or_else(|| ServerFnError::new("Offer not found"))?;
+
         if row_optional_str(&row, "committed_timestamp")?.is_some() {
             return Err(ServerFnError::new("Offer is already finalized"));
         }
 
         if row_optional_i64(&row, "customer_contact_id")?.is_none() {
-            return Err(ServerFnError::new("Cannot finalize offer without an assigned customer contact"));
+            return Err(ServerFnError::new(
+                "Cannot finalize offer without an assigned customer contact",
+            ));
         }
 
-        sqlx::query(
-            "UPDATE document_counter SET next_value = next_value + 1 WHERE key = 'offer'"
-        )
-        .execute(&mut *tx)
-        .await
-        .map_err(|e| ServerFnError::new(e.to_string()))?;
+        sqlx::query("UPDATE document_counter SET next_value = next_value + 1 WHERE key = 'offer'")
+            .execute(&mut *tx)
+            .await
+            .map_err(|e| ServerFnError::new(e.to_string()))?;
 
-        let next_number: i64 = sqlx::query_scalar(
-            "SELECT next_value - 1 FROM document_counter WHERE key = 'offer'"
-        )
-        .fetch_one(&mut *tx)
-        .await
-        .map_err(|e| ServerFnError::new(e.to_string()))?;
+        let next_number: i64 =
+            sqlx::query_scalar("SELECT next_value - 1 FROM document_counter WHERE key = 'offer'")
+                .fetch_one(&mut *tx)
+                .await
+                .map_err(|e| ServerFnError::new(e.to_string()))?;
         let next_number_i32 = next_number as i32;
         let committed_ts = Utc::now().timestamp().to_string();
 
-        sqlx::query(
-            "UPDATE offer SET offer_number = $1, committed_timestamp = $2 WHERE id = $3")
-        .bind(next_number_i32)
-        .bind(&committed_ts)
-        .bind(id_i32)
-        .execute(&mut *tx)
-        .await
-        .map_err(|e| ServerFnError::new(e.to_string()))?;
-        
+        sqlx::query("UPDATE offer SET offer_number = $1, committed_timestamp = $2 WHERE id = $3")
+            .bind(next_number_i32)
+            .bind(&committed_ts)
+            .bind(id_i32)
+            .execute(&mut *tx)
+            .await
+            .map_err(|e| ServerFnError::new(e.to_string()))?;
+
         self.write_audit_log(
             &mut tx,
             "offer",
@@ -1871,46 +2247,80 @@ impl KlubuRepository for SqlRepository {
             &format!("Offer finalized with number {}", next_number_i32),
         )
         .await?;
-        
-        tx.commit().await.map_err(|e| ServerFnError::new(e.to_string()))?;
+
+        tx.commit()
+            .await
+            .map_err(|e| ServerFnError::new(e.to_string()))?;
         Ok(())
     }
 
     async fn delete_offer(&self, id: i64) -> Result<(), ServerFnError> {
         let id_i32 = id as i32;
-        let mut tx = self.pool.begin().await.map_err(|e| ServerFnError::new(e.to_string()))?;
-        
-        let committed_timestamp: Option<Option<String>> = sqlx::query_scalar(
-            "SELECT committed_timestamp FROM offer WHERE id = $1")
+        let mut tx = self
+            .pool
+            .begin()
+            .await
+            .map_err(|e| ServerFnError::new(e.to_string()))?;
+
+        let committed_timestamp: Option<Option<String>> =
+            sqlx::query_scalar("SELECT committed_timestamp FROM offer WHERE id = $1")
+                .bind(id_i32)
+                .fetch_optional(&mut *tx)
+                .await
+                .map_err(|e| ServerFnError::new(e.to_string()))?;
+
+        if let Some(Some(_)) = committed_timestamp {
+            return Err(ServerFnError::new(
+                "Finalisierte Angebote können nicht gelöscht werden",
+            ));
+        }
+
+        // Mirror of delete_invoice: draft Auftrag links go with the draft,
+        // each unlink journaled.
+        let engagement_ids = sqlx::query_scalar::<_, i64>(
+            "SELECT engagement_id FROM engagement_offer WHERE offer_id = $1 ORDER BY engagement_id",
+        )
         .bind(id_i32)
-        .fetch_optional(&mut *tx)
+        .fetch_all(&mut *tx)
         .await
         .map_err(|e| ServerFnError::new(e.to_string()))?;
-        
-        if let Some(Some(_)) = committed_timestamp {
-            return Err(ServerFnError::new("Finalisierte Angebote können nicht gelöscht werden"));
+        if !engagement_ids.is_empty() {
+            sqlx::query("DELETE FROM engagement_offer WHERE offer_id = $1")
+                .bind(id_i32)
+                .execute(&mut *tx)
+                .await
+                .map_err(|e| ServerFnError::new(e.to_string()))?;
+            for engagement_id in engagement_ids {
+                self.write_audit_log(
+                    &mut tx,
+                    "engagement",
+                    engagement_id as i32,
+                    "unlink",
+                    &format!("draft offer {id_i32} deleted, link removed"),
+                )
+                .await?;
+            }
         }
-        
+
         sqlx::query("DELETE FROM offer WHERE id = $1")
-        .bind(id_i32)
+            .bind(id_i32)
             .execute(&mut *tx)
             .await
             .map_err(|e| ServerFnError::new(e.to_string()))?;
-            
-        self.write_audit_log(
-            &mut tx,
-            "offer",
-            id_i32,
-            "delete",
-            "Draft offer deleted",
-        )
-        .await?;
-            
-        tx.commit().await.map_err(|e| ServerFnError::new(e.to_string()))?;
+
+        self.write_audit_log(&mut tx, "offer", id_i32, "delete", "Draft offer deleted")
+            .await?;
+
+        tx.commit()
+            .await
+            .map_err(|e| ServerFnError::new(e.to_string()))?;
         Ok(())
     }
 
-    async fn get_offer_revisions(&self, offer_id: i64) -> Result<Vec<shared::OfferRevision>, ServerFnError> {
+    async fn get_offer_revisions(
+        &self,
+        offer_id: i64,
+    ) -> Result<Vec<shared::OfferRevision>, ServerFnError> {
         let id_i32 = offer_id as i32;
         let rows = sqlx::query(
             r#"
@@ -1920,12 +2330,13 @@ impl KlubuRepository for SqlRepository {
                 SELECT COALESCE(group_id, id) FROM offer WHERE id = $1
             )
             ORDER BY revision DESC
-            "#)
+            "#,
+        )
         .bind(id_i32)
         .fetch_all(&self.pool)
         .await
         .map_err(|e| ServerFnError::new(e.to_string()))?;
-        
+
         rows.iter()
             .map(|r| {
                 Ok(shared::OfferRevision {
@@ -1947,32 +2358,32 @@ impl KlubuRepository for SqlRepository {
     async fn create_offer_revision(&self, offer_id: i64) -> Result<Offer, ServerFnError> {
         let id_i32 = offer_id as i32;
         let offer = self.get_offer(offer_id).await?;
-        
+
         if offer.committed_timestamp.is_none() {
             return Err(ServerFnError::new("Can only revise committed offers"));
         }
-        
-        let parent_row = sqlx::query(
-            "SELECT group_id, revision FROM offer WHERE id = $1")
-        .bind(id_i32)
-        .fetch_one(&self.pool)
-        .await
-        .map_err(|e| ServerFnError::new(e.to_string()))?;
-        
+
+        let parent_row = sqlx::query("SELECT group_id, revision FROM offer WHERE id = $1")
+            .bind(id_i32)
+            .fetch_one(&self.pool)
+            .await
+            .map_err(|e| ServerFnError::new(e.to_string()))?;
+
         let group_id = row_optional_i64(&parent_row, "group_id")?
             .map(|v| v as i32)
             .unwrap_or(id_i32);
 
         let max_rev: i64 = sqlx::query_scalar(
-            "SELECT COALESCE(MAX(revision), 0) FROM offer WHERE id = $1 OR group_id = $1")
+            "SELECT COALESCE(MAX(revision), 0) FROM offer WHERE id = $1 OR group_id = $1",
+        )
         .bind(group_id)
         .fetch_one(&self.pool)
         .await
         .map_err(|e| ServerFnError::new(e.to_string()))?;
-        
+
         let new_revision = max_rev as i32 + 1;
         let created_ts_str = Utc::now().timestamp().to_string();
-        
+
         let recipient = offer.recipient.clone().unwrap_or(Recipient {
             form_of_address: None,
             title: None,
@@ -1984,10 +2395,14 @@ impl KlubuRepository for SqlRepository {
             house_number: None,
             country: None,
         });
-        
-        let contact_id = offer.customer_contact.as_ref().and_then(|c| c.id).map(|id| id as i32);
+
+        let contact_id = offer
+            .customer_contact
+            .as_ref()
+            .and_then(|c| c.id)
+            .map(|id| id as i32);
         let date_str = offer.offer_date.map(|d| d.format("%Y-%m-%d").to_string());
-        
+
         let row = sqlx::query(
             "INSERT INTO offer (group_id, revision, offer_number, offer_date, subject, title, header, footer, recipient_name, recipient_first_name, recipient_title, recipient_form_of_address, street, house_number, zip_code, city, country, customer_contact_id, created_timestamp) VALUES ($1, $2, NULL, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18) RETURNING id")
         .bind(group_id)
@@ -2032,7 +2447,7 @@ impl KlubuRepository for SqlRepository {
             .await
             .map_err(|e| ServerFnError::new(e.to_string()))?;
         }
-        
+
         self.get_offer(new_id as i64).await
     }
 
@@ -2102,86 +2517,87 @@ impl KlubuRepository for SqlRepository {
                 .entry(row_i64(&row, "receipt_id")?)
                 .or_default()
                 .push(Payment {
-                id: None,
-                date: NaiveDate::parse_from_str(
-                    &row.try_get::<String, _>("payment_date")
-                        .map_err(|e| ServerFnError::new(e.to_string()))?,
-                    "%Y-%m-%d",
-                )
-                .unwrap_or_default(),
-                amount_cents: row_i64(&row, "amount")?,
-            });
+                    id: None,
+                    date: NaiveDate::parse_from_str(
+                        &row.try_get::<String, _>("payment_date")
+                            .map_err(|e| ServerFnError::new(e.to_string()))?,
+                        "%Y-%m-%d",
+                    )
+                    .unwrap_or_default(),
+                    amount_cents: row_i64(&row, "amount")?,
+                });
         }
 
         let mut items = rows
             .iter()
             .map(|row| -> Result<ReceiptListItem, ServerFnError> {
-            let contact = row_optional_i64(row, "contact_id")?.map(|contact_id| Contact {
-                id: Some(contact_id),
-                name: row
-                    .try_get::<Option<String>, _>("contact_name")
-                    .ok()
-                    .flatten()
-                    .unwrap_or_default(),
-                first_name: row
-                    .try_get::<Option<String>, _>("contact_first_name")
-                    .ok()
-                    .flatten(),
-                form_of_address: None,
-                title: None,
-                street: None,
-                zip_code: None,
-                city: None,
-                house_number: None,
-                country: None,
-                phone: None,
-                is_person: false,
-                archived_timestamp: None,
-            });
+                let contact = row_optional_i64(row, "contact_id")?.map(|contact_id| Contact {
+                    id: Some(contact_id),
+                    name: row
+                        .try_get::<Option<String>, _>("contact_name")
+                        .ok()
+                        .flatten()
+                        .unwrap_or_default(),
+                    first_name: row
+                        .try_get::<Option<String>, _>("contact_first_name")
+                        .ok()
+                        .flatten(),
+                    form_of_address: None,
+                    title: None,
+                    street: None,
+                    zip_code: None,
+                    city: None,
+                    house_number: None,
+                    country: None,
+                    phones: Vec::new(),
+                    is_person: false,
+                    archived_timestamp: None,
+                    emails: Vec::new(),
+                });
 
-            let id = row_i64(row, "id")?;
-            let total = row
-                .try_get::<i64, _>("total")
-                .map_err(|e| ServerFnError::new(e.to_string()))?;
-            let payments = payments_by_receipt
-                .get(&id)
-                .map(Vec::as_slice)
-                .unwrap_or(&[]);
-            let created_timestamp = row
-                .try_get::<Option<String>, _>("created_timestamp")
-                .map_err(|e| ServerFnError::new(e.to_string()))?
-                .unwrap_or_default();
-            let receipt_date = row
-                .try_get::<Option<String>, _>("receipt_date")
-                .map_err(|e| ServerFnError::new(e.to_string()))?
-                .and_then(|date| NaiveDate::parse_from_str(&date, "%Y-%m-%d").ok());
-
-            Ok(ReceiptListItem {
-                id,
-                created_timestamp: chrono::DateTime::from_timestamp(
-                    created_timestamp.parse::<i64>().unwrap_or_default(),
-                    0,
-                )
-                .unwrap_or(chrono::DateTime::<Utc>::MIN_UTC),
-                supplier_contact: contact,
-                paid_date: settled_on(payments, total),
-                due_date: None,
-                receipt_date,
-                receipt_number: row
-                    .try_get("receipt_number")
-                    .map_err(|e| ServerFnError::new(e.to_string()))?,
-                total_cents: total,
-                paid_cents: row
-                    .try_get::<i64, _>("paid")
-                    .map_err(|e| ServerFnError::new(e.to_string()))?,
-                has_document: row_optional_i64(row, "document_id")?.is_some(),
-                committed: row
-                    .try_get::<Option<String>, _>("committed_timestamp")
+                let id = row_i64(row, "id")?;
+                let total = row
+                    .try_get::<i64, _>("total")
+                    .map_err(|e| ServerFnError::new(e.to_string()))?;
+                let payments = payments_by_receipt
+                    .get(&id)
+                    .map(Vec::as_slice)
+                    .unwrap_or(&[]);
+                let created_timestamp = row
+                    .try_get::<Option<String>, _>("created_timestamp")
                     .map_err(|e| ServerFnError::new(e.to_string()))?
-                    .is_some(),
+                    .unwrap_or_default();
+                let receipt_date = row
+                    .try_get::<Option<String>, _>("receipt_date")
+                    .map_err(|e| ServerFnError::new(e.to_string()))?
+                    .and_then(|date| NaiveDate::parse_from_str(&date, "%Y-%m-%d").ok());
+
+                Ok(ReceiptListItem {
+                    id,
+                    created_timestamp: chrono::DateTime::from_timestamp(
+                        created_timestamp.parse::<i64>().unwrap_or_default(),
+                        0,
+                    )
+                    .unwrap_or(chrono::DateTime::<Utc>::MIN_UTC),
+                    supplier_contact: contact,
+                    paid_date: settled_on(payments, total),
+                    due_date: None,
+                    receipt_date,
+                    receipt_number: row
+                        .try_get("receipt_number")
+                        .map_err(|e| ServerFnError::new(e.to_string()))?,
+                    total_cents: total,
+                    paid_cents: row
+                        .try_get::<i64, _>("paid")
+                        .map_err(|e| ServerFnError::new(e.to_string()))?,
+                    has_document: row_optional_i64(row, "document_id")?.is_some(),
+                    committed: row
+                        .try_get::<Option<String>, _>("committed_timestamp")
+                        .map_err(|e| ServerFnError::new(e.to_string()))?
+                        .is_some(),
+                })
             })
-        })
-        .collect::<Result<Vec<_>, _>>()?;
+            .collect::<Result<Vec<_>, _>>()?;
 
         let has_more = items.len() > limit as usize;
         items.truncate(limit as usize);
@@ -2190,14 +2606,13 @@ impl KlubuRepository for SqlRepository {
 
     async fn get_receipt(&self, id: i64) -> Result<Receipt, ServerFnError> {
         let id_i32 = id as i32;
-        let r = sqlx::query(
-            "SELECT * FROM receipt WHERE id = $1")
-        .bind(id_i32)
-        .fetch_optional(&self.pool)
-        .await
-        .map_err(|e| ServerFnError::new(e.to_string()))?
-        .ok_or_else(|| ServerFnError::new("Receipt not found"))?;
-        
+        let r = sqlx::query("SELECT * FROM receipt WHERE id = $1")
+            .bind(id_i32)
+            .fetch_optional(&self.pool)
+            .await
+            .map_err(|e| ServerFnError::new(e.to_string()))?
+            .ok_or_else(|| ServerFnError::new("Receipt not found"))?;
+
         let items_rows = sqlx::query(
             r#"
             SELECT ri.*, c.name AS category_name, t.id AS type_id, t.name AS type_name,
@@ -2207,7 +2622,8 @@ impl KlubuRepository for SqlRepository {
             LEFT JOIN receipt_item_category_type t ON c.category_type_id = t.id
             WHERE ri.receipt_id = $1
             ORDER BY ri.position_number
-            "#)
+            "#,
+        )
         .bind(id_i32)
         .fetch_all(&self.pool)
         .await
@@ -2241,7 +2657,8 @@ impl KlubuRepository for SqlRepository {
             .collect::<Result<Vec<_>, _>>()?;
 
         let payments_rows = sqlx::query(
-            "SELECT * FROM receipt_payment WHERE receipt_id = $1 ORDER BY payment_date, id")
+            "SELECT * FROM receipt_payment WHERE receipt_id = $1 ORDER BY payment_date, id",
+        )
         .bind(id_i32)
         .fetch_all(&self.pool)
         .await
@@ -2252,7 +2669,7 @@ impl KlubuRepository for SqlRepository {
             .map(payment_from_row)
             .collect::<Result<Vec<_>, _>>()?;
 
-        let supplier_contact = match row_optional_i64(&r, "customer_contact_id")? {
+        let mut supplier_contact = match row_optional_i64(&r, "customer_contact_id")? {
             Some(scid) => sqlx::query("SELECT * FROM contact WHERE id = $1")
                 .bind(scid as i32)
                 .fetch_optional(&self.pool)
@@ -2263,6 +2680,12 @@ impl KlubuRepository for SqlRepository {
                 .transpose()?,
             None => None,
         };
+        if let Some(contact) = &mut supplier_contact {
+            if let Some(contact_id) = contact.id {
+                contact.emails = load_contact_emails(&self.pool, contact_id).await?;
+                contact.phones = load_contact_phones(&self.pool, contact_id).await?;
+            }
+        }
 
         let doc = row_optional_i64(&r, "document_id")?.map(|did| Document {
             id: did,
@@ -2293,25 +2716,37 @@ impl KlubuRepository for SqlRepository {
     }
 
     async fn save_receipt(&self, receipt: Receipt) -> Result<Receipt, ServerFnError> {
-        let supplier_contact_id = receipt.supplier_contact.as_ref().and_then(|c| c.id).map(|id| id as i32);
-        let date_str = receipt.receipt_date.map(|d| d.format("%Y-%m-%d").to_string());
-        
-        let mut tx = self.pool.begin().await.map_err(|e| ServerFnError::new(e.to_string()))?;
+        let supplier_contact_id = receipt
+            .supplier_contact
+            .as_ref()
+            .and_then(|c| c.id)
+            .map(|id| id as i32);
+        let date_str = receipt
+            .receipt_date
+            .map(|d| d.format("%Y-%m-%d").to_string());
+
+        let mut tx = self
+            .pool
+            .begin()
+            .await
+            .map_err(|e| ServerFnError::new(e.to_string()))?;
         let is_new = receipt.id.is_none();
-        
+
         let receipt_id = if let Some(id) = receipt.id {
             let id_i32 = id as i32;
 
-            let committed_timestamp: Option<String> = sqlx::query_scalar(
-                "SELECT committed_timestamp FROM receipt WHERE id = $1")
-        .bind(id_i32)
-            .fetch_optional(&mut *tx)
-            .await
-            .map_err(|e| ServerFnError::new(e.to_string()))?
-            .ok_or_else(|| ServerFnError::new("Beleg nicht gefunden"))?;
+            let committed_timestamp: Option<String> =
+                sqlx::query_scalar("SELECT committed_timestamp FROM receipt WHERE id = $1")
+                    .bind(id_i32)
+                    .fetch_optional(&mut *tx)
+                    .await
+                    .map_err(|e| ServerFnError::new(e.to_string()))?
+                    .ok_or_else(|| ServerFnError::new("Beleg nicht gefunden"))?;
 
             if committed_timestamp.is_some() {
-                return Err(ServerFnError::new("Festgeschriebene Belege können nicht bearbeitet werden"));
+                return Err(ServerFnError::new(
+                    "Festgeschriebene Belege können nicht bearbeitet werden",
+                ));
             }
 
             sqlx::query(
@@ -2325,7 +2760,7 @@ impl KlubuRepository for SqlRepository {
             .map_err(|e| ServerFnError::new(e.to_string()))?;
 
             sqlx::query("DELETE FROM receipt_item WHERE receipt_id = $1")
-        .bind(id_i32)
+                .bind(id_i32)
                 .execute(&mut *tx)
                 .await
                 .map_err(|e| ServerFnError::new(e.to_string()))?;
@@ -2364,73 +2799,103 @@ impl KlubuRepository for SqlRepository {
             .await
             .map_err(|e| ServerFnError::new(e.to_string()))?;
         }
-        
+
         let mut updated = receipt;
         updated.id = Some(receipt_id as i64);
-        
+
         let changes_str = serde_json::to_string(&updated).unwrap_or_default();
         let action = if is_new { "create" } else { "update" };
-        self.write_audit_log(&mut tx, "receipt", receipt_id, action, &changes_str).await?;
-        
-        tx.commit().await.map_err(|e| ServerFnError::new(e.to_string()))?;
+        self.write_audit_log(&mut tx, "receipt", receipt_id, action, &changes_str)
+            .await?;
+
+        tx.commit()
+            .await
+            .map_err(|e| ServerFnError::new(e.to_string()))?;
         Ok(updated)
     }
 
     async fn commit_receipt(&self, id: i64) -> Result<(), ServerFnError> {
         let id_i32 = id as i32;
-        let mut tx = self.pool.begin().await.map_err(|e| ServerFnError::new(e.to_string()))?;
-        
-        let committed_timestamp: Option<String> = sqlx::query_scalar(
-            "SELECT committed_timestamp FROM receipt WHERE id = $1")
-        .bind(id_i32)
-        .fetch_optional(&mut *tx)
-        .await
-        .map_err(|e| ServerFnError::new(e.to_string()))?
-        .ok_or_else(|| ServerFnError::new("Beleg nicht gefunden"))?;
-        
+        let mut tx = self
+            .pool
+            .begin()
+            .await
+            .map_err(|e| ServerFnError::new(e.to_string()))?;
+
+        let committed_timestamp: Option<String> =
+            sqlx::query_scalar("SELECT committed_timestamp FROM receipt WHERE id = $1")
+                .bind(id_i32)
+                .fetch_optional(&mut *tx)
+                .await
+                .map_err(|e| ServerFnError::new(e.to_string()))?
+                .ok_or_else(|| ServerFnError::new("Beleg nicht gefunden"))?;
+
         if committed_timestamp.is_some() {
             return Err(ServerFnError::new("Beleg ist bereits festgeschrieben"));
         }
-        
+
         let committed_ts = Utc::now().timestamp().to_string();
-        sqlx::query(
-            "UPDATE receipt SET committed_timestamp = $1 WHERE id = $2")
-        .bind(&committed_ts)
-        .bind(id_i32)
-        .execute(&mut *tx)
-        .await
-        .map_err(|e| ServerFnError::new(e.to_string()))?;
-        
-        self.write_audit_log(&mut tx, "receipt", id_i32, "commit", "Receipt finalized/committed").await?;
-        
-        tx.commit().await.map_err(|e| ServerFnError::new(e.to_string()))?;
+        sqlx::query("UPDATE receipt SET committed_timestamp = $1 WHERE id = $2")
+            .bind(&committed_ts)
+            .bind(id_i32)
+            .execute(&mut *tx)
+            .await
+            .map_err(|e| ServerFnError::new(e.to_string()))?;
+
+        self.write_audit_log(
+            &mut tx,
+            "receipt",
+            id_i32,
+            "commit",
+            "Receipt finalized/committed",
+        )
+        .await?;
+
+        tx.commit()
+            .await
+            .map_err(|e| ServerFnError::new(e.to_string()))?;
         Ok(())
     }
 
     async fn delete_receipt(&self, id: i64) -> Result<(), ServerFnError> {
         let id_i32 = id as i32;
-        let mut tx = self.pool.begin().await.map_err(|e| ServerFnError::new(e.to_string()))?;
-        
-        let committed_timestamp: Option<Option<String>> = sqlx::query_scalar(
-            "SELECT committed_timestamp FROM receipt WHERE id = $1")
-        .bind(id_i32)
-        .fetch_optional(&mut *tx)
-        .await
-        .map_err(|e| ServerFnError::new(e.to_string()))?;
-        
+        let mut tx = self
+            .pool
+            .begin()
+            .await
+            .map_err(|e| ServerFnError::new(e.to_string()))?;
+
+        let committed_timestamp: Option<Option<String>> =
+            sqlx::query_scalar("SELECT committed_timestamp FROM receipt WHERE id = $1")
+                .bind(id_i32)
+                .fetch_optional(&mut *tx)
+                .await
+                .map_err(|e| ServerFnError::new(e.to_string()))?;
+
         if let Some(Some(_)) = committed_timestamp {
-            return Err(ServerFnError::new("Festgeschriebene Belege können nicht gelöscht werden"));
+            return Err(ServerFnError::new(
+                "Festgeschriebene Belege können nicht gelöscht werden",
+            ));
         }
-        
+
         sqlx::query("DELETE FROM receipt WHERE id = $1")
-        .bind(id_i32)
+            .bind(id_i32)
             .execute(&mut *tx)
             .await
             .map_err(|e| ServerFnError::new(e.to_string()))?;
-            
-        self.write_audit_log(&mut tx, "receipt", id_i32, "delete", "Draft receipt deleted").await?;
-            
-        tx.commit().await.map_err(|e| ServerFnError::new(e.to_string()))?;
+
+        self.write_audit_log(
+            &mut tx,
+            "receipt",
+            id_i32,
+            "delete",
+            "Draft receipt deleted",
+        )
+        .await?;
+
+        tx.commit()
+            .await
+            .map_err(|e| ServerFnError::new(e.to_string()))?;
         Ok(())
     }
 
@@ -2442,7 +2907,7 @@ impl KlubuRepository for SqlRepository {
             FROM receipt_item_category c
             JOIN receipt_item_category_type t ON c.category_type_id = t.id
             ORDER BY t.is_expense, t.name, c.name
-            "#
+            "#,
         )
         .fetch_all(&self.pool)
         .await
@@ -2466,7 +2931,12 @@ impl KlubuRepository for SqlRepository {
 
     /// Books one outgoing tranche against a receipt. As with invoices, a receipt
     /// may be paid in instalments, and a negative amount is a correction.
-    async fn add_receipt_payment(&self, receipt_id: i64, amount_cents: i64, date: NaiveDate) -> Result<(), ServerFnError> {
+    async fn add_receipt_payment(
+        &self,
+        receipt_id: i64,
+        amount_cents: i64,
+        date: NaiveDate,
+    ) -> Result<(), ServerFnError> {
         if amount_cents == 0 {
             return Err(ServerFnError::new("Der Zahlungsbetrag darf nicht 0 sein"));
         }
@@ -2474,10 +2944,14 @@ impl KlubuRepository for SqlRepository {
         let receipt_id_i32 = receipt_id as i32;
         let amount_i32 = amount_cents as i32;
 
-        let mut tx = self.pool.begin().await.map_err(|e| ServerFnError::new(e.to_string()))?;
+        let mut tx = self
+            .pool
+            .begin()
+            .await
+            .map_err(|e| ServerFnError::new(e.to_string()))?;
 
         sqlx::query_scalar::<_, i64>("SELECT id FROM receipt WHERE id = $1")
-        .bind(receipt_id_i32)
+            .bind(receipt_id_i32)
             .fetch_optional(&mut *tx)
             .await
             .map_err(|e| ServerFnError::new(e.to_string()))?
@@ -2493,26 +2967,36 @@ impl KlubuRepository for SqlRepository {
         .map_err(|e| ServerFnError::new(e.to_string()))?;
 
         let payment_id = row_i64(&row, "id")? as i32;
-        
+
         self.write_audit_log(
             &mut tx,
             "receipt_payment",
             payment_id,
             "create",
-            &format!("Payment of {} cents dated {} added to receipt {}", amount_cents, date_str, receipt_id),
+            &format!(
+                "Payment of {} cents dated {} added to receipt {}",
+                amount_cents, date_str, receipt_id
+            ),
         )
         .await?;
-        
-        tx.commit().await.map_err(|e| ServerFnError::new(e.to_string()))?;
+
+        tx.commit()
+            .await
+            .map_err(|e| ServerFnError::new(e.to_string()))?;
         Ok(())
     }
 
     async fn delete_receipt_payment(&self, id: i64) -> Result<(), ServerFnError> {
         let id_i32 = id as i32;
-        let mut tx = self.pool.begin().await.map_err(|e| ServerFnError::new(e.to_string()))?;
-        
+        let mut tx = self
+            .pool
+            .begin()
+            .await
+            .map_err(|e| ServerFnError::new(e.to_string()))?;
+
         let row = sqlx::query(
-            "SELECT p.receipt_id, p.amount, p.payment_date FROM receipt_payment p WHERE p.id = $1")
+            "SELECT p.receipt_id, p.amount, p.payment_date FROM receipt_payment p WHERE p.id = $1",
+        )
         .bind(id_i32)
         .fetch_optional(&mut *tx)
         .await
@@ -2520,7 +3004,7 @@ impl KlubuRepository for SqlRepository {
         .ok_or_else(|| ServerFnError::new("Zahlung nicht gefunden"))?;
 
         let deleted = sqlx::query("DELETE FROM receipt_payment WHERE id = $1")
-        .bind(id_i32)
+            .bind(id_i32)
             .execute(&mut *tx)
             .await
             .map_err(|e| ServerFnError::new(e.to_string()))?;
@@ -2542,8 +3026,10 @@ impl KlubuRepository for SqlRepository {
             ),
         )
         .await?;
-            
-        tx.commit().await.map_err(|e| ServerFnError::new(e.to_string()))?;
+
+        tx.commit()
+            .await
+            .map_err(|e| ServerFnError::new(e.to_string()))?;
         Ok(())
     }
 
@@ -2556,7 +3042,9 @@ impl KlubuRepository for SqlRepository {
             .map_err(|e| ServerFnError::new(e.to_string()))?;
 
         if count == 0 {
-            println!("Seeding default receipt item category types and categories...");
+            // The MCP transport reserves stdout for newline-delimited JSON-RPC.
+            // Server diagnostics belong on stderr for both binaries.
+            eprintln!("Seeding default receipt item category types and categories...");
 
             for (kennzahl, is_expense, type_name, categories) in SEED_CATEGORY_TYPES {
                 let is_expense = i32::from(*is_expense);
@@ -2601,9 +3089,10 @@ mod tests {
             city: Some("Berlin".into()),
             house_number: Some("7".into()),
             country: Some("DE".into()),
-            phone: Some("030 1234".into()),
+            phones: vec!["030 1234".into()],
             is_person: true,
             archived_timestamp: None,
+            emails: Vec::new(),
         }
     }
 

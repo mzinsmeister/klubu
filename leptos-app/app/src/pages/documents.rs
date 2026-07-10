@@ -1,9 +1,10 @@
 use chrono::{DateTime, NaiveDate, Utc};
 use leptos::*;
+use leptos_router::{use_navigate, use_params_map, NavigateOptions};
 use wasm_bindgen::JsCast;
 
 use crate::server::documents::{
-    add_managed_document_version, download_managed_document_version,
+    add_managed_document_version, download_managed_document_version, get_managed_document,
     list_managed_document_versions, list_managed_documents, tombstone_managed_document,
     upload_managed_document, DocumentLinkKind, ManagedDocument, ManagedDocumentDownload,
     ManagedDocumentLink, ManagedDocumentUpload, ManagedDocumentVersion,
@@ -353,18 +354,52 @@ pub fn DocumentsPage() -> impl IntoView {
             uploaded_to: to,
         });
     };
+    let params = use_params_map();
+    let id_param = move || params.with(|p| p.get("id").cloned());
+
+    create_effect(move |_| {
+        let id_val = id_param();
+        match id_val.as_deref() {
+            None => {
+                set_selected_document.set(None);
+                set_versions.set(Vec::new());
+            }
+            Some(id_str) => {
+                if let Ok(id) = id_str.parse::<i64>() {
+                    let already_selected =
+                        selected_document.get_untracked().map(|doc| doc.id) == Some(id);
+                    if !already_selected {
+                        spawn_local(async move {
+                            match get_managed_document(id).await {
+                                Ok(doc) => {
+                                    set_selected_document.set(Some(doc));
+                                    set_versions.set(Vec::new());
+                                    load_versions.dispatch(id);
+                                }
+                                Err(e) => {
+                                    set_error.set(Some(format!(
+                                        "Dokument konnte nicht geladen werden: {e}"
+                                    )));
+                                }
+                            }
+                        });
+                    }
+                }
+            }
+        }
+    });
 
     view! {
-        <div class="container">
-            <div class="level">
-                <div class="level-left">
-                    <div>
-                        <h1 class="title">"Dokumente"</h1>
-                        <p class="subtitle is-6 text-muted">
-                            "Versionssicheres Archiv für Geschäftsbelege und beliebige weitere Dateien"
-                        </p>
-                    </div>
+        <div class="container dms-page">
+            <div class="dms-header">
+                <div>
+                    <p class="dms-eyebrow">"DOKUMENTENMANAGEMENT"</p>
+                    <h1 class="title">"Dokumente"</h1>
+                    <p class="dms-description">
+                        "Versionssicheres Archiv für Geschäftsbelege und beliebige weitere Dateien"
+                    </p>
                 </div>
+                <div class="dms-header-status"><span class="dms-status-dot"></span>"Archiv aktiv"</div>
             </div>
 
             <Show when=move || error.get().is_some()>
@@ -380,12 +415,14 @@ pub fn DocumentsPage() -> impl IntoView {
                 </div>
             </Show>
 
-            <div class="box">
-                <h2 class="subtitle is-5">"Eigenständiges Dokument archivieren"</h2>
-                <div class="field is-grouped is-align-items-flex-end is-flex-wrap-wrap">
-                    <div class="control is-expanded">
-                        <div class="file is-fullwidth has-name">
-                            <label class="file-label">
+            <div class="dms-workspace-grid">
+                // Left Column: Upload, Search, and Document List
+                <div class="dms-sidebar">
+                    // Upload Card
+                    <div class="dms-upload-card mb-4">
+                        <p class="dms-box-title">"Neues Dokument"</p>
+                        <div class="dms-upload-dropzone">
+                            <label class="dms-upload-label">
                                 <input
                                     class="file-input"
                                     type="file"
@@ -395,71 +432,76 @@ pub fn DocumentsPage() -> impl IntoView {
                                         });
                                     }
                                 />
-                                <span class="file-cta">
-                                    <span class="file-icon"><i class="mdi mdi-upload"></i></span>
-                                    <span class="file-label">"Datei wählen…"</span>
-                                </span>
-                                <span class="file-name">
-                                    {move || new_document_upload.get()
-                                        .map(|upload| upload.file_name)
-                                        .unwrap_or_else(|| "Noch keine Datei gewählt".to_string())}
-                                </span>
+                                <span class="dms-upload-icon"><i class="mdi mdi-cloud-upload-outline"></i></span>
+                                <span class="dms-upload-text">"Datei wählen oder ablegen"</span>
+                                <span class="dms-upload-subtext">"Maximal 50 MB"</span>
                             </label>
                         </div>
+                        {move || new_document_upload.get().map(|upload| view! {
+                            <div class="dms-selected-file mt-3">
+                                <div class="file-info-row">
+                                    <span class="icon text-link"><i class="mdi mdi-file-document-outline"></i></span>
+                                    <span class="file-name-text">{upload.file_name.clone()}</span>
+                                </div>
+                                <div class="buttons is-centered mt-3">
+                                    <button
+                                        class="button is-link is-small"
+                                        prop:disabled=move || upload_document_action.pending().get()
+                                        on:click=move |_| {
+                                            if let Some(upload) = new_document_upload.get_untracked() {
+                                                upload_document_action.dispatch(upload);
+                                            }
+                                        }
+                                    >
+                                        <span class="icon mr-1"><i class="mdi mdi-archive-arrow-up"></i></span>
+                                        {move || if upload_document_action.pending().get() { "Archiviert…" } else { "Archivieren" }}
+                                    </button>
+                                    <button class="button is-light is-small" on:click=move |_| set_new_document_upload.set(None)>
+                                        "Abbrechen"
+                                    </button>
+                                </div>
+                            </div>
+                        })}
                     </div>
-                    <div class="control">
-                        <button
-                            class="button is-link"
-                            prop:disabled=move || new_document_upload.get().is_none() || upload_document_action.pending().get()
-                            on:click=move |_| {
-                                if let Some(upload) = new_document_upload.get_untracked() {
-                                    upload_document_action.dispatch(upload);
-                                }
-                            }
-                        >
-                            <span class="icon mr-1"><i class="mdi mdi-archive-arrow-up"></i></span>
-                            {move || if upload_document_action.pending().get() { "Archiviert…" } else { "Archivieren" }}
-                        </button>
-                    </div>
-                </div>
-                <p class="help">"Maximal 50 MiB. Dateiname, MIME-Typ, SHA-256-Prüfsumme und Benutzer werden protokolliert."</p>
-            </div>
 
-            <div class="box">
-                <div class="field is-grouped is-align-items-flex-end is-flex-wrap-wrap">
-                    <div class="control">
-                        <label class="label is-small">"Upload von (einschließlich)"</label>
-                        <input
-                            class="input"
-                            type="date"
-                            prop:value=from_input
-                            on:input=move |event| set_from_input.set(event_target_value(&event))
-                        />
-                    </div>
-                    <div class="control">
-                        <label class="label is-small">"Upload bis (einschließlich)"</label>
-                        <input
-                            class="input"
-                            type="date"
-                            prop:value=to_input
-                            on:input=move |event| set_to_input.set(event_target_value(&event))
-                        />
-                    </div>
-                    <div class="control">
-                        <button class="button is-light" prop:disabled=load_documents.pending() on:click=apply_filters>
+                    // Search & Filters Card
+                    <div class="dms-filter-card mb-4">
+                        <p class="dms-box-title">"Zeitraum filtern"</p>
+                        <div class="field">
+                            <label class="label is-small text-muted">"Upload von"</label>
+                            <div class="control has-icons-left">
+                                <input
+                                    class="input is-small"
+                                    type="date"
+                                    prop:value=from_input
+                                    on:input=move |event| set_from_input.set(event_target_value(&event))
+                                />
+                                <span class="icon is-small is-left"><i class="mdi mdi-calendar"></i></span>
+                            </div>
+                        </div>
+                        <div class="field mt-2">
+                            <label class="label is-small text-muted">"Upload bis"</label>
+                            <div class="control has-icons-left">
+                                <input
+                                    class="input is-small"
+                                    type="date"
+                                    prop:value=to_input
+                                    on:input=move |event| set_to_input.set(event_target_value(&event))
+                                />
+                                <span class="icon is-small is-left"><i class="mdi mdi-calendar"></i></span>
+                            </div>
+                        </div>
+                        <button class="button is-light is-small is-fullwidth mt-3" prop:disabled=load_documents.pending() on:click=apply_filters>
                             <span class="icon mr-1"><i class="mdi mdi-filter"></i></span>
                             "Filter anwenden"
                         </button>
                     </div>
-                </div>
-            </div>
 
-            <div class="columns">
-                <div class="column is-5">
-                    <div class="box">
+                    // Document List Card
+                    <div class="dms-list-card">
                         <div class="is-flex is-justify-content-space-between is-align-items-center mb-3">
-                            <h2 class="subtitle is-5 mb-0">"Archiv"</h2>
-                            <span class="tag is-light">{move || format!("{} geladen", documents.get().len())}</span>
+                            <h2 class="subtitle is-6 mb-0 has-text-weight-bold">"Archiv"</h2>
+                            <span class="tag is-link is-light">{move || format!("{} geladen", documents.get().len())}</span>
                         </div>
                         <Show
                             when=move || !documents.get().is_empty()
@@ -470,7 +512,7 @@ pub fn DocumentsPage() -> impl IntoView {
                                 </div>
                             }
                         >
-                            <div style="max-height: 70vh; overflow-y: auto;">
+                            <div class="dms-list-scroll">
                                 <For
                                     each=move || documents.get()
                                     key=|document| document.id
@@ -478,65 +520,42 @@ pub fn DocumentsPage() -> impl IntoView {
                                 >
                                     {
                                         let document_id = document.id;
-                                        let open_document = document.clone();
-                                        let links = document.links.clone();
                                         let upload_time = formatted_timestamp(document.latest_uploaded_timestamp);
-                                        let status_class = if document.is_deleted { "is-danger" } else { "is-success" };
-                                        let status_label = if document.is_deleted { "Gelöscht" } else { "Aktiv" };
+                                        let status_class = if document.is_deleted { "is-deleted" } else { "" };
                                         view! {
                                             <div
-                                                class="box list-item p-3 mb-2"
+                                                class=format!("dms-document-item {} mb-2", status_class)
                                                 class:is-active=move || selected_document.get().map(|selected| selected.id) == Some(document_id)
+                                                on:click=move |_| {
+                                                    let target = format!("/documents/{}", document_id);
+                                                    let _ = use_navigate()(&target, NavigateOptions::default());
+                                                }
                                             >
                                                 <div class="is-flex is-justify-content-space-between is-align-items-flex-start">
-                                                    <div style="min-width: 0;">
-                                                        <div class="has-text-weight-bold" style="overflow-wrap: anywhere;">
+                                                    <div style="min-width: 0; flex: 1;">
+                                                        <div class="document-title" title=document.display_name.clone()>
                                                             <span class="icon mr-1"><i class="mdi mdi-file-document-outline"></i></span>
                                                             {document.display_name.clone()}
                                                         </div>
                                                         <div class="is-size-7 text-muted mt-1">{upload_time}</div>
                                                     </div>
-                                                    <span class=format!("tag is-small {status_class}")>{status_label}</span>
+                                                    {document.is_deleted.then(|| view! {
+                                                        <span class="tag is-danger is-light is-small ml-2">"Gelöscht"</span>
+                                                    })}
                                                 </div>
-                                                <div class="tags mt-2 mb-2">
+                                                <div class="tags mt-2 mb-0">
                                                     <span class="tag is-light is-small">{format!("{} Version(en)", document.version_count)}</span>
-                                                    {if links.is_empty() {
+                                                    {if document.links.is_empty() {
                                                         view! { <span class="tag is-info is-light is-small">"Eigenständig"</span> }.into_view()
                                                     } else {
                                                         view! { <span class="tag is-link is-light is-small">"Verknüpft"</span> }.into_view()
                                                     }}
                                                     {document.is_write_protected().then(|| view! {
-                                                        <span class="tag is-warning is-light is-small" title="Mit festgeschriebenem Geschäftsvorfall verknüpft">
+                                                        <span class="tag is-warning is-light is-small" title="Schreibgeschützt">
                                                             <span class="icon is-small"><i class="mdi mdi-lock"></i></span>
-                                                            "Schreibgeschützt"
                                                         </span>
                                                     })}
                                                 </div>
-                                                <div class="is-size-7 mb-2">
-                                                    {links.into_iter().map(|link| {
-                                                        let href = link_href(&link.kind);
-                                                        let label = link_label(&link);
-                                                        view! {
-                                                            <a class="mr-2" href=href>
-                                                                {label}
-                                                                {link.committed.then(|| view! {
-                                                                    <span class="icon is-small" title="Festgeschrieben"><i class="mdi mdi-lock"></i></span>
-                                                                })}
-                                                            </a>
-                                                        }
-                                                    }).collect::<Vec<_>>()}
-                                                </div>
-                                                <button
-                                                    class="button is-small is-light"
-                                                    on:click=move |_| {
-                                                        set_selected_document.set(Some(open_document.clone()));
-                                                        set_versions.set(Vec::new());
-                                                        set_new_version_upload.set(None);
-                                                        load_versions.dispatch(document_id);
-                                                    }
-                                                >
-                                                    "Historie verwalten"
-                                                </button>
                                             </div>
                                         }
                                     }
@@ -544,7 +563,7 @@ pub fn DocumentsPage() -> impl IntoView {
                                 <Show when=move || has_more.get()>
                                     <div class="has-text-centered mt-4">
                                         <button
-                                            class="button is-light"
+                                            class="button is-light is-small"
                                             prop:disabled=load_documents.pending()
                                             on:click=move |_| {
                                                 load_documents.dispatch(DocumentListRequest {
@@ -565,12 +584,14 @@ pub fn DocumentsPage() -> impl IntoView {
                     </div>
                 </div>
 
-                <div class="column">
+                // Right Column: Details & Version Timeline
+                <div class="dms-main">
                     {move || match selected_document.get() {
                         None => view! {
-                            <div class="box has-text-centered text-muted p-6">
-                                <span class="icon is-large"><i class="mdi mdi-file-tree-outline mdi-36px"></i></span>
-                                <p>"Wählen Sie ein Dokument, um alle Versionen anzuzeigen."</p>
+                            <div class="dms-empty-state-card">
+                                <span class="dms-empty-icon"><i class="mdi mdi-file-tree-outline"></i></span>
+                                <h3>"Wählen Sie ein Dokument aus"</h3>
+                                <p>"Klicken Sie auf ein Dokument in der Liste, um dessen Details, verknüpfte Geschäftsvorfälle und die gesamte Versionshistorie anzuzeigen."</p>
                             </div>
                         }.into_view(),
                         Some(document) => {
@@ -579,79 +600,162 @@ pub fn DocumentsPage() -> impl IntoView {
                             let deleted = document.is_deleted;
                             let links = document.links.clone();
                             view! {
-                                <div class="box">
-                                    <div class="is-flex is-justify-content-space-between is-align-items-flex-start mb-4">
-                                        <div style="min-width: 0;">
-                                            <h2 class="subtitle is-5 mb-1" style="overflow-wrap: anywhere;">{document.display_name.clone()}</h2>
-                                            <p class="is-size-7 text-muted">{format!("Dokument #{} • {}", document.id, document.media_type)}</p>
+                                <div class="dms-details-panel">
+                                    <div class="dms-details-header">
+                                        <div class="details-title-area">
+                                            <span class="details-file-icon"><i class="mdi mdi-file-document-outline"></i></span>
+                                            <div>
+                                                <h2 class="title is-5 mb-1" style="overflow-wrap: anywhere;">{document.display_name.clone()}</h2>
+                                                <p class="is-size-7 text-muted">{format!("Dokument #{} • {}", document.id, document.media_type)}</p>
+                                            </div>
                                         </div>
-                                        <button class="delete" title="Detail schließen" on:click=move |_| {
-                                            set_selected_document.set(None);
-                                            set_versions.set(Vec::new());
+                                        <button class="delete is-medium" title="Details schließen" on:click=move |_| {
+                                            let _ = use_navigate()("/documents", NavigateOptions::default());
                                         }></button>
                                     </div>
 
                                     {(!links.is_empty()).then(|| view! {
-                                        <div class="notification is-link is-light py-3">
-                                            <p class="has-text-weight-semibold is-size-7 mb-1">"Verknüpfte Geschäftsvorfälle"</p>
-                                            {links.iter().map(|link| {
-                                                let href = link_href(&link.kind);
-                                                let label = link_label(link);
-                                                view! { <a class="mr-3" href=href>{label}</a> }
-                                            }).collect::<Vec<_>>()}
+                                        <div class="dms-links-box mb-4">
+                                            <p class="dms-box-title">"Verknüpfte Geschäftsvorfälle"</p>
+                                            <div class="tags">
+                                                {links.iter().map(|link| {
+                                                    let href = link_href(&link.kind);
+                                                    let label = link_label(link);
+                                                    view! {
+                                                        <a class="tag is-link is-light" href=href>
+                                                            <span class="icon is-small mr-1"><i class="mdi mdi-link-variant"></i></span>
+                                                            {label}
+                                                        </a>
+                                                    }
+                                                }).collect::<Vec<_>>()}
+                                            </div>
                                         </div>
                                     })}
 
                                     {if protected {
                                         view! {
-                                            <div class="notification is-warning is-light py-3">
+                                            <div class="notification is-warning is-light py-2 px-3 mb-4 is-size-7">
                                                 <span class="icon mr-1"><i class="mdi mdi-lock"></i></span>
                                                 "Dieses Dokument gehört zu einem festgeschriebenen Geschäftsvorfall. Historie und Downloads bleiben verfügbar; neue Versionen und Löschmarken sind gesperrt."
                                             </div>
                                         }.into_view()
                                     } else {
                                         view! {
-                                            <div class="field">
-                                                <label class="label">{if deleted { "Dokument mit neuer Version wiederherstellen" } else { "Neue Version hinzufügen" }}</label>
-                                                <div class="file is-fullwidth has-name mb-2">
-                                                    <label class="file-label">
-                                                        <input
-                                                            class="file-input"
-                                                            type="file"
-                                                            on:change=move |event| {
-                                                                pick_file(event, move |upload| set_new_version_upload.set(Some(upload)));
+                                            <div class="dms-action-box mb-4">
+                                                <p class="dms-box-title">{if deleted { "Dokument wiederherstellen (neue Version)" } else { "Neue Version hochladen" }}</p>
+                                                <div class="field is-grouped">
+                                                    <div class="control is-expanded">
+                                                        <div class="file is-small has-name is-fullwidth">
+                                                            <label class="file-label">
+                                                                <input
+                                                                    class="file-input"
+                                                                    type="file"
+                                                                    on:change=move |event| {
+                                                                        pick_file(event, move |upload| set_new_version_upload.set(Some(upload)));
+                                                                    }
+                                                                />
+                                                                <span class="file-cta">
+                                                                    <span class="file-icon"><i class="mdi mdi-upload"></i></span>
+                                                                    <span class="file-label">"Datei wählen…"</span>
+                                                                </span>
+                                                                <span class="file-name">
+                                                                    {move || new_version_upload.get()
+                                                                        .map(|upload| upload.file_name)
+                                                                        .unwrap_or_else(|| "Keine Datei gewählt".to_string())}
+                                                                </span>
+                                                            </label>
+                                                        </div>
+                                                    </div>
+                                                    <div class="control">
+                                                        <button
+                                                            class="button is-link is-small"
+                                                            prop:disabled=move || new_version_upload.get().is_none() || upload_version_action.pending().get()
+                                                            on:click=move |_| {
+                                                                if let Some(upload) = new_version_upload.get_untracked() {
+                                                                    upload_version_action.dispatch((document_id, upload));
+                                                                }
                                                             }
-                                                        />
-                                                        <span class="file-cta">
-                                                            <span class="file-icon"><i class="mdi mdi-upload"></i></span>
-                                                            <span class="file-label">"Neue Datei wählen…"</span>
-                                                        </span>
-                                                        <span class="file-name">
-                                                            {move || new_version_upload.get()
-                                                                .map(|upload| upload.file_name)
-                                                                .unwrap_or_else(|| "Noch keine Datei gewählt".to_string())}
-                                                        </span>
-                                                    </label>
+                                                        >
+                                                            {move || if upload_version_action.pending().get() { "Speichert…" } else { "Speichern" }}
+                                                        </button>
+                                                    </div>
                                                 </div>
-                                                <p class="help mb-2">
-                                                    {format!("Endung .{} und MIME-Typ {} müssen unverändert bleiben, da diese Metadaten für alle Versionen gelten.", document.extension, document.media_type)}
+                                                <p class="help">
+                                                    {format!("Die Dateiendung .{} und der Dateityp müssen übereinstimmen.", document.extension)}
                                                 </p>
-                                                <button
-                                                    class="button is-link is-small"
-                                                    prop:disabled=move || new_version_upload.get().is_none() || upload_version_action.pending().get()
-                                                    on:click=move |_| {
-                                                        if let Some(upload) = new_version_upload.get_untracked() {
-                                                            upload_version_action.dispatch((document_id, upload));
+                                            </div>
+                                        }.into_view()
+                                    }}
+
+                                    <div class="dms-history-section">
+                                        <h3 class="subtitle is-6 mb-3 has-text-weight-bold">"Versionshistorie"</h3>
+                                        <Show
+                                            when=move || !versions.get().is_empty()
+                                            fallback=move || view! {
+                                                <p class="text-muted is-size-7">{move || if load_versions.pending().get() { "Historie wird geladen…" } else { "Keine Versionen vorhanden." }}</p>
+                                            }
+                                        >
+                                            <div class="dms-timeline">
+                                                <For
+                                                    each=move || versions.get()
+                                                    key=|version| (version.document_id, version.version)
+                                                    let:version
+                                                >
+                                                    {
+                                                        let version_number = version.version;
+                                                        let checksum = version.checksum_sha256.clone();
+                                                        let short_checksum = checksum.as_deref()
+                                                            .map(|value| format!("{}…", &value[..value.len().min(12)]))
+                                                            .unwrap_or_else(|| "—".to_string());
+                                                        view! {
+                                                            <div class="dms-timeline-item">
+                                                                <div class="dms-timeline-marker">
+                                                                    <span class="marker-dot"></span>
+                                                                </div>
+                                                                <div class="dms-timeline-content">
+                                                                    <div class="is-flex is-justify-content-space-between is-align-items-center">
+                                                                        <div>
+                                                                            <span class="has-text-weight-semibold">{format!("Version {}", version_number)}</span>
+                                                                            {version.is_tombstone.then(|| view! {
+                                                                                <span class="tag is-danger is-light is-small ml-2">"Löschmarke"</span>
+                                                                            })}
+                                                                        </div>
+                                                                        <div class="buttons">
+                                                                            {if version.is_tombstone {
+                                                                                view! { <span class="text-muted is-size-7">"gelöscht"</span> }.into_view()
+                                                                            } else {
+                                                                                view! {
+                                                                                    <button
+                                                                                        class="button is-small is-light"
+                                                                                        prop:disabled=download_action.pending()
+                                                                                        on:click=move |_| download_action.dispatch((document_id, version_number))
+                                                                                    >
+                                                                                        <span class="icon"><i class="mdi mdi-download"></i></span>
+                                                                                        <span>"Download"</span>
+                                                                                    </button>
+                                                                                }.into_view()
+                                                                            }}
+                                                                        </div>
+                                                                    </div>
+                                                                    <div class="is-size-7 text-muted mt-1">
+                                                                        <span>{formatted_timestamp(version.created_timestamp)}</span>
+                                                                        <span class="mx-1">"•"</span>
+                                                                        <code title=checksum.unwrap_or_default()>{short_checksum}</code>
+                                                                    </div>
+                                                                </div>
+                                                            </div>
                                                         }
                                                     }
-                                                >
-                                                    {move || if upload_version_action.pending().get() { "Speichert…" } else { "Version speichern" }}
-                                                </button>
+                                                </For>
                                             </div>
-                                            <hr/>
+                                        </Show>
+                                    </div>
+
+                                    {(!protected && !deleted).then(|| view! {
+                                        <div class="mt-5 border-top pt-4">
                                             <button
-                                                class="button is-danger is-outlined is-small"
-                                                prop:disabled=move || deleted || tombstone_action.pending().get()
+                                                class="button is-danger is-outlined is-small is-fullwidth"
+                                                prop:disabled=tombstone_action.pending()
                                                 on:click=move |_| {
                                                     let confirmed = web_sys::window()
                                                         .and_then(|window| window.confirm_with_message(
@@ -664,78 +768,10 @@ pub fn DocumentsPage() -> impl IntoView {
                                                 }
                                             >
                                                 <span class="icon mr-1"><i class="mdi mdi-delete-outline"></i></span>
-                                                {if deleted { "Bereits als gelöscht markiert" } else { "Löschmarke anlegen" }}
+                                                "Dokument löschen (Löschmarke anlegen)"
                                             </button>
-                                        }.into_view()
-                                    }}
-                                </div>
-
-                                <div class="box">
-                                    <h3 class="subtitle is-5">"Versionshistorie"</h3>
-                                    <Show
-                                        when=move || !versions.get().is_empty()
-                                        fallback=move || view! {
-                                            <p class="text-muted">{move || if load_versions.pending().get() { "Historie wird geladen…" } else { "Keine Versionen vorhanden." }}</p>
-                                        }
-                                    >
-                                        <div class="table-container">
-                                            <table class="table is-fullwidth is-hoverable">
-                                                <thead>
-                                                    <tr>
-                                                        <th>"Version"</th>
-                                                        <th>"Zeitpunkt"</th>
-                                                        <th>"SHA-256"</th>
-                                                        <th></th>
-                                                    </tr>
-                                                </thead>
-                                                <tbody>
-                                                    <For
-                                                        each=move || versions.get()
-                                                        key=|version| (version.document_id, version.version)
-                                                        let:version
-                                                    >
-                                                        {
-                                                            let version_number = version.version;
-                                                            let checksum = version.checksum_sha256.clone();
-                                                            let short_checksum = checksum.as_deref()
-                                                                .map(|value| format!("{}…", &value[..value.len().min(16)]))
-                                                                .unwrap_or_else(|| "—".to_string());
-                                                            view! {
-                                                                <tr>
-                                                                    <td>
-                                                                        <span class="has-text-weight-semibold">{format!("v{}", version_number)}</span>
-                                                                        {version.is_tombstone.then(|| view! {
-                                                                            <span class="tag is-danger is-light is-small ml-2">"Löschmarke"</span>
-                                                                        })}
-                                                                    </td>
-                                                                    <td class="is-size-7">{formatted_timestamp(version.created_timestamp)}</td>
-                                                                    <td>
-                                                                        <code class="is-size-7" title=checksum.unwrap_or_default()>{short_checksum}</code>
-                                                                    </td>
-                                                                    <td class="has-text-right">
-                                                                        {if version.is_tombstone {
-                                                                            view! { <span class="text-muted is-size-7">"keine Datei"</span> }.into_view()
-                                                                        } else {
-                                                                            view! {
-                                                                                <button
-                                                                                    class="button is-small is-light"
-                                                                                    prop:disabled=download_action.pending()
-                                                                                    on:click=move |_| download_action.dispatch((document_id, version_number))
-                                                                                >
-                                                                                    <span class="icon"><i class="mdi mdi-download"></i></span>
-                                                                                    <span>"Herunterladen"</span>
-                                                                                </button>
-                                                                            }.into_view()
-                                                                        }}
-                                                                    </td>
-                                                                </tr>
-                                                            }
-                                                        }
-                                                    </For>
-                                                </tbody>
-                                            </table>
                                         </div>
-                                    </Show>
+                                    })}
                                 </div>
                             }.into_view()
                         }

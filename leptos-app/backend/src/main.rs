@@ -1,20 +1,22 @@
+use app::db::KlubuRepository;
 use axum::{
     body::Body,
     extract::{Path, State},
     http::{header, Request, Response, StatusCode},
+    middleware::Next,
     response::IntoResponse,
     routing::{get, post},
     Router,
-    middleware::Next,
 };
-use tower_http::services::ServeDir;
-use tower_http::cors::{Any, CorsLayer};
-use app::db::KlubuRepository;
-use std::sync::Arc;
 use std::net::SocketAddr;
+use std::sync::Arc;
+use tower_http::cors::{Any, CorsLayer};
+use tower_http::services::ServeDir;
 
 mod dbcopy;
 use dbcopy::{connect_pool, migrator_for, run_db_migration, shutdown_pool};
+
+mod mail;
 
 /// Endpoints reachable without a session. Everything else under `/api` needs one.
 ///
@@ -171,44 +173,52 @@ async fn download_document(
     State(repo): State<app::db::ActiveRepository>,
 ) -> impl IntoResponse {
     let doc_id = id as i32;
-    
+
     let doc = match repo.get_document_meta(doc_id).await {
         Ok(Some(d)) => d,
-        Ok(None) => return Response::builder()
-            .status(StatusCode::NOT_FOUND)
-            .body(Body::from("Document not found"))
-            .unwrap(),
-        Err(e) => return Response::builder()
-            .status(StatusCode::INTERNAL_SERVER_ERROR)
-            .body(Body::from(e.to_string()))
-            .unwrap(),
+        Ok(None) => {
+            return Response::builder()
+                .status(StatusCode::NOT_FOUND)
+                .body(Body::from("Document not found"))
+                .unwrap()
+        }
+        Err(e) => {
+            return Response::builder()
+                .status(StatusCode::INTERNAL_SERVER_ERROR)
+                .body(Body::from(e.to_string()))
+                .unwrap()
+        }
     };
-    
+
     let version = match repo.get_latest_document_version(doc_id).await {
         Ok(Some(v)) => v,
-        Ok(None) => return Response::builder()
-            .status(StatusCode::NOT_FOUND)
-            .body(Body::from("Document version not found"))
-            .unwrap(),
-        Err(e) => return Response::builder()
-            .status(StatusCode::INTERNAL_SERVER_ERROR)
-            .body(Body::from(e.to_string()))
-            .unwrap(),
+        Ok(None) => {
+            return Response::builder()
+                .status(StatusCode::NOT_FOUND)
+                .body(Body::from("Document version not found"))
+                .unwrap()
+        }
+        Err(e) => {
+            return Response::builder()
+                .status(StatusCode::INTERNAL_SERVER_ERROR)
+                .body(Body::from(e.to_string()))
+                .unwrap()
+        }
     };
-    
+
     if version.1 != 0 {
         return Response::builder()
             .status(StatusCode::NOT_FOUND)
             .body(Body::from("Document was deleted"))
             .unwrap();
     }
-    
+
     let storage_dir = std::env::var("KLUBU_DOCUMENT_STORAGE_PATH")
         .unwrap_or_else(|_| "./document_storage".to_string());
-        
+
     let file_name = format!("{}_{}.{}", doc.2, version.0, doc.0);
     let file_path = std::path::Path::new(&storage_dir).join(&file_name);
-    
+
     match tokio::fs::read(&file_path).await {
         Ok(bytes) => Response::builder()
             .status(StatusCode::OK)
@@ -228,8 +238,11 @@ async fn download_document(
 
 #[tokio::main]
 async fn main() {
+    let props = app::typst_gen::load_props();
     let db_url = std::env::var("DATABASE_URL")
-        .unwrap_or_else(|_| "sqlite://klubu.db?mode=rwc".to_string());
+        .ok()
+        .or_else(|| props.get("klubu.database.url").cloned())
+        .unwrap_or_else(|| "sqlite://klubu.db?mode=rwc".to_string());
 
     // `migrate-db --to <target-url>` copies this instance's data into another
     // database (typically the other dialect) and exits. See `dbcopy.rs`.
@@ -252,7 +265,9 @@ async fn main() {
     }
 
     println!("Connecting to database: {}", db_url);
-    let pool = connect_pool(&db_url).await.expect("Failed to connect to database");
+    let pool = connect_pool(&db_url)
+        .await
+        .expect("Failed to connect to database");
 
     println!("Running database migrations...");
     migrator_for(&db_url)
@@ -263,7 +278,6 @@ async fn main() {
     // The pool is reference-counted; this clone is for the teardown after
     // `axum::serve` returns, once `repo` has been moved into the router state.
     let repo: app::db::ActiveRepository = Arc::new(app::db::SqlRepository::new(pool.clone()));
-
 
     repo.seed_database().await.expect("Failed to seed database");
 
@@ -290,10 +304,11 @@ async fn main() {
 
     app::init_templates();
     app::register_server_fns();
-    
+    let mail_tasks = mail::spawn(repo.clone());
+
     let dist_dir = get_dist_dir();
     println!("Serving static files from: {}", dist_dir);
-    
+
     let cors = CorsLayer::new()
         .allow_origin(Any)
         .allow_methods(Any)
@@ -306,26 +321,28 @@ async fn main() {
         .route("/api/documents/:id", get(download_document))
         .layer(cors)
         .fallback_service(
-            ServeDir::new(&dist_dir)
-                .not_found_service(tower::service_fn(|_req| async {
-                    let dist_dir = get_dist_dir();
-                    let index_path = std::path::Path::new(&dist_dir).join("index.html");
-                    match tokio::fs::read_to_string(&index_path).await {
-                        Ok(content) => Ok(Response::builder()
-                            .status(StatusCode::OK)
-                            .header(header::CONTENT_TYPE, "text/html")
-                            .body(Body::from(content))
-                            .unwrap()),
-                        Err(_) => Ok(Response::builder()
-                            .status(StatusCode::NOT_FOUND)
-                            .body(Body::from("SPA index.html not found"))
-                            .unwrap()),
-                    }
-                }))
+            ServeDir::new(&dist_dir).not_found_service(tower::service_fn(|_req| async {
+                let dist_dir = get_dist_dir();
+                let index_path = std::path::Path::new(&dist_dir).join("index.html");
+                match tokio::fs::read_to_string(&index_path).await {
+                    Ok(content) => Ok(Response::builder()
+                        .status(StatusCode::OK)
+                        .header(header::CONTENT_TYPE, "text/html")
+                        .body(Body::from(content))
+                        .unwrap()),
+                    Err(_) => Ok(Response::builder()
+                        .status(StatusCode::NOT_FOUND)
+                        .body(Body::from("SPA index.html not found"))
+                        .unwrap()),
+                }
+            })),
         )
-        .layer(axum::middleware::from_fn_with_state(repo.clone(), auth_middleware))
+        .layer(axum::middleware::from_fn_with_state(
+            repo.clone(),
+            auth_middleware,
+        ))
         .with_state(repo);
-        
+
     let addr = SocketAddr::from(([0, 0, 0, 0], 8080));
     println!("Listening on http://{}", addr);
     let listener = tokio::net::TcpListener::bind(&addr).await.unwrap();
@@ -333,6 +350,10 @@ async fn main() {
         .with_graceful_shutdown(shutdown_signal())
         .await
         .unwrap();
+
+    for task in mail_tasks {
+        task.abort();
+    }
 
     // In-flight requests have drained; checkpoint the WAL back into the main
     // .db file and close cleanly, so the -wal/-shm sidecars are empty and the

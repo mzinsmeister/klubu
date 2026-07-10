@@ -1,8 +1,8 @@
 #[cfg(feature = "ssr")]
-use super::documents::{store_new_version, delete_document};
+use super::documents::{delete_document, store_new_version};
+use chrono::NaiveDate;
 use leptos::server_fn::codec::Json;
 use leptos::*;
-use chrono::NaiveDate;
 use shared::*;
 
 #[cfg(feature = "ssr")]
@@ -49,13 +49,13 @@ pub async fn delete_receipt(id: i64) -> Result<(), ServerFnError> {
     {
         let repo = use_context::<super::db::ActiveRepository>()
             .ok_or_else(|| ServerFnError::new("Repository not found"))?;
-        
+
         let receipt = repo.get_receipt(id).await?;
         if let Some(doc) = receipt.document {
             let doc_id_i32 = doc.id as i32;
             delete_document(&repo, doc_id_i32).await?;
         }
-        
+
         repo.delete_receipt(id).await
     }
     #[cfg(not(feature = "ssr"))]
@@ -71,28 +71,40 @@ pub async fn save_receipt(receipt: Receipt) -> Result<Receipt, ServerFnError> {
     {
         let repo = use_context::<super::db::ActiveRepository>()
             .ok_or_else(|| ServerFnError::new("Repository not found"))?;
-            
+
         let has_doc_data = receipt.document_data.is_some();
         let doc_data = receipt.document_data.clone();
-        
+
         let mut saved = repo.save_receipt(receipt).await?;
-        
+
         if has_doc_data {
             if let Some(doc) = doc_data {
-                let bytes = base64::Engine::decode(&base64::engine::general_purpose::STANDARD, &doc.data)
-                    .map_err(|e| ServerFnError::new(format!("Datei konnte nicht dekodiert werden: {e}")))?;
-                    
+                let bytes =
+                    base64::Engine::decode(&base64::engine::general_purpose::STANDARD, &doc.data)
+                        .map_err(|e| {
+                        ServerFnError::new(format!("Datei konnte nicht dekodiert werden: {e}"))
+                    })?;
+
                 let doc_id = saved.document.as_ref().map(|d| d.id as i32);
                 let prefix = format!("receipts/{}", saved.id.unwrap_or_default());
-                let saved_doc = store_new_version(&repo, doc_id, &doc.extension, &doc.media_type, &prefix, &bytes).await?;
-                
+                let saved_doc = store_new_version(
+                    &repo,
+                    doc_id,
+                    &doc.extension,
+                    &doc.media_type,
+                    &prefix,
+                    &bytes,
+                )
+                .await?;
+
                 let saved_doc_id = saved_doc.id as i32;
-                repo.update_receipt_document(saved.id.unwrap_or_default(), saved_doc_id).await?;
-                    
+                repo.update_receipt_document(saved.id.unwrap_or_default(), saved_doc_id)
+                    .await?;
+
                 saved.document = Some(saved_doc);
             }
         }
-        
+
         Ok(saved)
     }
     #[cfg(not(feature = "ssr"))]
@@ -132,7 +144,9 @@ pub async fn parse_einvoice(
         .map_err(|e| ServerFnError::new(format!("Auswertung abgebrochen: {e}")))?
         .map_err(ServerFnError::new)?;
 
-        let Some(parsed) = parsed else { return Ok(None) };
+        let Some(parsed) = parsed else {
+            return Ok(None);
+        };
 
         let mut prefill = parsed.prefill;
         let contacts = super::contacts::get_all_contacts().await?;
@@ -140,13 +154,20 @@ pub async fn parse_einvoice(
             .supplier_name
             .as_deref()
             .and_then(|n| super::ai::match_contact(n, &contacts));
-        if let (Some(name), None) = (prefill.supplier_name.as_deref(), prefill.supplier_contact.as_ref()) {
+        if let (Some(name), None) = (
+            prefill.supplier_name.as_deref(),
+            prefill.supplier_contact.as_ref(),
+        ) {
             prefill.warnings.push(format!(
                 "Kein Kontakt für Lieferant \"{name}\" gefunden. Bitte auswählen oder anlegen."
             ));
         }
 
-        let origin = if parsed.from_pdf { "eingebettet in PDF" } else { "XML-Datei" };
+        let origin = if parsed.from_pdf {
+            "eingebettet in PDF"
+        } else {
+            "XML-Datei"
+        };
         prefill.warnings.insert(
             0,
             format!("E-Rechnung erkannt: {} ({origin}). Die Werte stammen aus der Rechnung, nicht aus einer Schätzung.", parsed.syntax.label()),
@@ -176,7 +197,6 @@ pub async fn commit_receipt(id: i64) -> Result<(), ServerFnError> {
     }
 }
 
-
 #[server(name = GetCategories, prefix = "/api", endpoint = "get_categories")]
 pub async fn get_categories() -> Result<Vec<ReceiptItemCategory>, ServerFnError> {
     #[cfg(feature = "ssr")]
@@ -190,12 +210,17 @@ pub async fn get_categories() -> Result<Vec<ReceiptItemCategory>, ServerFnError>
 }
 
 #[server(name = AddReceiptPayment, prefix = "/api", endpoint = "add_receipt_payment")]
-pub async fn add_receipt_payment(receipt_id: i64, amount_cents: i64, date: NaiveDate) -> Result<(), ServerFnError> {
+pub async fn add_receipt_payment(
+    receipt_id: i64,
+    amount_cents: i64,
+    date: NaiveDate,
+) -> Result<(), ServerFnError> {
     #[cfg(feature = "ssr")]
     {
         let repo = use_context::<super::db::ActiveRepository>()
             .ok_or_else(|| ServerFnError::new("Repository not found"))?;
-        repo.add_receipt_payment(receipt_id, amount_cents, date).await
+        repo.add_receipt_payment(receipt_id, amount_cents, date)
+            .await
     }
     #[cfg(not(feature = "ssr"))]
     {

@@ -3,8 +3,23 @@
 <html lang="de">
   <head>
     <meta charset="utf-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
     <title>Klubu</title>
+    <meta name="theme-color" content="#08060f">
+    <meta name="application-name" content="Klubu">
+    <meta name="mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="apple-mobile-web-app-title" content="Klubu">
+    <link rel="manifest" href="./manifest.webmanifest">
+    <link rel="icon" type="image/svg+xml" href="./icon.svg">
+    <link rel="apple-touch-icon" sizes="180x180" href="./icon-180.png">
+    <link data-trunk rel="copy-file" href="manifest.webmanifest">
+    <link data-trunk rel="copy-file" href="sw.js">
+    <link data-trunk rel="copy-file" href="icon.svg">
+    <link data-trunk rel="copy-file" href="icon-180.png">
+    <link data-trunk rel="copy-file" href="icon-192.png">
+    <link data-trunk rel="copy-file" href="icon-512.png">
     <!-- Google Fonts Outfit -->
     <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&display=swap" rel="stylesheet">
     <!-- Material Design Icons CDN -->
@@ -39,6 +54,7 @@
         min-height: 100vh;
         line-height: 1.5;
         -webkit-font-smoothing: antialiased;
+        padding-bottom: env(safe-area-inset-bottom);
       }
 
       h1, h2, h3, h4, h5, h6, .title, .subtitle {
@@ -105,6 +121,12 @@
         max-height: calc(100vh - 12rem);
         overflow-y: auto;
         overscroll-behavior: contain;
+      }
+      .columns.is-split.customer-fullscreen {
+        grid-template-columns: minmax(0, 1fr);
+      }
+      .columns.is-split.customer-fullscreen > .column:first-child {
+        display: none;
       }
       @media (max-width: 1100px) {
         .columns.is-split {
@@ -555,7 +577,7 @@
       .app-main {
         flex: 1 1 auto;
         min-width: 0; /* let children shrink instead of overflowing the shell */
-        padding: 2rem 2.25rem 4rem;
+        padding: 2rem 2.25rem calc(4rem + env(safe-area-inset-bottom));
       }
 
       .app-brand {
@@ -882,6 +904,27 @@
       }
       .empty-state .icon { font-size: 2.5rem; opacity: 0.5; }
 
+      /* Mail client */
+      .email-layout .column { min-width: 0; }
+      .email-list-item { overflow: hidden; }
+      .email-list-item .level { gap: 0.5rem; }
+      .email-list-item .level > * { min-width: 0; }
+      .email-list-item .level span:first-child { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+      .email-preview { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+      .email-body {
+        background: rgba(10, 8, 20, 0.45);
+        border: 1px solid var(--border);
+        border-radius: 8px;
+        color: var(--text);
+        font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+        min-height: 260px;
+        overflow: auto;
+        padding: 1rem;
+        white-space: pre-wrap;
+        word-break: break-word;
+      }
+      .email-compose-body { min-height: 180px; }
+
       .scroll-list { max-height: 68vh; overflow-y: auto; padding-right: 0.25rem; }
       .scroll-list::-webkit-scrollbar { width: 8px; }
       .scroll-list::-webkit-scrollbar-thumb {
@@ -946,9 +989,371 @@
       .text-link {
         color: #8c67ef !important;
       }
+
+      /* Document management workspace */
+      .dms-page {
+        max-width: 1480px;
+        padding-bottom: 2rem;
+      }
+      .dms-header {
+        display: flex;
+        align-items: flex-end;
+        justify-content: space-between;
+        gap: 1.5rem;
+        margin-bottom: 1.75rem;
+        padding: 0.5rem 0.25rem;
+      }
+      .dms-header .title {
+        margin: 0.15rem 0 0.35rem;
+        letter-spacing: -0.03em;
+      }
+      .dms-eyebrow {
+        color: #a995f7;
+        font-size: 0.68rem;
+        font-weight: 700;
+        letter-spacing: 0.16em;
+        margin: 0;
+      }
+      .dms-description {
+        color: var(--text-muted);
+        font-size: 0.95rem;
+        margin: 0;
+      }
+      .dms-header-status {
+        align-items: center;
+        background: rgba(76, 211, 151, 0.09);
+        border: 1px solid rgba(76, 211, 151, 0.2);
+        border-radius: 999px;
+        color: #9bf0c7;
+        display: inline-flex;
+        font-size: 0.78rem;
+        gap: 0.5rem;
+        padding: 0.5rem 0.85rem;
+        white-space: nowrap;
+      }
+      .dms-status-dot {
+        background: #4cd397;
+        border-radius: 50%;
+        box-shadow: 0 0 0 4px rgba(76, 211, 151, 0.12);
+        height: 0.45rem;
+        width: 0.45rem;
+      }
+
+      /* Unified DMS Grid Layout */
+      .dms-workspace-grid {
+        display: grid;
+        grid-template-columns: minmax(20rem, 1fr) minmax(0, 1.8fr);
+        gap: 1.5rem;
+        margin: 0;
+      }
+
+      /* Left Sidebar Scroll Area */
+      .dms-sidebar {
+        display: flex;
+        flex-direction: column;
+        gap: 1.25rem;
+        max-height: calc(100vh - 12rem);
+        overflow-y: auto;
+        padding: 0 0.25rem 0.5rem 0;
+      }
+
+      /* Right Main Scroll Area */
+      .dms-main {
+        max-height: calc(100vh - 12rem);
+        overflow-y: auto;
+        padding: 0 0.25rem 0.5rem 0;
+      }
+
+      /* Beautiful Glassmorphic Cards */
+      .dms-upload-card,
+      .dms-filter-card,
+      .dms-list-card,
+      .dms-details-panel {
+        background: linear-gradient(145deg, rgba(29, 24, 50, 0.65), rgba(16, 13, 30, 0.75));
+        backdrop-filter: blur(12px);
+        -webkit-backdrop-filter: blur(12px);
+        border: 1px solid rgba(140, 103, 239, 0.15);
+        border-radius: 16px;
+        box-shadow: 0 10px 30px rgba(0, 0, 0, 0.25);
+        padding: 1.25rem;
+      }
+
+      /* Upload Dropzone Styling */
+      .dms-upload-dropzone {
+        border: 2px dashed rgba(140, 103, 239, 0.3);
+        border-radius: 12px;
+        padding: 1.5rem 1rem;
+        text-align: center;
+        cursor: pointer;
+        transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+        background: rgba(140, 103, 239, 0.02);
+      }
+      .dms-upload-dropzone:hover {
+        border-color: var(--accent);
+        background: rgba(140, 103, 239, 0.06);
+        transform: scale(1.01);
+      }
+      .dms-upload-label {
+        cursor: pointer;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+      }
+      .dms-upload-icon {
+        font-size: 2.5rem;
+        color: #c5b7ff;
+        margin-bottom: 0.5rem;
+        transition: transform 0.3s ease, color 0.3s ease;
+      }
+      .dms-upload-dropzone:hover .dms-upload-icon {
+        transform: translateY(-3px);
+        color: #ffffff;
+      }
+      .dms-upload-text {
+        font-size: 0.85rem;
+        font-weight: 600;
+        color: var(--text);
+        margin-bottom: 0.2rem;
+      }
+      .dms-upload-subtext {
+        font-size: 0.7rem;
+        color: var(--text-muted);
+      }
+
+      /* Selected Upload File Box */
+      .dms-selected-file {
+        background: rgba(140, 103, 239, 0.08);
+        border: 1px solid rgba(140, 103, 239, 0.25);
+        border-radius: 10px;
+        padding: 0.85rem;
+        animation: slideIn 0.3s ease;
+      }
+      @keyframes slideIn {
+        from { opacity: 0; transform: translateY(5px); }
+        to { opacity: 1; transform: translateY(0); }
+      }
+      .file-info-row {
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+        min-width: 0;
+      }
+      .file-name-text {
+        font-size: 0.8rem;
+        font-weight: 500;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        color: #ffffff;
+      }
+
+      /* Compact Inline Date Filters */
+      .dms-filter-card {
+        display: flex;
+        flex-direction: column;
+        gap: 0.75rem;
+      }
+      .dms-filter-card .field {
+        margin-bottom: 0;
+      }
+
+      /* List Area */
+      .dms-list-scroll {
+        max-height: 40vh;
+        overflow-y: auto;
+        padding-right: 0.25rem;
+      }
+
+      /* Premium List Document Cards */
+      .dms-document-item {
+        background: rgba(255, 255, 255, 0.02);
+        border: 1px solid rgba(255, 255, 255, 0.04);
+        border-radius: 10px;
+        cursor: pointer;
+        transition: all 0.2s ease;
+        padding: 0.85rem !important;
+      }
+      .dms-document-item:hover {
+        background: rgba(140, 103, 239, 0.06);
+        border-color: rgba(140, 103, 239, 0.2);
+        transform: translateX(3px);
+      }
+      .dms-document-item.is-active {
+        background: rgba(140, 103, 239, 0.12);
+        border-color: var(--accent);
+        box-shadow: 0 0 14px rgba(140, 103, 239, 0.2);
+      }
+      .dms-document-item.is-deleted {
+        opacity: 0.55;
+        border-left: 3px solid #ff3860;
+      }
+      .document-title {
+        font-size: 0.85rem;
+        font-weight: 600;
+        color: #ffffff;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        display: flex;
+        align-items: center;
+        gap: 0.35rem;
+      }
+
+      /* Details Panel */
+      .dms-details-panel {
+        display: flex;
+        flex-direction: column;
+        gap: 1.25rem;
+      }
+      .dms-details-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: flex-start;
+        border-bottom: 1px solid rgba(140, 103, 239, 0.15);
+        padding-bottom: 0.85rem;
+      }
+      .details-title-area {
+        display: flex;
+        align-items: center;
+        gap: 0.75rem;
+        min-width: 0;
+      }
+      .details-file-icon {
+        font-size: 2.25rem;
+        color: #c5b7ff;
+      }
+
+      /* Boxes for Metadata & Actions */
+      .dms-box-title {
+        font-size: 0.72rem;
+        font-weight: 700;
+        text-transform: uppercase;
+        letter-spacing: 0.08em;
+        color: var(--text-muted);
+        margin-bottom: 0.5rem;
+      }
+      .dms-links-box,
+      .dms-action-box {
+        background: rgba(255, 255, 255, 0.01);
+        border: 1px solid rgba(140, 103, 239, 0.1);
+        border-radius: 12px;
+        padding: 0.85rem;
+      }
+
+      /* Timeline / Milestones for Version History */
+      .dms-history-section {
+        margin-top: 0.5rem;
+      }
+      .dms-timeline {
+        display: flex;
+        flex-direction: column;
+        gap: 1rem;
+        position: relative;
+        padding-left: 1.25rem;
+        margin-top: 0.75rem;
+      }
+      .dms-timeline::before {
+        content: '';
+        position: absolute;
+        left: 4px;
+        top: 6px;
+        bottom: 6px;
+        width: 2px;
+        background: rgba(140, 103, 239, 0.18);
+      }
+      .dms-timeline-item {
+        position: relative;
+      }
+      .dms-timeline-marker {
+        position: absolute;
+        left: -1.25rem;
+        top: 14px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        width: 10px;
+        height: 10px;
+      }
+      .marker-dot {
+        width: 8px;
+        height: 8px;
+        background: var(--accent);
+        border-radius: 50%;
+        box-shadow: 0 0 0 3px rgba(140, 103, 239, 0.25);
+      }
+      .dms-timeline-content {
+        background: rgba(255, 255, 255, 0.02);
+        border: 1px solid rgba(255, 255, 255, 0.04);
+        border-radius: 10px;
+        padding: 0.75rem 1rem;
+        transition: all 0.2s ease;
+      }
+      .dms-timeline-content:hover {
+        background: rgba(140, 103, 239, 0.04);
+        border-color: rgba(140, 103, 239, 0.15);
+      }
+
+      /* Empty State Preview Pane */
+      .dms-empty-state-card {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        padding: 4rem 2rem;
+        background: linear-gradient(145deg, rgba(29, 24, 50, 0.35), rgba(16, 13, 30, 0.45));
+        border: 1px dashed rgba(140, 103, 239, 0.2);
+        border-radius: 16px;
+        text-align: center;
+        min-height: calc(100vh - 12rem);
+      }
+      .dms-empty-icon {
+        font-size: 3.5rem;
+        color: rgba(140, 103, 239, 0.3);
+        margin-bottom: 1.25rem;
+        animation: dmsFloat 4s ease-in-out infinite;
+        display: inline-block;
+      }
+      @keyframes dmsFloat {
+        0%, 100% { transform: translateY(0); }
+        50% { transform: translateY(-6px); }
+      }
+      .dms-empty-state-card h3 {
+        font-size: 1.15rem;
+        font-weight: 600;
+        margin-bottom: 0.5rem;
+        color: #ffffff !important;
+      }
+      .dms-empty-state-card p {
+        font-size: 0.85rem;
+        color: var(--text-muted);
+        max-width: 320px;
+        line-height: 1.6;
+      }
+
+      /* Responsive Rules */
+      @media (max-width: 1024px) {
+        .dms-workspace-grid {
+          grid-template-columns: 1fr;
+        }
+        .dms-sidebar, .dms-main {
+          max-height: none;
+          overflow: visible;
+        }
+        .dms-empty-state-card {
+          min-height: auto;
+          padding: 2.5rem 1.5rem;
+        }
+      }
     </style>
   </head>
   <body>
     <!-- Trunk will inject the WASM binary and script here -->
+    <script>
+      if ('serviceWorker' in navigator) {
+        window.addEventListener('load', function () {
+          navigator.serviceWorker.register('./sw.js', { scope: './' }).catch(function () {});
+        });
+      }
+    </script>
   </body>
 </html>

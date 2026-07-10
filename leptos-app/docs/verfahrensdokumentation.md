@@ -1,10 +1,10 @@
 # Verfahrensdokumentation nach GoBD
-## Software: Klubu - Vereins- und Rechnungsverwaltung
+## Software: Klubu - Rechnungs- und Belegverwaltung für Kleinunternehmer
 
 ---
 
 ### 1. Allgemeines und Verwendungszweck
-Klubu ist eine Webanwendung zur Verwaltung von Kontakten, Angeboten, Rechnungen und Belegen für kleine Vereine und Kleinstunternehmer. Die Software unterstützt den Anwender bei der ordnungsgemäßen Buchführung und Belegverwaltung gemäß den Grundsätzen zur ordnungsmäßigen Führung und Aufbewahrung von Büchern, Aufzeichnungen und Unterlagen in elektronischer Form sowie zum Datenzugriff (**GoBD**).
+Klubu ist eine Webanwendung zur Verwaltung von Kontakten, Angeboten, Rechnungen und Belegen für Kleinunternehmer. Die Software unterstützt den Anwender bei der ordnungsgemäßen Buchführung und Belegverwaltung gemäß den Grundsätzen zur ordnungsmäßigen Führung und Aufbewahrung von Büchern, Aufzeichnungen und Unterlagen in elektronischer Form sowie zum Datenzugriff (**GoBD**).
 
 ---
 

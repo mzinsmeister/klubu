@@ -9,7 +9,8 @@ fn StatCard(
     #[prop(into)] value: String,
     #[prop(optional, into)] sub: String,
     /// `""`, `"is-positive"` or `"is-negative"`.
-    #[prop(optional, into)] tone: String,
+    #[prop(optional, into)]
+    tone: String,
 ) -> impl IntoView {
     let value_class = if tone.is_empty() {
         "stat-value".to_string()
@@ -54,7 +55,11 @@ pub fn DashboardPage() -> impl IntoView {
 #[component]
 fn StatsView(stats: DashboardStats) -> impl IntoView {
     let result = stats.result_cents();
-    let result_tone = if result < 0 { "is-negative" } else { "is-positive" };
+    let result_tone = if result < 0 {
+        "is-negative"
+    } else {
+        "is-positive"
+    };
 
     let open_sub = if stats.open_invoice_count > 0 {
         format!("{} offen", format_euro(stats.open_invoice_cents))
