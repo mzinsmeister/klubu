@@ -91,54 +91,34 @@ To run and build this application, you need:
    ```bash
    rustup target add wasm32-unknown-unknown
    ```
-4. **PostgreSQL**: A running PostgreSQL database.
-   - Default connection URL: `postgres://klubu:klubu-test@localhost:5433/klubu`
+4. **A database** — chosen at runtime by the `DATABASE_URL` scheme; no database is needed to compile:
+   - **SQLite** (default, zero setup): `sqlite://klubu.db?mode=rwc` — the file is created on first start, in WAL mode with `synchronous = FULL`.
+   - **PostgreSQL**: e.g. `postgres://klubu:klubu-test@localhost:5433/klubu`
 5. **Ollama** — only if you want the [local-AI receipt prefill](#local-ai-receipt-prefill). Not needed otherwise.
-
-**You do not need a database to compile.** See [Compiling without a database](#compiling-without-a-database-sqlx-offline-mode).
 
 ---
 
-## Compiling without a database (sqlx offline mode)
+## Choosing and switching the database
 
-`sqlx::query!` verifies every SQL statement against a real schema *at compile time*.
-Left to its own devices that means you cannot build without a running, already-migrated
-Postgres — which breaks fresh clones, CI and `docker build`, and is circular besides,
-since the migrations only run when the server starts.
+Both drivers are compiled into the one server binary (via sqlx's `Any` driver); the
+`DATABASE_URL` scheme picks the backend at runtime. Migrations are applied at
+**startup** by `sqlx::migrate!()` in `backend/src/main.rs` from the dialect-matching
+directory (`backend/migrations` / `backend/migrations-sqlite` — same file names, same
+versions, kept in lockstep).
 
-The standard sqlx answer is to commit the query metadata instead:
-
-- `.sqlx/` holds one JSON file per query, describing its parameters and result columns.
-- `.cargo/config.toml` sets `SQLX_OFFLINE = "true"`, so builds read that metadata and
-  never open a connection.
-
-So `cargo build` works on a fresh clone with no database and no `DATABASE_URL`.
-
-Migrations are applied at **startup** by `sqlx::migrate!()` in `backend/src/main.rs`.
-That is the right place for them: a compiler should not be mutating a database, and
-production databases should not be migrated as a side effect of a build.
-
-### After you change an SQL query
-
-The build will fail with a clear message (`no cached data for this query, run cargo sqlx prepare`).
-Refresh the metadata against a running database and commit the result:
+To move an existing installation between the two (either direction), stop the server
+and run:
 
 ```bash
-cargo install sqlx-cli --no-default-features --features postgres,rustls
-sqlx migrate run --source backend/migrations   # if the schema changed
-cargo sqlx prepare --workspace -- --package backend
+DATABASE_URL=sqlite://klubu.db cargo run --package backend -- migrate-db --to postgres://klubu:klubu-test@localhost:5433/klubu
 ```
 
-In CI, assert that nobody forgot:
-
-```bash
-cargo sqlx prepare --check --workspace -- --package backend
-```
-
-> Why not run the migrations from `build.rs`? Because Cargo caches build-script runs
-> (so they would silently not re-run), `rust-analyzer` executes build scripts (so your
-> editor would quietly mutate your dev database), and it would *still* require a live
-> database at build time — solving nothing for CI or Docker.
+The copy is catalog-driven (tables, columns, foreign-key order all come from the
+database's own metadata, so it never drifts from the migrations) and moves raw rows —
+ids, `committed_timestamp`s and the append-only audit journal survive unchanged, as
+GoBD requires. The target must be empty; the migration refuses anything else. The
+document archive (`document_storage/`) lives in the filesystem and simply stays where
+it is.
 
 ---
 
@@ -146,7 +126,8 @@ cargo sqlx prepare --check --workspace -- --package backend
 
 ### 1. Set Up the Database
 
-Ensure PostgreSQL is running and you have created a database. If you use Docker, you can spin one up quickly:
+Nothing to do for the default SQLite backend — `klubu.db` is created on first start.
+For PostgreSQL instead, spin one up (e.g. with Docker) and point `DATABASE_URL` at it:
 ```bash
 docker run --name klubu-db -e POSTGRES_USER=klubu -e POSTGRES_PASSWORD=klubu-test -e POSTGRES_DB=klubu -p 5433:5432 -d postgres:latest
 ```
@@ -156,9 +137,11 @@ docker run --name klubu-db -e POSTGRES_USER=klubu -e POSTGRES_PASSWORD=klubu-tes
 The backend listens on `http://localhost:8080`, so start it first in one terminal from the `leptos-app` root directory:
 
 ```bash
+cargo run --package backend                    # SQLite (default): ./klubu.db
+# or
 DATABASE_URL=postgres://klubu:klubu-test@localhost:5433/klubu cargo run --package backend
 ```
-*Note: The backend automatically runs database migrations from `backend/migrations` and seeds default receipt categories on startup.*
+*Note: The backend automatically runs the dialect-matching database migrations and seeds default receipt categories on startup.*
 
 ### 3. Start the Frontend Dev Server
 

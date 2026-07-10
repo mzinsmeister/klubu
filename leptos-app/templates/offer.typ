@@ -102,6 +102,13 @@
 #text(12pt, weight: "bold")[#if offer.subject != none [#offer.subject] else [Angebot]]
 #v(0.5cm)
 
+// Intro text above the table. `header_typst` is Markdown that the server has
+// already converted to Typst markup, with all user text escaped.
+#if offer.at("header_typst", default: none) != none [
+  #eval(offer.header_typst, mode: "markup")
+  #v(0.4cm)
+]
+
 // Items table
 #table(
   columns: (auto, 1fr, auto, auto, auto, auto),
@@ -128,8 +135,11 @@
 ]
 
 #v(0.5cm)
-#if offer.footer_html != none [
-  #align(center)[#offer.footer_html]
+// Closing text below the table. Markdown, so it can carry headings and lists.
+#if offer.at("footer_typst", default: none) != none [
+  #eval(offer.footer_typst, mode: "markup")
+] else if offer.footer != none [
+  #align(center)[#offer.footer]
 ]
 
 #v(1.5cm)

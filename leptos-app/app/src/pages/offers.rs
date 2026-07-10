@@ -1,13 +1,14 @@
 use leptos::*;
 
+use crate::components::{EmptyState, MoneyInput, QuantityInput, TextFieldHint};
+use crate::server::{
+    commit_offer, create_offer_revision, delete_offer, export_offer_pdf, get_all_contacts,
+    get_offer, get_offers, save_offer,
+};
 use chrono::{NaiveDate, Utc};
 use shared::*;
-use crate::components::{EmptyState, MoneyInput, QuantityInput};
-use crate::server::{
-    get_contacts, get_offers, get_offer, save_offer,
-    commit_offer, delete_offer, export_offer_pdf,
-    create_offer_revision,
-};
+
+const OFFER_PAGE_SIZE: u32 = 50;
 
 #[component]
 fn OfferEditor(
@@ -26,10 +27,14 @@ fn OfferEditor(
         String::new()
     };
 
-    let (offer_date, set_offer_date) = create_signal(off.offer_date.map(|d| d.format("%Y-%m-%d").to_string()).unwrap_or_default());
+    let (offer_date, set_offer_date) = create_signal(
+        off.offer_date
+            .map(|d| d.format("%Y-%m-%d").to_string())
+            .unwrap_or_default(),
+    );
     let (subject, set_subject) = create_signal(off.subject.clone().unwrap_or_default());
-    let (header, set_header) = create_signal(off.header_html.clone().unwrap_or_default());
-    let (footer, set_footer) = create_signal(off.footer_html.clone().unwrap_or_default());
+    let (header, set_header) = create_signal(off.header.clone().unwrap_or_default());
+    let (footer, set_footer) = create_signal(off.footer.clone().unwrap_or_default());
     let (customer_contact, set_customer_contact) = create_signal(off.customer_contact.clone());
     let (document, set_document) = create_signal(off.document.clone());
     let (items_list, set_items_list) = create_signal(off.items.clone());
@@ -47,14 +52,22 @@ fn OfferEditor(
     });
 
     let (recipient_name, set_recipient_name) = create_signal(recipient.name.clone());
-    let (recipient_first_name, set_recipient_first_name) = create_signal(recipient.first_name.clone().unwrap_or_default());
-    let (recipient_title, set_recipient_title) = create_signal(recipient.title.clone().unwrap_or_default());
-    let (recipient_form_of_address, set_recipient_form_of_address) = create_signal(recipient.form_of_address.clone().unwrap_or_default());
-    let (recipient_street, set_recipient_street) = create_signal(recipient.street.clone().unwrap_or_default());
-    let (recipient_house_number, set_recipient_house_number) = create_signal(recipient.house_number.clone().unwrap_or_default());
-    let (recipient_zip_code, set_recipient_zip_code) = create_signal(recipient.zip_code.clone().unwrap_or_default());
-    let (recipient_city, set_recipient_city) = create_signal(recipient.city.clone().unwrap_or_default());
-    let (recipient_country, set_recipient_country) = create_signal(recipient.country.clone().unwrap_or_default());
+    let (recipient_first_name, set_recipient_first_name) =
+        create_signal(recipient.first_name.clone().unwrap_or_default());
+    let (recipient_title, set_recipient_title) =
+        create_signal(recipient.title.clone().unwrap_or_default());
+    let (recipient_form_of_address, set_recipient_form_of_address) =
+        create_signal(recipient.form_of_address.clone().unwrap_or_default());
+    let (recipient_street, set_recipient_street) =
+        create_signal(recipient.street.clone().unwrap_or_default());
+    let (recipient_house_number, set_recipient_house_number) =
+        create_signal(recipient.house_number.clone().unwrap_or_default());
+    let (recipient_zip_code, set_recipient_zip_code) =
+        create_signal(recipient.zip_code.clone().unwrap_or_default());
+    let (recipient_city, set_recipient_city) =
+        create_signal(recipient.city.clone().unwrap_or_default());
+    let (recipient_country, set_recipient_country) =
+        create_signal(recipient.country.clone().unwrap_or_default());
 
     let (item_desc, set_item_desc) = create_signal(String::new());
     let item_qty = create_rw_signal(1.0f64);
@@ -67,7 +80,7 @@ fn OfferEditor(
                 Ok(saved) => {
                     on_change.call(());
                     set_selected_offer.set(Some(saved));
-                },
+                }
                 Err(e) => logging::log!("Error saving offer: {:?}", e),
             }
         }
@@ -82,7 +95,7 @@ fn OfferEditor(
                     if let Ok(full_off) = get_offer(id).await {
                         set_selected_offer.set(Some(full_off));
                     }
-                },
+                }
                 Err(e) => logging::log!("Error finalizing offer: {:?}", e),
             }
         }
@@ -95,7 +108,7 @@ fn OfferEditor(
                 Ok(_) => {
                     on_change.call(());
                     set_selected_offer.set(None);
-                },
+                }
                 Err(e) => logging::log!("Error deleting offer: {:?}", e),
             }
         }
@@ -203,6 +216,7 @@ fn OfferEditor(
             <div class="field">
                 <label class="label">"Einleitungstext"</label>
                 <div class="control"><textarea class="textarea" prop:value=header on:input=move |ev| set_header.set(event_target_value(&ev)) prop:disabled=is_committed></textarea></div>
+                <TextFieldHint />
             </div>
 
             {move || if !is_committed {
@@ -269,6 +283,7 @@ fn OfferEditor(
             <div class="field">
                 <label class="label">"Schlusstext"</label>
                 <div class="control"><textarea class="textarea" prop:value=footer on:input=move |ev| set_footer.set(event_target_value(&ev)) prop:disabled=is_committed></textarea></div>
+                <TextFieldHint />
             </div>
 
             <div class="field is-grouped mt-5">
@@ -279,8 +294,8 @@ fn OfferEditor(
                                 let mut save_off = off.clone();
                                 save_off.offer_date = NaiveDate::parse_from_str(&offer_date.get(), "%Y-%m-%d").ok();
                                 save_off.subject = Some(subject.get());
-                                save_off.header_html = Some(header.get());
-                                save_off.footer_html = Some(footer.get());
+                                save_off.header = Some(header.get());
+                                save_off.footer = Some(footer.get());
                                 save_off.items = items_list.get();
                                 save_off.customer_contact = customer_contact.get();
                                 save_off.recipient = Some(Recipient {
@@ -334,114 +349,240 @@ pub fn OffersPage() -> impl IntoView {
     let (offers, set_offers) = create_signal(Vec::<OfferListItem>::new());
     let (selected_offer, set_selected_offer) = create_signal(Option::<Offer>::None);
     let (contacts, set_contacts) = create_signal(Vec::<Contact>::new());
+    let (from_date_filter, set_from_date_filter) = create_signal(String::new());
+    let (to_date_filter, set_to_date_filter) = create_signal(String::new());
+    let (has_more_offers, set_has_more_offers) = create_signal(false);
+    let (list_generation, set_list_generation) = create_signal(0_u64);
 
-    let load_offers = create_action(move |_| async move {
-        match get_offers().await {
-            Ok(list) => set_offers.set(list),
-            Err(e) => logging::log!("Error fetching offers: {:?}", e),
-        }
-    });
+    let load_offers = create_action(
+        move |(generation, offset, from, to): &(u64, u32, String, String)| {
+            let generation = *generation;
+            let offset = *offset;
+            let from = from.clone();
+            let to = to.clone();
+            async move {
+                let from_date = NaiveDate::parse_from_str(&from, "%Y-%m-%d").ok();
+                let to_date = NaiveDate::parse_from_str(&to, "%Y-%m-%d").ok();
+                match get_offers(offset, OFFER_PAGE_SIZE, from_date, to_date).await {
+                    Ok(page) => {
+                        if list_generation.get_untracked() != generation
+                            || from_date_filter.get_untracked() != from
+                            || to_date_filter.get_untracked() != to
+                        {
+                            return;
+                        }
+
+                        if offset == 0 {
+                            set_offers.set(page.items);
+                        } else if offers.get_untracked().len() as u32 == offset {
+                            set_offers.update(|items| items.extend(page.items));
+                        } else {
+                            return;
+                        }
+                        set_has_more_offers.set(page.has_more);
+                    }
+                    Err(e) => logging::log!("Error fetching offers: {:?}", e),
+                }
+            }
+        },
+    );
 
     let load_contacts = create_action(move |_| async move {
-        match get_contacts().await {
+        match get_all_contacts().await {
             Ok(list) => set_contacts.set(list),
             Err(e) => logging::log!("Error fetching contacts: {:?}", e),
         }
     });
 
-    load_offers.dispatch(());
+    load_offers.dispatch((0, 0, String::new(), String::new()));
     load_contacts.dispatch(());
 
     create_effect(move |_| {
-        logging::log!("DEBUG: selected_offer is now {:?}", selected_offer.get().map(|o| o.id));
+        logging::log!(
+            "DEBUG: selected_offer is now {:?}",
+            selected_offer.get().map(|o| o.id)
+        );
     });
 
-    view! {
-        <div class="container">
+    // Full-screen editor: the list is only useful for picking, not while editing.
+    let list_view = move || {
+        view! {
             <div class="level">
                 <div class="level-left"><h1 class="title">"Angebote"</h1></div>
-                <div class="level-right">
-                    <button class="button is-link" on:click=move |_| {
-                        set_selected_offer.set(Some(Offer {
-                            id: None,
-                            revision: None,
-                            offer_number: None,
-                            title: Some("Angebot".to_string()),
-                            customer_contact: None,
-                            offer_date: Some(Utc::now().naive_utc().date()),
-                            valid_until_date: None,
-                            recipient: Some(Recipient {
-                                form_of_address: Some("Herr".to_string()),
-                                title: None,
-                                name: "Name".to_string(),
-                                first_name: Some("Vorname".to_string()),
-                                street: Some("Musterstraße".to_string()),
-                                zip_code: Some("12345".to_string()),
-                                city: Some("Stadt".to_string()),
-                                house_number: Some("1".to_string()),
-                                country: Some("Deutschland".to_string()),
-                            }),
-                            items: vec![],
-                            created_timestamp: None,
-                            committed_timestamp: None,
-                            subject: Some("Angebot".to_string()),
-                            header_html: Some("Gerne bieten wir Ihnen Folgendes an:".to_string()),
-                            footer_html: Some("Das Angebot ist unverbindlich.".to_string()),
-                            document: None,
-                        }));
-                    }>{"Neues Angebot"}</button>
-                </div>
+                    <div class="level-right">
+                        <button class="button is-link" on:click=move |_| {
+                            set_selected_offer.set(Some(Offer {
+                                id: None,
+                                revision: None,
+                                offer_number: None,
+                                title: Some("Angebot".to_string()),
+                                customer_contact: None,
+                                offer_date: Some(Utc::now().naive_utc().date()),
+                                valid_until_date: None,
+                                recipient: Some(Recipient {
+                                    form_of_address: Some("Herr".to_string()),
+                                    title: None,
+                                    name: "Name".to_string(),
+                                    first_name: Some("Vorname".to_string()),
+                                    street: Some("Musterstraße".to_string()),
+                                    zip_code: Some("12345".to_string()),
+                                    city: Some("Stadt".to_string()),
+                                    house_number: Some("1".to_string()),
+                                    country: Some("Deutschland".to_string()),
+                                }),
+                                items: vec![],
+                                created_timestamp: None,
+                                committed_timestamp: None,
+                                subject: Some("Angebot".to_string()),
+                                header: Some("Gerne bieten wir Ihnen Folgendes an:".to_string()),
+                                footer: Some("Das Angebot ist unverbindlich.".to_string()),
+                                document: None,
+                            }));
+                        }>{"Neues Angebot"}</button>
+                    </div>
             </div>
 
-            <div class="columns is-split">
-                <div class="column is-5">
-                    <div class="box">
-                        <div>
-                            {move || offers.get().into_iter().map(|off| {
-                                let contact_name = off.customer_contact.as_ref().map(Contact::display_name).unwrap_or_else(|| "Gast".to_string());
-                                let status_badge = if !off.committed {
-                                    view! { <span class="tag is-warning ml-2">"ENTWURF"</span> }.into_view()
-                                } else {
-                                    view! { <span class="tag is-success ml-2">"Finalisiert"</span> }.into_view()
-                                };
-                                let display_title = if off.committed {
-                                    if let Some(num) = off.offer_number {
-                                        format!("Angebot #{} - {}", num, off.title.clone().unwrap_or_else(|| "Angebot".to_string()))
-                                    } else {
-                                        off.title.clone().unwrap_or_else(|| "Angebot".to_string())
-                                    }
-                                } else {
-                                    format!("ENTWURF - {}", off.title.clone().unwrap_or_else(|| "Angebot".to_string()))
-                                };
-                                view! {
-                                    <div class="box list-item p-3 mb-2" on:click=move |_| {
-                                        let id = off.id;
-                                        spawn_local(async move {
-                                            if let Ok(full_off) = get_offer(id).await {
-                                                set_selected_offer.set(Some(full_off));
-                                            }
-                                        });
-                                    }>
-                                        <div class="has-text-weight-bold">{display_title} {status_badge} " (Rev: " {off.revision} ")"</div>
-                                        <div class="is-size-7 text-muted">{contact_name}</div>
-                                    </div>
+            <div class="box">
+                <div class="field-row mb-4">
+                    <div class="field">
+                        <label class="label is-small">"Von"</label>
+                        <div class="control">
+                            <input
+                                class="input"
+                                type="date"
+                                prop:value=from_date_filter
+                                on:input=move |ev| {
+                                    let from = event_target_value(&ev);
+                                    let generation = list_generation.get_untracked().wrapping_add(1);
+                                    set_list_generation.set(generation);
+                                    set_from_date_filter.set(from.clone());
+                                    set_offers.set(Vec::new());
+                                    set_has_more_offers.set(false);
+                                    load_offers.dispatch((
+                                        generation,
+                                        0,
+                                        from,
+                                        to_date_filter.get_untracked(),
+                                    ));
                                 }
-                            }).collect::<Vec<_>>()}
+                            />
+                        </div>
+                    </div>
+                    <div class="field">
+                        <label class="label is-small">"Bis (einschließlich)"</label>
+                        <div class="control">
+                            <input
+                                class="input"
+                                type="date"
+                                prop:value=to_date_filter
+                                on:input=move |ev| {
+                                    let to = event_target_value(&ev);
+                                    let generation = list_generation.get_untracked().wrapping_add(1);
+                                    set_list_generation.set(generation);
+                                    set_to_date_filter.set(to.clone());
+                                    set_offers.set(Vec::new());
+                                    set_has_more_offers.set(false);
+                                    load_offers.dispatch((
+                                        generation,
+                                        0,
+                                        from_date_filter.get_untracked(),
+                                        to,
+                                    ));
+                                }
+                            />
                         </div>
                     </div>
                 </div>
-
-                <div class="column">
-                    {move || match selected_offer.get() {
-                        None => view! {
-                            <EmptyState icon="file-sign" text="Wählen Sie ein Angebot aus." />
-                        }.into_view(),
-                        Some(off) => view! {
-                            <OfferEditor off=off contacts=contacts on_change=Callback::new(move |_| load_offers.dispatch(())) set_selected_offer=set_selected_offer />
-                        }.into_view(),
-                    }}
+                <div>
+                                {move || offers.get().into_iter().map(|off| {
+                                    let contact_name = off.customer_contact.as_ref().map(Contact::display_name).unwrap_or_else(|| "Gast".to_string());
+                                    let status_badge = if !off.committed {
+                                        view! { <span class="tag is-warning ml-2">"ENTWURF"</span> }.into_view()
+                                    } else {
+                                        view! { <span class="tag is-success ml-2">"Finalisiert"</span> }.into_view()
+                                    };
+                                    let display_title = if off.committed {
+                                        if let Some(num) = off.offer_number {
+                                            format!("Angebot #{} - {}", num, off.title.clone().unwrap_or_else(|| "Angebot".to_string()))
+                                        } else {
+                                            off.title.clone().unwrap_or_else(|| "Angebot".to_string())
+                                        }
+                                    } else {
+                                        format!("ENTWURF - {}", off.title.clone().unwrap_or_else(|| "Angebot".to_string()))
+                                    };
+                                    view! {
+                                        <div class="box list-item p-3 mb-2" on:click=move |_| {
+                                            let id = off.id;
+                                            spawn_local(async move {
+                                                if let Ok(full_off) = get_offer(id).await {
+                                                    set_selected_offer.set(Some(full_off));
+                                                }
+                                            });
+                                        }>
+                                            <div class="has-text-weight-bold">{display_title} {status_badge} " (Rev: " {off.revision} ")"</div>
+                                            <div class="is-size-7 text-muted">{contact_name}</div>
+                                        </div>
+                                    }
+                                }).collect::<Vec<_>>()}
                 </div>
+                <Show when=move || has_more_offers.get()>
+                    <div class="has-text-centered mt-3">
+                        <button
+                            class="button is-light"
+                            prop:disabled=load_offers.pending()
+                            on:click=move |_| {
+                                let offset = offers.get_untracked().len() as u32;
+                                load_offers.dispatch((
+                                    list_generation.get_untracked(),
+                                    offset,
+                                    from_date_filter.get_untracked(),
+                                    to_date_filter.get_untracked(),
+                                ));
+                            }
+                        >
+                            {move || if load_offers.pending().get() { "Lädt…" } else { "Mehr laden" }}
+                        </button>
+                    </div>
+                </Show>
+                {move || if offers.get().is_empty() && !load_offers.pending().get() {
+                    view! { <EmptyState icon="file-sign" text="Noch kein Angebot angelegt." /> }.into_view()
+                } else { "".into_view() }}
             </div>
+        }
+    };
+
+    view! {
+        <div class="container">
+            {move || match selected_offer.get() {
+                None => list_view().into_view(),
+                Some(off) => view! {
+                    <div class="level">
+                        <div class="level-left">
+                            <button class="button is-light" on:click=move |_| set_selected_offer.set(None)>
+                                <span class="icon mr-1"><i class="mdi mdi-arrow-left"></i></span>
+                                "Zurück zur Übersicht"
+                            </button>
+                        </div>
+                    </div>
+                    <OfferEditor
+                        off=off
+                        contacts=contacts
+                        on_change=Callback::new(move |_| {
+                            let generation = list_generation.get_untracked().wrapping_add(1);
+                            set_list_generation.set(generation);
+                            set_offers.set(Vec::new());
+                            set_has_more_offers.set(false);
+                            load_offers.dispatch((
+                                generation,
+                                0,
+                                from_date_filter.get_untracked(),
+                                to_date_filter.get_untracked(),
+                            ));
+                        })
+                        set_selected_offer=set_selected_offer
+                    />
+                }.into_view(),
+            }}
         </div>
     }
 }

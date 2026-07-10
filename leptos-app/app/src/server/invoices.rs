@@ -6,15 +6,23 @@ use shared::*;
 use super::db::KlubuRepository;
 
 #[server(name = GetInvoices, prefix = "/api", endpoint = "get_invoices")]
-pub async fn get_invoices() -> Result<Vec<InvoiceListItem>, ServerFnError> {
+pub async fn get_invoices(
+    offset: u32,
+    limit: u32,
+    from_date: Option<NaiveDate>,
+    to_date: Option<NaiveDate>,
+) -> Result<Page<InvoiceListItem>, ServerFnError> {
     #[cfg(feature = "ssr")]
     {
         let repo = use_context::<super::db::ActiveRepository>()
             .ok_or_else(|| ServerFnError::new("Repository not found"))?;
-        repo.get_invoices().await
+        repo.get_invoices(offset, limit, from_date, to_date).await
     }
     #[cfg(not(feature = "ssr"))]
-    Err(ServerFnError::new("Client side DB access not supported"))
+    {
+        let _ = (offset, limit, from_date, to_date);
+        Err(ServerFnError::new("Client side DB access not supported"))
+    }
 }
 
 #[server(name = GetInvoice, prefix = "/api", endpoint = "get_invoice")]

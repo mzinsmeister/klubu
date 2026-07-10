@@ -1,6 +1,12 @@
 # GoBD-Audit — Klubu (Leptos-App)
 
-**Stand:** 2026-07-08 · **Umfang:** `leptos-app/` (Backend, App-Serverfunktionen, DB-Schema)
+**Stand der Erhebung:** 2026-07-08 · **Stand der Behebung:** 2026-07-09
+**Umfang:** `leptos-app/` (Backend, App-Serverfunktionen, DB-Schema)
+
+> Die Befunde unten beschreiben den Zustand **zum Zeitpunkt der Erhebung**. Der
+> Umsetzungsstand steht in der Spalte *Status*; Abschnitt
+> [Nachtrag](#nachtrag--umsetzung-2026-07-09) hält fest, wie behoben wurde und
+> was offen bleibt.
 
 > Dies ist eine technische Bestandsaufnahme gegen die Grundsätze der GoBD
 > (BMF-Schreiben vom 28.11.2019). Es ist **keine Rechts- oder Steuerberatung**.
@@ -17,18 +23,18 @@ aufbewahrungspflichtigen Daten — flankiert von **Zugriffsschutz**,
 
 ## Zusammenfassung
 
-| # | Befund | Schwere | GoBD-Prinzip |
-|---|--------|---------|--------------|
-| 1 | Belege sind unbegrenzt änderbar und löschbar | **Kritisch** | Unveränderbarkeit |
-| 2 | Keine Authentifizierung / kein Zugriffsschutz | **Kritisch** | Zugriffsschutz, Nachvollziehbarkeit |
-| 3 | Kein Änderungs-/Protokoll­journal (Audit-Trail) | **Kritisch** | Nachvollziehbarkeit, Unveränderbarkeit |
-| 4 | Storno mutiert die Rechnung statt Stornobeleg zu erzeugen | **Hoch** | Unveränderbarkeit, Belegfunktion |
-| 5 | Rechnungsnummer: Race + keine Eindeutigkeit (kein UNIQUE, keine Transaktion) | **Hoch** | Vollständigkeit, Ordnung |
-| 6 | Zahlungen frei löschbar (verändern Vorjahres-/Periodenergebnis spurlos) | **Hoch** | Unveränderbarkeit |
-| 7 | Speichern nicht transaktional (Teil-Schreibvorgänge möglich) | **Mittel** | Richtigkeit, Vollständigkeit |
-| 8 | Keine Verfahrensdokumentation | **Mittel** | Verfahrensdokumentation |
-| 9 | Keine getrennten Datumsfelder (Beleg-/Buchungs-/Erfassungsdatum) | **Niedrig** | Zeitgerechte Buchung |
-| ✓ | Dokument-Versionierung ist append-only mit Tombstones | *konform* | Unveränderbarkeit |
+| # | Befund | Schwere | GoBD-Prinzip | Status |
+|---|--------|---------|--------------|--------|
+| 1 | Belege sind unbegrenzt änderbar und löschbar | **Kritisch** | Unveränderbarkeit | ✅ behoben |
+| 2 | Keine Authentifizierung / kein Zugriffsschutz | **Kritisch** | Zugriffsschutz, Nachvollziehbarkeit | ✅ behoben |
+| 3 | Kein Änderungs-/Protokoll­journal (Audit-Trail) | **Kritisch** | Nachvollziehbarkeit, Unveränderbarkeit | ✅ behoben |
+| 4 | Storno mutiert die Rechnung statt Stornobeleg zu erzeugen | **Hoch** | Unveränderbarkeit, Belegfunktion | ✅ behoben |
+| 5 | Rechnungsnummer: Race + keine Eindeutigkeit (kein UNIQUE, keine Transaktion) | **Hoch** | Vollständigkeit, Ordnung | ✅ behoben |
+| 6 | Zahlungen frei löschbar (verändern Vorjahres-/Periodenergebnis spurlos) | **Hoch** | Unveränderbarkeit | ✅ behoben |
+| 7 | Speichern nicht transaktional (Teil-Schreibvorgänge möglich) | **Mittel** | Richtigkeit, Vollständigkeit | ✅ behoben |
+| 8 | Keine Verfahrensdokumentation | **Mittel** | Verfahrensdokumentation | ✅ behoben |
+| 9 | Keine getrennten Datumsfelder (Beleg-/Buchungs-/Erfassungsdatum) | **Niedrig** | Zeitgerechte Buchung | ✅ ausgeräumt (s. Nachtrag) |
+| ✓ | Dokument-Versionierung ist append-only mit Tombstones | *konform* | Unveränderbarkeit | — |
 
 ---
 
@@ -211,3 +217,107 @@ sollte es ebenfalls sein.)*
 3. **Änderungsjournal (3)** — sobald „wer" (2) verfügbar ist.
 4. **Storno als Beleg (4)** und **Nummernvergabe härten (5)**.
 5. **Transaktionen (7)**, **Verfahrensdokumentation (8)**, **Datumsfelder (9)**.
+
+---
+
+## Nachtrag — Umsetzung (2026-07-09)
+
+Die Befunde 1–8 sind umgesetzt. Bei der Nachprüfung der Umsetzung fielen zwei
+Fehler auf, die die Umsetzung selbst eingeführt hatte; beide sind behoben. Sie
+sind hier festgehalten, weil sie exemplarisch zeigen, dass eine Maßnahme, die
+„vorhanden" aussieht, nicht zwingend wirkt.
+
+### Fehler in der Umsetzung von Befund 3 — Journal ohne Verursacher
+
+Der Benutzername wurde per `tokio::task_local` von der Axum-Middleware zum
+Repository durchgereicht. `leptos_axum` führt jede Serverfunktion jedoch über
+`spawn_pinned` auf einer **eigenen Task** aus, und Task-Locals überleben diesen
+Sprung nicht. Der Lookup schlug daher immer fehl und der Fallback
+(`unwrap_or_else(|_| "system")`) schrieb *jeden* Eintrag auf den Pseudo-Benutzer
+`system`. Das Journal existierte, das „wer" fehlte vollständig — also genau das,
+wofür Befund 2 und 3 überhaupt da waren.
+
+**Behoben:** Die Identität reist nun in den Request-Extensions und wird in
+`handle_server_fns` als Leptos-Context bereitgestellt, der innerhalb der
+Serverfunktions-Task gilt. `write_audit_log` **bricht ab**, wenn kein Benutzer
+ermittelbar ist, statt einen Ersatznamen zu erfinden; die umschließende
+Transaktion wird zurückgerollt.
+
+*Lehre:* Ein stiller Fallback auf einen Sammelbenutzer macht ein kaputtes
+Protokoll ununterscheidbar von einem funktionierenden.
+
+### Fehler in der Umsetzung von Befund 4 — Storno löschte echte Einnahmen
+
+Die Einnahmenseite der Anlage EÜR wertet **Zahlungen** aus, filterte aber über
+`WHERE i.is_canceled = 0`. Da `cancel_invoice` dieses Flag auf der
+Originalrechnung setzt, verschwanden mit der Stornierung sämtliche **bereits
+zugeflossenen Zahlungen** aus der EÜR — rückwirkend und spurlos. Ein bereits
+erklärter Veranlagungszeitraum änderte damit sein Ergebnis, was Befund 6
+ausdrücklich verhindern sollte.
+
+Hinzu kam: Die negierten Positionen des Stornobelegs erreichten die
+Einnahmenseite nie, weil diese Zahlungen liest, keine Positionen. Die
+Stornierung wirkte ausschließlich über den Filter — zwei Mechanismen, die
+verschiedene Dinge taten.
+
+**Behoben:** Die EÜR zählt Zahlungen unabhängig vom Stornostatus (Kassenprinzip,
+§ 11 EStG). Eine Rückzahlung wird als eigene negative Zahlung zum tatsächlichen
+Abflussdatum erfasst. Siehe Verfahrensdokumentation, Abschnitt 5.3.
+
+### Weitere Härtungen
+
+* **Stornobeleg ist nicht stornierbar.** Zuvor erzeugte das erneute Stornieren
+  eine doppelt negierte — also positive — festgeschriebene Rechnung, die niemand
+  ausgestellt hatte, und verbrauchte beliebig viele Nummern.
+* **`audit_log` ist per Datenbank-Trigger append-only**, nicht nur per
+  Konvention: `UPDATE` und `DELETE` werden abgewiesen.
+* **Passwörter:** Argon2id statt einfachem SHA-256; zeitkonstante Prüfung; keine
+  Benutzernamen-Aufzählung über Antwortzeiten.
+* **Session-Token:** 256 Bit aus dem CSPRNG (der schwache Fallback auf
+  `timestamp_nanos % 256` ist entfernt — er erzeugte erratbare Token), gehasht in
+  der Datenbank gespeichert, mit Ablauf, neustartfest und beim Logout widerrufen.
+* **`initialize_admin`** legt den ersten Administrator atomar an; zwei parallele
+  Aufrufe können nicht zwei Admins erzeugen.
+
+### Befund 9 — getrennte Datumsfelder: keine Schemaänderung nötig
+
+Die ursprüngliche Empfehlung („Beleg-/Buchungs-/Erfassungsdatum als getrennte
+Felder führen") beruhte auf einer Fehlannahme: Die drei Datumsdimensionen
+**existieren bereits**, nur unter anderen Namen — Belegdatum als
+`invoice_date`/`receipt_date`, Buchungsdatum als `payment_date` der jeweiligen
+Zahlung, Erfassungsdatum als `created_timestamp` (flankiert von
+`committed_timestamp` und dem Zeitstempel jedes Journaleintrags). Für einen
+EÜR-Rechner fällt die Buchung im Kassenprinzip ohnehin mit der Zahlung zusammen,
+und die Zahlung hat ihr eigenes Datum. Zusätzliche Spalten hätten nur Redundanz
+erzeugt. Die Zuordnung ist in der Verfahrensdokumentation, Abschnitt 9,
+festgehalten.
+
+Ein **echtes** Problem verbarg sich allerdings dahinter: Die Ausgabenseite der
+EÜR datierte nach dem **Belegdatum** statt nach dem **Abflussdatum**. Ein Beleg
+vom 28.12. mit Zahlung am 03.01. wurde im falschen Jahr angesetzt (§ 11 Abs. 2
+EStG). Die Ausgabenseite datiert nun nach der ersten erfassten Zahlung und fällt
+nur dann auf das Belegdatum zurück, wenn zu einem Beleg keine Zahlung erfasst
+ist — sonst verschwänden solche Belege aus der Auswertung.
+
+### Offen
+
+* **Migration auf Bestandsdatenbanken:** `202607082336_unique_numbers.sql` legt
+  einen `UNIQUE INDEX` auf `invoice_number`/`offer_number`. Enthält eine
+  bestehende Datenbank bereits doppelte Nummern — was die alte, ungesicherte
+  `MAX(nummer) + 1`-Vergabe erzeugen konnte — schlägt die Migration und damit der
+  Start fehl. Vor dem Deployment prüfen (SQL im Migrationskopf).
+* **Kein Rate-Limiting am Login.** Argon2id macht Brute-Force teuer, ersetzt eine
+  Sperre nach wiederholten Fehlversuchen aber nicht.
+* **Aufbewahrung (§ 147 AO)** ist organisatorisch zu regeln: regelmäßige
+  Sicherungen der Datenbank *und* des Dokumentenverzeichnisses, 10 Jahre.
+
+  Die Trigger auf `audit_log` hindern niemanden mit administrativem
+  Datenbankzugriff daran, sie zu entfernen. Das ist **kein Mangel dieser
+  Anwendung**, sondern die Lage jeder lokal installierten Buchhaltungssoftware:
+  Wer Lexware auf dem eigenen PC betreibt, hat vollen Zugriff auf dessen
+  Datenbestand, und das ist für Kleinbetriebe seit jeher akzeptiert. Die GoBD
+  fordern keine manipulationssichere Hardware, sondern Maßnahmen, die dem
+  **Umfang und der Komplexität des Betriebs angemessen** sind. Für einen
+  Ein-Personen-Betrieb sind das: ein protokollierendes System, ein kontrollierter
+  Zugang, eine Verfahrensdokumentation und regelmäßige Sicherungen — alles
+  vorhanden. Revisionssichere WORM-Speicher sind hier nicht gefordert.

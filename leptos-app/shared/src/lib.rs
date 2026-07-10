@@ -1,6 +1,24 @@
 use serde::{Deserialize, Serialize};
 use chrono::{NaiveDate, DateTime, Utc};
 
+/// One chunk of a stable, server-side paginated list.
+///
+/// `has_more` is derived by asking the database for one row beyond the requested
+/// limit. That keeps list queries cheap without a separate `COUNT(*)` scan.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct Page<T> {
+    pub items: Vec<T>,
+    pub has_more: bool,
+}
+
+/// One choice of a dropdown parameter. `value` is bound into the query, `label`
+/// is what the user sees; a fixed option list uses the same string for both.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct ReportParamOption {
+    pub value: String,
+    pub label: String,
+}
+
 /// A parameter a report asks for before it can run (e.g. a year, a date range).
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct ReportParamInfo {
@@ -9,7 +27,12 @@ pub struct ReportParamInfo {
     /// "int" | "date" | "text" — how the frontend renders the input and how the
     /// engine binds the value.
     pub kind: String,
+    /// Already resolved: a default declared as `query(...)` has been run.
     pub default: Option<String>,
+    /// Non-empty turns the input into a dropdown. Values are validated
+    /// server-side, so a client cannot bind something outside the list.
+    #[serde(default)]
+    pub options: Vec<ReportParamOption>,
 }
 
 /// A report the server offers, discovered from `templates/reports/<name>/`.
@@ -302,10 +325,120 @@ impl Item {
     }
 }
 
+/// Placeholders a user may write in the free-text fields of an invoice or offer
+/// (title, subject, header, footer). Shown in the editor as a hint, resolved at
+/// render time.
+pub const TEXT_PLACEHOLDERS: &[(&str, &str)] = &[
+    ("{{nummer}}", "Rechnungs- bzw. Angebotsnummer"),
+    ("{{datum}}", "Belegdatum, z. B. 09.07.2026"),
+    ("{{kunde}}", "Name des Empfängers"),
+    ("{{summe}}", "Gesamtbetrag, z. B. 1.234,56 €"),
+    ("{{gueltig_bis}}", "Gültigkeitsdatum (nur Angebote)"),
+];
+
+/// Substitutes `{{key}}` occurrences from `vars`.
+///
+/// An unknown key is left standing rather than replaced with an empty string:
+/// a typo should be visible on the document, not silently swallow the sentence
+/// around it.
+pub fn apply_placeholders(text: &str, vars: &[(&str, String)]) -> String {
+    let mut out = text.to_string();
+    for (key, value) in vars {
+        out = out.replace(key, value);
+    }
+    out
+}
+
+/// A single money movement against an invoice or a receipt.
+///
+/// An invoice can be settled in any number of tranches, so this is one row per
+/// actual transfer, never an aggregate. A **negative** amount is a correction or
+/// a refund: once the document is festgeschrieben, payments can no longer be
+/// deleted, and a counter-booking is the only way to fix a mistake.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct Payment {
+    /// `None` only for a payment that has not been persisted yet.
+    #[serde(default)]
+    pub id: Option<i64>,
     pub date: NaiveDate,
     pub amount_cents: i64,
+}
+
+/// How far a document has been settled by its payments.
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+pub enum PaymentStatus {
+    /// Nothing received (or booked payments net to zero).
+    Unpaid,
+    /// Some money moved, but the total is not covered yet.
+    Partial,
+    /// Settled exactly.
+    Paid,
+    /// More was received than invoiced — usually a double transfer.
+    Overpaid,
+}
+
+/// Settlement state of a set of payments against `total_cents`.
+///
+/// Free function rather than a method so invoices and receipts share one
+/// definition; both aggregate the same `Payment` rows.
+pub fn payment_status(total_cents: i64, paid_cents: i64) -> PaymentStatus {
+    if paid_cents == 0 {
+        PaymentStatus::Unpaid
+    } else if paid_cents < total_cents {
+        PaymentStatus::Partial
+    } else if paid_cents == total_cents {
+        PaymentStatus::Paid
+    } else {
+        PaymentStatus::Overpaid
+    }
+}
+
+impl PaymentStatus {
+    pub fn label(&self) -> &'static str {
+        match self {
+            PaymentStatus::Unpaid => "Offen",
+            PaymentStatus::Partial => "Teilweise bezahlt",
+            PaymentStatus::Paid => "Bezahlt",
+            PaymentStatus::Overpaid => "Überzahlt",
+        }
+    }
+
+    /// Bulma tag modifier, so the badge colour follows the status everywhere.
+    pub fn tag_class(&self) -> &'static str {
+        match self {
+            PaymentStatus::Unpaid => "is-warning",
+            PaymentStatus::Partial => "is-info",
+            PaymentStatus::Paid => "is-success",
+            PaymentStatus::Overpaid => "is-danger",
+        }
+    }
+}
+
+/// Sum of all tranches, corrections included (they are negative).
+pub fn paid_cents(payments: &[Payment]) -> i64 {
+    payments.iter().map(|p| p.amount_cents).sum()
+}
+
+/// The date the cumulative sum first covers `total_cents`, or `None` while the
+/// document is still short. Payments are summed in date order, so a later
+/// correction that drops the balance below the total clears the date again.
+pub fn settled_on(payments: &[Payment], total_cents: i64) -> Option<NaiveDate> {
+    if total_cents <= 0 {
+        return None;
+    }
+    let mut sorted: Vec<&Payment> = payments.iter().collect();
+    sorted.sort_by_key(|p| p.date);
+    let mut running = 0i64;
+    let mut settled = None;
+    for p in sorted {
+        running += p.amount_cents;
+        if settled.is_none() && running >= total_cents {
+            settled = Some(p.date);
+        } else if settled.is_some() && running < total_cents {
+            settled = None;
+        }
+    }
+    settled
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -323,6 +456,11 @@ pub struct Contact {
     pub phone: Option<String>,
     #[serde(default)]
     pub is_person: bool,
+    /// An archived contact keeps its id (the Kundennummer printed on committed
+    /// invoices) and every document link; it only disappears from pickers and
+    /// the regular list. `None` means active.
+    #[serde(default)]
+    pub archived_timestamp: Option<chrono::DateTime<chrono::Utc>>,
 }
 
 impl Contact {
@@ -383,8 +521,10 @@ pub struct Invoice {
     pub customer_contact: Option<Contact>,
     pub document: Option<Document>,
     pub recipient: Option<Recipient>,
-    pub header_html: Option<String>,
-    pub footer_html: Option<String>,
+    #[serde(alias = "header_html")]
+    pub header: Option<String>,
+    #[serde(alias = "footer_html")]
+    pub footer: Option<String>,
     pub title: Option<String>,
     pub subject: Option<String>,
 }
@@ -393,7 +533,9 @@ pub struct Invoice {
 pub struct InvoiceListItem {
     pub id: i64,
     pub created_timestamp: DateTime<Utc>,
+    pub invoice_date: Option<NaiveDate>,
     pub customer_contact: Option<Contact>,
+    /// Date the cumulative payments first covered the total; `None` while short.
     pub paid_date: Option<NaiveDate>,
     #[serde(default)]
     pub committed: bool,
@@ -403,6 +545,23 @@ pub struct InvoiceListItem {
     #[serde(default)]
     pub is_cancelation: bool,
     pub subject: Option<String>,
+    /// Invoiced amount, so the list can show a settlement state without
+    /// fetching every invoice in full.
+    #[serde(default)]
+    pub total_cents: i64,
+    /// Sum of all tranches booked against it, corrections included.
+    #[serde(default)]
+    pub paid_cents: i64,
+}
+
+impl InvoiceListItem {
+    pub fn payment_status(&self) -> PaymentStatus {
+        payment_status(self.total_cents, self.paid_cents)
+    }
+
+    pub fn outstanding_cents(&self) -> i64 {
+        self.total_cents - self.paid_cents
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -420,8 +579,10 @@ pub struct Offer {
     pub created_timestamp: Option<DateTime<Utc>>,
     pub committed_timestamp: Option<DateTime<Utc>>,
     pub subject: Option<String>,
-    pub header_html: Option<String>,
-    pub footer_html: Option<String>,
+    #[serde(alias = "header_html")]
+    pub header: Option<String>,
+    #[serde(alias = "footer_html")]
+    pub footer: Option<String>,
     pub document: Option<Document>,
 }
 
@@ -432,6 +593,7 @@ pub struct OfferListItem {
     pub offer_number: Option<i64>,
     pub title: Option<String>,
     pub created_timestamp: DateTime<Utc>,
+    pub offer_date: Option<NaiveDate>,
     pub customer_contact: Option<Contact>,
     #[serde(default)]
     pub committed: bool,
@@ -505,13 +667,63 @@ pub struct ReceiptListItem {
     pub receipt_number: Option<String>,
     #[serde(default)]
     pub total_cents: i64,
+    /// Sum of all tranches paid out on this receipt, corrections included.
+    #[serde(default)]
+    pub paid_cents: i64,
     #[serde(default)]
     pub has_document: bool,
+    #[serde(default)]
+    pub committed: bool,
+}
+
+impl ReceiptListItem {
+    pub fn payment_status(&self) -> PaymentStatus {
+        payment_status(self.total_cents, self.paid_cents)
+    }
+
+    pub fn outstanding_cents(&self) -> i64 {
+        self.total_cents - self.paid_cents
+    }
+}
+
+impl Invoice {
+    /// Invoiced amount. Invoice items carry a quantity, so this is the sum of
+    /// the line totals, matching what `invoice_item.total` holds in the database.
+    pub fn total_cents(&self) -> i64 {
+        self.items.iter().map(Item::total_cents).sum()
+    }
+
+    pub fn paid_cents(&self) -> i64 {
+        paid_cents(&self.payments)
+    }
+
+    /// What the customer still owes. Negative once overpaid.
+    pub fn outstanding_cents(&self) -> i64 {
+        self.total_cents() - self.paid_cents()
+    }
+
+    pub fn payment_status(&self) -> PaymentStatus {
+        payment_status(self.total_cents(), self.paid_cents())
+    }
 }
 
 impl Receipt {
+    /// Receipt items have no quantity semantics — `receipt_item.total` is stored
+    /// as the plain price — so this sums prices rather than line totals.
     pub fn total_cents(&self) -> i64 {
         self.items.iter().map(|i| i.price.amount_cents).sum()
+    }
+
+    pub fn paid_cents(&self) -> i64 {
+        paid_cents(&self.payments)
+    }
+
+    pub fn outstanding_cents(&self) -> i64 {
+        self.total_cents() - self.paid_cents()
+    }
+
+    pub fn payment_status(&self) -> PaymentStatus {
+        payment_status(self.total_cents(), self.paid_cents())
     }
 }
 
@@ -546,8 +758,10 @@ pub struct DashboardStats {
     pub revenue_cents: i64,
     /// Sum of receipt items in an "Ausgaben" category in `year`.
     pub expenses_cents: i64,
-    /// Committed, non-canceled invoices in `year` with no payment recorded.
+    /// Committed, non-canceled invoices that are not fully settled.
+    /// Partially paid invoices count once, for their remaining balance.
     pub open_invoice_count: i64,
+    /// Sum of the outstanding balances, not of the invoice totals.
     pub open_invoice_cents: i64,
     pub draft_invoice_count: i64,
     pub receipt_count: i64,

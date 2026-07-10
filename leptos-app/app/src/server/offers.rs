@@ -1,19 +1,28 @@
 use leptos::*;
+use chrono::NaiveDate;
 use shared::*;
 
 #[cfg(feature = "ssr")]
 use super::db::KlubuRepository;
 
 #[server(name = GetOffers, prefix = "/api", endpoint = "get_offers")]
-pub async fn get_offers() -> Result<Vec<OfferListItem>, ServerFnError> {
+pub async fn get_offers(
+    offset: u32,
+    limit: u32,
+    from_date: Option<NaiveDate>,
+    to_date: Option<NaiveDate>,
+) -> Result<Page<OfferListItem>, ServerFnError> {
     #[cfg(feature = "ssr")]
     {
         let repo = use_context::<super::db::ActiveRepository>()
             .ok_or_else(|| ServerFnError::new("Repository not found"))?;
-        repo.get_offers().await
+        repo.get_offers(offset, limit, from_date, to_date).await
     }
     #[cfg(not(feature = "ssr"))]
-    Err(ServerFnError::new("Client side DB access not supported"))
+    {
+        let _ = (offset, limit, from_date, to_date);
+        Err(ServerFnError::new("Client side DB access not supported"))
+    }
 }
 
 #[server(name = GetOffer, prefix = "/api", endpoint = "get_offer")]

@@ -263,7 +263,7 @@ fn match_category(name: &str, categories: &[ReceiptItemCategory]) -> Option<Rece
 /// first, then a containment match so "Bürobedarf Schmidt GmbH" still finds a
 /// contact stored as "Bürobedarf Schmidt".
 #[cfg(feature = "ssr")]
-fn match_contact(name: &str, contacts: &[Contact]) -> Option<Contact> {
+pub(crate) fn match_contact(name: &str, contacts: &[Contact]) -> Option<Contact> {
     let needle = name.trim().to_lowercase();
     if needle.is_empty() {
         return None;
@@ -305,7 +305,7 @@ pub async fn prefill_receipt(document: ReceiptDocumentData) -> Result<ReceiptPre
             .map_err(|e| ServerFnError::new(format!("Textextraktion abgebrochen: {e}")))??;
 
         let categories = super::receipts::get_categories().await?;
-        let contacts = super::contacts::get_contacts().await?;
+        let contacts = super::contacts::get_all_contacts().await?;
         let category_names: Vec<String> = categories.iter().map(|c| c.name.clone()).collect();
 
         let extracted = call_model(&cfg, &text, &category_names).await?;
@@ -410,6 +410,7 @@ mod tests {
             country: None,
             phone: None,
             is_person: false,
+            archived_timestamp: None,
         }
     }
 

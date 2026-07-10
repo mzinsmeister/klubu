@@ -274,6 +274,11 @@ const DEFAULT_INVOICE_TEMPLATE: &str = r#"
 #v(1cm)
 #text(12pt, weight: "bold")[#if invoice.subject != none [#invoice.subject] else [Rechnung]]
 #v(0.5cm)
+#if invoice.at("header_typst", default: none) != none [
+  #eval(invoice.header_typst, mode: "markup")
+  #v(0.4cm)
+]
+#v(0.5cm)
 
 // Items table
 #table(
@@ -301,8 +306,10 @@ const DEFAULT_INVOICE_TEMPLATE: &str = r#"
 ]
 
 #v(0.5cm)
-#if invoice.footer_html != none [
-  #align(center)[#invoice.footer_html]
+#if invoice.at("footer_typst", default: none) != none [
+  #eval(invoice.footer_typst, mode: "markup")
+] else if invoice.footer != none [
+  #align(center)[#invoice.footer]
 ]
 
 #v(1.5cm)
@@ -413,6 +420,11 @@ const DEFAULT_OFFER_TEMPLATE: &str = r#"
 #v(1cm)
 #text(12pt, weight: "bold")[#if offer.subject != none [#offer.subject] else [Angebot]]
 #v(0.5cm)
+#if offer.at("header_typst", default: none) != none [
+  #eval(offer.header_typst, mode: "markup")
+  #v(0.4cm)
+]
+#v(0.5cm)
 
 // Items table
 #table(
@@ -440,26 +452,90 @@ const DEFAULT_OFFER_TEMPLATE: &str = r#"
 ]
 
 #v(0.5cm)
-#if offer.footer_html != none [
-  #align(center)[#offer.footer_html]
+#if offer.at("footer_typst", default: none) != none [
+  #eval(offer.footer_typst, mode: "markup")
+] else if offer.footer != none [
+  #align(center)[#offer.footer]
 ]
 
 #v(1.5cm)
 #text(8pt, style: "italic")[Als Kleinunternehmer im Sinne von § 19 Abs. 1 UStG wird die Umsatzsteuer nicht berechnet!]
 "#;
 
+/// Formats a date the way a German invoice prints it.
+#[cfg(feature = "ssr")]
+fn de_date(date: Option<chrono::NaiveDate>) -> String {
+    date.map(|d| d.format("%d.%m.%Y").to_string()).unwrap_or_default()
+}
+
+/// Resolves `{{…}}` placeholders in the free-text fields and converts the two
+/// prose blocks from Markdown to Typst markup.
+///
+/// The converted blocks land in `header_typst` / `footer_typst`; the original
+/// Markdown `header` / `footer` values stay available to custom templates.
+#[cfg(feature = "ssr")]
+fn enrich_document_text(
+    json: &mut serde_json::Value,
+    vars: &[(&str, String)],
+) {
+    use crate::markdown::markdown_to_typst;
+
+    let Some(obj) = json.as_object_mut() else { return };
+
+    for field in ["title", "subject"] {
+        if let Some(s) = obj.get(field).and_then(|v| v.as_str()) {
+            let resolved = shared::apply_placeholders(s, vars);
+            obj.insert(field.to_string(), serde_json::Value::String(resolved));
+        }
+    }
+
+    for (src, dst) in [("header", "header_typst"), ("footer", "footer_typst")] {
+        let value = match obj.get(src).and_then(|v| v.as_str()) {
+            Some(s) if !s.trim().is_empty() => {
+                let resolved = shared::apply_placeholders(s, vars);
+                // Resolve the source field too: a hand-written template that still
+                // prints `footer` must not show a raw `{{nummer}}`.
+                obj.insert(src.to_string(), serde_json::Value::String(resolved.clone()));
+                serde_json::Value::String(markdown_to_typst(&resolved))
+            }
+            _ => serde_json::Value::Null,
+        };
+        obj.insert(dst.to_string(), value);
+    }
+}
+
 pub fn generate_invoice_typst(invoice: &Invoice) -> String {
     #[cfg(feature = "ssr")]
     {
         let config = load_config();
         let template = get_template("invoice.typ", DEFAULT_INVOICE_TEMPLATE);
-        
-        let invoice_json = serde_json::to_value(invoice).unwrap();
+
+        let mut invoice_json = serde_json::to_value(invoice).unwrap();
         let config_json = serde_json::to_value(&config).unwrap();
-        
+
+        let number = invoice
+            .invoice_number
+            .map(|n| n.to_string())
+            .unwrap_or_else(|| "(Entwurf)".to_string());
+        let customer = invoice
+            .customer_contact
+            .as_ref()
+            .map(Contact::display_name)
+            .or_else(|| invoice.recipient.as_ref().map(|r| r.name.clone()))
+            .unwrap_or_default();
+        enrich_document_text(
+            &mut invoice_json,
+            &[
+                ("{{nummer}}", number),
+                ("{{datum}}", de_date(invoice.invoice_date)),
+                ("{{kunde}}", customer),
+                ("{{summe}}", format_euro(invoice.total_cents())),
+            ],
+        );
+
         let invoice_typst = json_to_typst(&invoice_json);
         let config_typst = json_to_typst(&config_json);
-        
+
         let watermark = if invoice.committed_timestamp.is_none() {
             "#set page(background: rotate(24deg, text(80pt, fill: rgb(\"f6f6f6\"))[*ENTWURF*]))\n"
         } else {
@@ -486,13 +562,35 @@ pub fn generate_offer_typst(offer: &Offer) -> String {
     {
         let config = load_config();
         let template = get_template("offer.typ", DEFAULT_OFFER_TEMPLATE);
-        
-        let offer_json = serde_json::to_value(offer).unwrap();
+
+        let mut offer_json = serde_json::to_value(offer).unwrap();
         let config_json = serde_json::to_value(&config).unwrap();
-        
+
+        let number = offer
+            .offer_number
+            .map(|n| n.to_string())
+            .unwrap_or_else(|| "(Entwurf)".to_string());
+        let customer = offer
+            .customer_contact
+            .as_ref()
+            .map(Contact::display_name)
+            .or_else(|| offer.recipient.as_ref().map(|r| r.name.clone()))
+            .unwrap_or_default();
+        let total: i64 = offer.items.iter().map(Item::total_cents).sum();
+        enrich_document_text(
+            &mut offer_json,
+            &[
+                ("{{nummer}}", number),
+                ("{{datum}}", de_date(offer.offer_date)),
+                ("{{kunde}}", customer),
+                ("{{summe}}", format_euro(total)),
+                ("{{gueltig_bis}}", de_date(offer.valid_until_date)),
+            ],
+        );
+
         let offer_typst = json_to_typst(&offer_json);
         let config_typst = json_to_typst(&config_json);
-        
+
         let watermark = if offer.committed_timestamp.is_none() {
             "#set page(background: rotate(24deg, text(80pt, fill: rgb(\"f6f6f6\"))[*ENTWURF*]))\n"
         } else {
@@ -517,4 +615,98 @@ pub fn generate_offer_typst(offer: &Offer) -> String {
 pub fn init_templates() {
     let _ = get_template("invoice.typ", DEFAULT_INVOICE_TEMPLATE);
     let _ = get_template("offer.typ", DEFAULT_OFFER_TEMPLATE);
+}
+
+#[cfg(all(test, feature = "ssr"))]
+mod tests {
+    use super::*;
+    use chrono::NaiveDate;
+
+    /// Point the generator at the repo's real templates.
+    ///
+    /// Absolute, and set before any `get_template` call: that function *writes*
+    /// the built-in default when the path does not exist, so a wrong or unset
+    /// path silently litters the crate directory with a `templates/` copy.
+    fn use_repo_templates() {
+        static ONCE: std::sync::Once = std::sync::Once::new();
+        ONCE.call_once(|| {
+            let dir = concat!(env!("CARGO_MANIFEST_DIR"), "/../templates");
+            assert!(std::path::Path::new(dir).is_dir(), "repo templates missing at {dir}");
+            std::env::set_var("KLUBU_EXPORT_TEMPLATES_PATH", dir);
+        });
+    }
+
+    fn sample_invoice() -> Invoice {
+        Invoice {
+            id: Some(1),
+            items: vec![Item {
+                item: "Beratung".into(),
+                quantity: 2.0,
+                unit: "Std".into(),
+                price: Money::new(25000),
+            }],
+            created_timestamp: None,
+            committed_timestamp: Some(chrono::Utc::now()),
+            invoice_number: Some(7),
+            payments: vec![],
+            invoice_date: NaiveDate::from_ymd_opt(2026, 7, 9),
+            is_canceled: false,
+            is_cancelation: false,
+            corrected_invoice_id: None,
+            customer_contact: None,
+            document: None,
+            recipient: Some(Recipient {
+                form_of_address: None,
+                title: None,
+                name: "Acme GmbH".into(),
+                first_name: None,
+                street: Some("Weg".into()),
+                zip_code: Some("12345".into()),
+                city: Some("Berlin".into()),
+                house_number: Some("1".into()),
+                country: Some("Deutschland".into()),
+            }),
+            header: Some("Vielen Dank für Ihren Auftrag, **{{kunde}}**.".into()),
+            footer: Some(
+                "# Zahlungsziel\n\nBitte bezahlen sie Rechnung {{nummer}} über {{summe}} \
+                 innerhalb von *14 Tagen*.\n\n- Konto: DE12\n- BIC: ABCDEF"
+                    .into(),
+            ),
+            title: Some("Rechnung".into()),
+            subject: Some("Rechnung {{nummer}} vom {{datum}}".into()),
+        }
+    }
+
+    /// Placeholders resolve, Markdown becomes Typst markup, and the whole thing
+    /// still compiles to a real PDF through the production template.
+    #[test]
+    fn invoice_placeholders_and_markdown_render() {
+        // Use the repo's real templates, not a default written into the crate dir.
+        use_repo_templates();
+
+        let markup = generate_invoice_typst(&sample_invoice());
+
+        assert!(!markup.contains("{{nummer}}"), "placeholder left unresolved");
+        assert!(!markup.contains("{{summe}}"), "placeholder left unresolved");
+        assert!(markup.contains("Rechnung 7 vom 09.07.2026"), "subject not substituted");
+        assert!(markup.contains("= Zahlungsziel"), "markdown heading not converted");
+        assert!(markup.contains("Rechnung 7 über 500,00 €"), "footer placeholders not substituted");
+        assert!(markup.contains("Acme GmbH"), "header placeholder not substituted");
+
+        let pdf = crate::pdf::compiler::compile_typst(markup.clone())
+            .unwrap_or_else(|e| panic!("typst failed: {e}"));
+        assert!(pdf.starts_with(b"%PDF"));
+    }
+
+    /// A draft has no number yet; the placeholder must not print `None`.
+    #[test]
+    fn draft_number_placeholder_is_readable() {
+        use_repo_templates();
+        let mut inv = sample_invoice();
+        inv.invoice_number = None;
+        inv.committed_timestamp = None;
+        let markup = generate_invoice_typst(&inv);
+        assert!(markup.contains("(Entwurf)"), "draft placeholder missing");
+        assert!(!markup.contains("None"));
+    }
 }

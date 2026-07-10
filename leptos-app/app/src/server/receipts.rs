@@ -1,5 +1,6 @@
 #[cfg(feature = "ssr")]
 use super::documents::{store_new_version, delete_document};
+use leptos::server_fn::codec::Json;
 use leptos::*;
 use chrono::NaiveDate;
 use shared::*;
@@ -8,15 +9,23 @@ use shared::*;
 use super::db::KlubuRepository;
 
 #[server(name = GetReceipts, prefix = "/api", endpoint = "get_receipts")]
-pub async fn get_receipts() -> Result<Vec<ReceiptListItem>, ServerFnError> {
+pub async fn get_receipts(
+    offset: u32,
+    limit: u32,
+    from_date: Option<NaiveDate>,
+    to_date: Option<NaiveDate>,
+) -> Result<Page<ReceiptListItem>, ServerFnError> {
     #[cfg(feature = "ssr")]
     {
         let repo = use_context::<super::db::ActiveRepository>()
             .ok_or_else(|| ServerFnError::new("Repository not found"))?;
-        repo.get_receipts().await
+        repo.get_receipts(offset, limit, from_date, to_date).await
     }
     #[cfg(not(feature = "ssr"))]
-    Err(ServerFnError::new("Client side DB access not supported"))
+    {
+        let _ = (offset, limit, from_date, to_date);
+        Err(ServerFnError::new("Client side DB access not supported"))
+    }
 }
 
 #[server(name = GetReceipt, prefix = "/api", endpoint = "get_receipt")]
@@ -92,6 +101,81 @@ pub async fn save_receipt(receipt: Receipt) -> Result<Receipt, ServerFnError> {
         Err(ServerFnError::new("Client side DB access not supported"))
     }
 }
+
+/// Reads an uploaded document as an e-invoice and returns the fields it carries.
+///
+/// `Ok(None)` means "this is not an e-invoice" — a scan, a photo, a plain PDF.
+/// The caller then falls back to the AI prefill, which guesses. This path does
+/// not guess: an e-invoice states its number, date, supplier and line items, so
+/// unlike the model it needs neither to be enabled nor to be right.
+///
+/// Advisory only: nothing is persisted here, the user confirms and saves.
+// JSON input for the same reason as `prefill_receipt`: the document is base64.
+#[server(name = ParseEInvoice, prefix = "/api", endpoint = "parse_einvoice", input = Json)]
+pub async fn parse_einvoice(
+    document: ReceiptDocumentData,
+) -> Result<Option<ReceiptPrefill>, ServerFnError> {
+    #[cfg(feature = "ssr")]
+    {
+        use base64::Engine;
+
+        let bytes = base64::engine::general_purpose::STANDARD
+            .decode(&document.data)
+            .map_err(|e| ServerFnError::new(format!("Datei konnte nicht dekodiert werden: {e}")))?;
+
+        let media_type = document.media_type.clone();
+        // lopdf and the XML parse are CPU-bound; keep them off the async runtime.
+        let parsed = tokio::task::spawn_blocking(move || {
+            crate::einvoice::parse_einvoice(&bytes, &media_type)
+        })
+        .await
+        .map_err(|e| ServerFnError::new(format!("Auswertung abgebrochen: {e}")))?
+        .map_err(ServerFnError::new)?;
+
+        let Some(parsed) = parsed else { return Ok(None) };
+
+        let mut prefill = parsed.prefill;
+        let contacts = super::contacts::get_all_contacts().await?;
+        prefill.supplier_contact = prefill
+            .supplier_name
+            .as_deref()
+            .and_then(|n| super::ai::match_contact(n, &contacts));
+        if let (Some(name), None) = (prefill.supplier_name.as_deref(), prefill.supplier_contact.as_ref()) {
+            prefill.warnings.push(format!(
+                "Kein Kontakt für Lieferant \"{name}\" gefunden. Bitte auswählen oder anlegen."
+            ));
+        }
+
+        let origin = if parsed.from_pdf { "eingebettet in PDF" } else { "XML-Datei" };
+        prefill.warnings.insert(
+            0,
+            format!("E-Rechnung erkannt: {} ({origin}). Die Werte stammen aus der Rechnung, nicht aus einer Schätzung.", parsed.syntax.label()),
+        );
+
+        Ok(Some(prefill))
+    }
+    #[cfg(not(feature = "ssr"))]
+    {
+        let _ = document;
+        Err(ServerFnError::new("Client side parsing not supported"))
+    }
+}
+
+#[server(name = CommitReceipt, prefix = "/api", endpoint = "commit_receipt")]
+pub async fn commit_receipt(id: i64) -> Result<(), ServerFnError> {
+    #[cfg(feature = "ssr")]
+    {
+        let repo = use_context::<super::db::ActiveRepository>()
+            .ok_or_else(|| ServerFnError::new("Repository not found"))?;
+        repo.commit_receipt(id).await
+    }
+    #[cfg(not(feature = "ssr"))]
+    {
+        let _ = id;
+        Err(ServerFnError::new("Client side DB access not supported"))
+    }
+}
+
 
 #[server(name = GetCategories, prefix = "/api", endpoint = "get_categories")]
 pub async fn get_categories() -> Result<Vec<ReceiptItemCategory>, ServerFnError> {

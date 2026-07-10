@@ -1,11 +1,53 @@
 title: Anlage EÜR
-param year "Veranlagungsjahr": int = 2025
+param year "Veranlagungsjahr": int options=query(jahre) = query(vorjahr)
 
 --- description ---
 Einnahmenüberschussrechnung nach § 4 Abs. 3 EStG, gegliedert nach den Zeilen der
 amtlichen Anlage EÜR. Die Werte sind zum manuellen Übertrag in Mein ELSTER
 gedacht — je Zeile stehen ELSTER-Kennzahl und Betrag bereit. Kassenprinzip
 (§ 11 EStG): gezählt wird, was im Jahr geflossen ist.
+
+--- options name=vorjahr dialect=postgres ---
+-- The EÜR is filed for the year that has ended, so the form opens on it.
+SELECT to_char(now() - interval '1 year', 'YYYY');
+
+--- options name=vorjahr dialect=sqlite ---
+SELECT CAST(CAST(strftime('%Y', 'now') AS INTEGER) - 1 AS TEXT);
+
+--- options name=jahre dialect=postgres ---
+-- Every year that has bookings, newest first, plus the Vorjahr — which must be
+-- in the list even in a year with no data, because it is the default and the
+-- engine only binds values the dropdown actually offers.
+SELECT DISTINCT jahr FROM (
+    SELECT substring(ip.payment_date FROM 1 FOR 4) AS jahr FROM invoice_payment ip
+    UNION ALL
+    SELECT substring(COALESCE(rp.first_payment_date, r.receipt_date) FROM 1 FOR 4)
+    FROM receipt r
+    LEFT JOIN (
+        SELECT receipt_id, MIN(payment_date) AS first_payment_date
+        FROM receipt_payment GROUP BY receipt_id
+    ) rp ON rp.receipt_id = r.id
+    UNION ALL
+    SELECT to_char(now() - interval '1 year', 'YYYY')
+) y
+WHERE jahr IS NOT NULL
+ORDER BY jahr DESC;
+
+--- options name=jahre dialect=sqlite ---
+SELECT DISTINCT jahr FROM (
+    SELECT substr(ip.payment_date, 1, 4) AS jahr FROM invoice_payment ip
+    UNION ALL
+    SELECT substr(COALESCE(rp.first_payment_date, r.receipt_date), 1, 4)
+    FROM receipt r
+    LEFT JOIN (
+        SELECT receipt_id, MIN(payment_date) AS first_payment_date
+        FROM receipt_payment GROUP BY receipt_id
+    ) rp ON rp.receipt_id = r.id
+    UNION ALL
+    SELECT CAST(CAST(strftime('%Y', 'now') AS INTEGER) - 1 AS TEXT)
+) y
+WHERE jahr IS NOT NULL
+ORDER BY jahr DESC;
 
 --- query dialect=postgres ---
 -- One row per contributing line item ($1 = year). The template groups these by
@@ -16,12 +58,25 @@ gedacht — je Zeile stehen ELSTER-Kennzahl und Betrag bereit. Kassenprinzip
 --   Income   — invoice PAYMENT date (Zufluss). Kleinunternehmer (§ 19 UStG), so
 --              every payment books onto Kennzahl 111. If you leave § 19, split
 --              this onto 112 (netto) and 140 (USt).
---   Expenses — receipt BELEGDATUM. Strict cash basis would use the payment date;
---              Belegdatum is used because it is always present and, for a side
---              business paying on the spot, the same day. To go strict, join
---              receipt_payment and filter on its payment_date.
+--   Expenses — receipt ABFLUSSDATUM: the first recorded payment on the receipt,
+--              falling back to the Belegdatum when no payment was recorded. A
+--              receipt dated 28 Dec but paid 3 Jan is an expense of the *paying*
+--              year. The fallback keeps un-paid-out receipts from vanishing from
+--              the report (Vollständigkeit) at the cost of dating them by Beleg.
+--              Receipts settled in instalments across two years are dated by the
+--              first instalment, not split; book those as separate receipts.
 -- Amounts in cents. NULL kennzahl = expense category with no EÜR mapping; the
 -- template surfaces it under "nicht zugeordnet" instead of dropping it.
+--
+-- Cancelled invoices are NOT filtered out, and that is the point: under the
+-- Kassenprinzip what counts is money that moved, not the document it hung on.
+-- Cancelling an invoice that was already paid does not un-receive the cash, so
+-- dropping its payments here would silently restate a period that has already
+-- been declared — exactly what GoBD-Unveränderbarkeit forbids. A refund is
+-- booked as its own (negative) payment on the payment date it actually happened.
+--
+-- Stornorechnungen carry negated *line items*, which this query never reads; the
+-- reversal an EÜR cares about is the refund payment, not the storno document.
 SELECT
     '111'                          AS kennzahl,
     0                              AS is_expense,
@@ -32,24 +87,28 @@ SELECT
     'Zahlungseingang Rechnung'     AS description
 FROM invoice_payment ip
 JOIN invoice i ON i.id = ip.invoice_id
-WHERE i.is_canceled = 0
-  AND substring(ip.payment_date FROM 1 FOR 4) = $1::text
+WHERE substring(ip.payment_date FROM 1 FOR 4) = $1::text
 UNION ALL
 SELECT
-    t.euer_kennzahl                      AS kennzahl,
-    1                                    AS is_expense,
-    ri.total                             AS amount_cents,
-    r.receipt_date                       AS doc_date,
-    r.receipt_number                     AS doc_number,
-    COALESCE(con.name, r.recipient_name) AS party,
-    ri.item                              AS description
+    t.euer_kennzahl                             AS kennzahl,
+    1                                           AS is_expense,
+    ri.total                                    AS amount_cents,
+    COALESCE(rp.first_payment_date, r.receipt_date) AS doc_date,
+    r.receipt_number                            AS doc_number,
+    COALESCE(con.name, r.recipient_name)        AS party,
+    ri.item                                     AS description
 FROM receipt_item ri
 JOIN receipt r ON r.id = ri.receipt_id
+LEFT JOIN (
+    SELECT receipt_id, MIN(payment_date) AS first_payment_date
+    FROM receipt_payment
+    GROUP BY receipt_id
+) rp ON rp.receipt_id = r.id
 LEFT JOIN receipt_item_category c ON ri.category_id = c.id
 LEFT JOIN receipt_item_category_type t ON c.category_type_id = t.id
 LEFT JOIN contact con ON con.id = r.customer_contact_id
 WHERE r.is_canceled = 0
-  AND substring(r.receipt_date FROM 1 FOR 4) = $1::text
+  AND substring(COALESCE(rp.first_payment_date, r.receipt_date) FROM 1 FOR 4) = $1::text
 ORDER BY is_expense, kennzahl, doc_date;
 
 --- query dialect=sqlite ---
@@ -64,24 +123,28 @@ SELECT
     'Zahlungseingang Rechnung'     AS description
 FROM invoice_payment ip
 JOIN invoice i ON i.id = ip.invoice_id
-WHERE i.is_canceled = 0
-  AND substr(ip.payment_date, 1, 4) = CAST(?1 AS TEXT)
+WHERE substr(ip.payment_date, 1, 4) = CAST(?1 AS TEXT)
 UNION ALL
 SELECT
-    t.euer_kennzahl                      AS kennzahl,
-    1                                    AS is_expense,
-    ri.total                             AS amount_cents,
-    r.receipt_date                       AS doc_date,
-    r.receipt_number                     AS doc_number,
-    COALESCE(con.name, r.recipient_name) AS party,
-    ri.item                              AS description
+    t.euer_kennzahl                             AS kennzahl,
+    1                                           AS is_expense,
+    ri.total                                    AS amount_cents,
+    COALESCE(rp.first_payment_date, r.receipt_date) AS doc_date,
+    r.receipt_number                            AS doc_number,
+    COALESCE(con.name, r.recipient_name)        AS party,
+    ri.item                                     AS description
 FROM receipt_item ri
 JOIN receipt r ON r.id = ri.receipt_id
+LEFT JOIN (
+    SELECT receipt_id, MIN(payment_date) AS first_payment_date
+    FROM receipt_payment
+    GROUP BY receipt_id
+) rp ON rp.receipt_id = r.id
 LEFT JOIN receipt_item_category c ON ri.category_id = c.id
 LEFT JOIN receipt_item_category_type t ON c.category_type_id = t.id
 LEFT JOIN contact con ON con.id = r.customer_contact_id
 WHERE r.is_canceled = 0
-  AND substr(r.receipt_date, 1, 4) = CAST(?1 AS TEXT)
+  AND substr(COALESCE(rp.first_payment_date, r.receipt_date), 1, 4) = CAST(?1 AS TEXT)
 ORDER BY is_expense, kennzahl, doc_date;
 
 --- template ---

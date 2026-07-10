@@ -5,20 +5,88 @@ use axum::{
     response::IntoResponse,
     routing::{get, post},
     Router,
+    middleware::Next,
 };
 use tower_http::services::ServeDir;
 use tower_http::cors::{Any, CorsLayer};
-use app::db::{DbPool, KlubuRepository};
+use app::db::KlubuRepository;
 use std::sync::Arc;
 use std::net::SocketAddr;
+
+mod dbcopy;
+use dbcopy::{connect_pool, migrator_for, run_db_migration, shutdown_pool};
+
+/// Endpoints reachable without a session. Everything else under `/api` needs one.
+///
+/// Matched exactly, not by prefix: `login` and `initialize_admin` are the only
+/// ways in, and `check_setup_required` / `get_current_user` are what the SPA asks
+/// before it knows whether it has a session at all.
+const PUBLIC_API_PATHS: &[&str] = &[
+    "/api/check_setup_required",
+    "/api/initialize_admin",
+    "/api/login",
+    "/api/get_current_user",
+];
+
+/// Authenticates every `/api` request and attaches the resolved identity to the
+/// request extensions, where `handle_server_fns` picks it up.
+///
+/// The identity has to travel in the extensions rather than a task-local:
+/// `leptos_axum` runs each server function on a separate task (`spawn_pinned`),
+/// which a task-local does not survive.
+async fn auth_middleware(
+    State(repo): State<app::db::ActiveRepository>,
+    mut req: Request<Body>,
+    next: Next,
+) -> Response<Body> {
+    let path = req.uri().path();
+
+    if !path.starts_with("/api") || PUBLIC_API_PATHS.contains(&path) {
+        return next.run(req).await;
+    }
+
+    let username = match req
+        .headers()
+        .get(header::COOKIE)
+        .and_then(|c| c.to_str().ok())
+        .and_then(app::server::auth::session_token_from_cookie_header)
+    {
+        Some(token) => app::server::auth::lookup_session(repo.pool(), &token)
+            .await
+            .unwrap_or(None),
+        None => None,
+    };
+
+    let Some(username) = username else {
+        return Response::builder()
+            .status(StatusCode::UNAUTHORIZED)
+            .body(Body::from("Unauthorized"))
+            .unwrap();
+    };
+
+    req.extensions_mut()
+        .insert(app::server::auth::CurrentUser(username));
+    next.run(req).await
+}
 
 async fn handle_server_fns(
     State(repo): State<app::db::ActiveRepository>,
     req: Request<Body>,
 ) -> impl IntoResponse {
+    // Read the identity out here, on the Axum task, and hand it to the closure —
+    // which runs inside the spawned server-fn task, where the audit log reads it
+    // back via `use_context`.
+    let current_user = req
+        .extensions()
+        .get::<app::server::auth::CurrentUser>()
+        .cloned();
+
     leptos_axum::handle_server_fns_with_context(
         move || {
             leptos::provide_context(repo.clone());
+            if let Some(user) = current_user.clone() {
+                leptos::provide_context(user);
+            }
         },
         req,
     )
@@ -43,8 +111,9 @@ async fn download_invoice_pdf(
 ) -> impl IntoResponse {
     match repo.get_invoice(id).await {
         Ok(invoice) => {
-            let typst_code = app::generate_invoice_typst(&invoice);
-            match app::pdf::compiler::compile_typst(typst_code) {
+            // Committed invoices download as ZUGFeRD (PDF/A-3b with the CII XML
+            // embedded); drafts stay the plain watermarked preview.
+            match app::einvoice::render_invoice_pdf(&invoice) {
                 Ok(pdf_bytes) => Response::builder()
                     .status(StatusCode::OK)
                     .header(header::CONTENT_TYPE, "application/pdf")
@@ -74,7 +143,7 @@ async fn download_offer_pdf(
     match repo.get_offer(id).await {
         Ok(offer) => {
             let typst_code = app::generate_offer_typst(&offer);
-            match app::pdf::compiler::compile_typst(typst_code) {
+            match app::pdf::compiler::compile_typst_pdfa(typst_code) {
                 Ok(pdf_bytes) => Response::builder()
                     .status(StatusCode::OK)
                     .header(header::CONTENT_TYPE, "application/pdf")
@@ -159,35 +228,66 @@ async fn download_document(
 
 #[tokio::main]
 async fn main() {
-    #[cfg(feature = "sqlite")]
-    let default_db_url = "sqlite://klubu.db?mode=rwc";
-    #[cfg(feature = "postgres")]
-    let default_db_url = "postgres://klubu:klubu-test@localhost:5433/klubu";
+    let db_url = std::env::var("DATABASE_URL")
+        .unwrap_or_else(|_| "sqlite://klubu.db?mode=rwc".to_string());
 
-    let db_url = std::env::var("DATABASE_URL").unwrap_or_else(|_| default_db_url.to_string());
+    // `migrate-db --to <target-url>` copies this instance's data into another
+    // database (typically the other dialect) and exits. See `dbcopy.rs`.
+    let args: Vec<String> = std::env::args().collect();
+    if args.get(1).map(String::as_str) == Some("migrate-db") {
+        let target_url = match args.get(2).map(String::as_str) {
+            Some("--to") => args.get(3).cloned(),
+            Some(url) => Some(url.to_string()),
+            None => None,
+        }
+        .unwrap_or_else(|| {
+            eprintln!("Usage: klubu-backend migrate-db --to <target-database-url>");
+            std::process::exit(2);
+        });
+        if let Err(error) = run_db_migration(&db_url, &target_url).await {
+            eprintln!("Migration fehlgeschlagen: {error}");
+            std::process::exit(1);
+        }
+        return;
+    }
+
     println!("Connecting to database: {}", db_url);
-    
-    let pool = DbPool::connect(&db_url)
-        .await
-        .expect("Failed to connect to database");
-        
+    let pool = connect_pool(&db_url).await.expect("Failed to connect to database");
+
     println!("Running database migrations...");
-    #[cfg(feature = "postgres")]
-    sqlx::migrate!("./migrations")
+    migrator_for(&db_url)
         .run(&pool)
         .await
         .expect("Failed to run migrations");
 
-    #[cfg(feature = "sqlite")]
-    sqlx::migrate!("./migrations-sqlite")
-        .run(&pool)
-        .await
-        .expect("Failed to run migrations");
-        
-    let repo: app::db::ActiveRepository = Arc::new(app::db::SqlRepository::new(pool));
+    // The pool is reference-counted; this clone is for the teardown after
+    // `axum::serve` returns, once `repo` has been moved into the router state.
+    let repo: app::db::ActiveRepository = Arc::new(app::db::SqlRepository::new(pool.clone()));
 
 
     repo.seed_database().await.expect("Failed to seed database");
+
+    // No users yet? Mint a one-shot setup token so the first admin can be created.
+    // A failure to read `users` must not be mistaken for "no users" — that would
+    // print a setup link for a database we cannot actually talk to.
+    let user_count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM users")
+        .fetch_one(repo.pool())
+        .await
+        .expect("Failed to query users table");
+
+    if user_count == 0 {
+        let token = app::server::auth::generate_random_token();
+        {
+            let mut lock = app::server::auth::get_setup_token_lock().lock().unwrap();
+            *lock = Some(token.clone());
+        }
+        println!("========================================================================");
+        println!("[SETUP] NO USERS FOUND IN DATABASE.");
+        println!("To initialize the admin account, please open the following link:");
+        println!("http://localhost:8080/setup?token={}", token);
+        println!("========================================================================");
+    }
+
     app::init_templates();
     app::register_server_fns();
     
@@ -223,10 +323,41 @@ async fn main() {
                     }
                 }))
         )
+        .layer(axum::middleware::from_fn_with_state(repo.clone(), auth_middleware))
         .with_state(repo);
         
     let addr = SocketAddr::from(([0, 0, 0, 0], 8080));
     println!("Listening on http://{}", addr);
     let listener = tokio::net::TcpListener::bind(&addr).await.unwrap();
-    axum::serve(listener, app).await.unwrap();
+    axum::serve(listener, app)
+        .with_graceful_shutdown(shutdown_signal())
+        .await
+        .unwrap();
+
+    // In-flight requests have drained; checkpoint the WAL back into the main
+    // .db file and close cleanly, so the -wal/-shm sidecars are empty and the
+    // database is a single self-contained file for backup or deletion.
+    println!("Shutting down, checkpointing database...");
+    shutdown_pool(&pool, &db_url).await;
+}
+
+/// Resolves on Ctrl+C or SIGTERM (what systemd and `docker stop` send). Either
+/// one stops the listener; the teardown after `axum::serve` then runs instead
+/// of the process dying mid-write.
+async fn shutdown_signal() {
+    let ctrl_c = async {
+        tokio::signal::ctrl_c()
+            .await
+            .expect("failed to install Ctrl+C handler");
+    };
+    let terminate = async {
+        tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate())
+            .expect("failed to install SIGTERM handler")
+            .recv()
+            .await;
+    };
+    tokio::select! {
+        _ = ctrl_c => {},
+        _ = terminate => {},
+    }
 }

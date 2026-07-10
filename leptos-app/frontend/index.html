@@ -85,11 +85,13 @@
       .column.is-11 { flex: none; width: 91.6667%; }
       .column.is-12 { flex: none; width: 100%; }
 
-      /* Master/detail pages (invoices, offers, receipts, contacts): each side
-         scrolls on its own rather than scrolling the whole page.
+      /* Master/detail pages (contacts, reports): each side scrolls on its own
+         rather than scrolling the whole page.
          The master list is capped instead of taking a percentage — at 41.67% it
          ate half the width of an already-narrow viewport and left the editor
-         unusable. Below 1100px the two panes stack. */
+         unusable. Below 1100px the two panes stack.
+         Invoices, offers and receipts no longer use this: their editors take the
+         whole page, since the other documents are noise while editing one. */
       .columns.is-split {
         display: grid;
         grid-template-columns: minmax(0, 24rem) minmax(0, 1fr);
@@ -884,6 +886,65 @@
       .scroll-list::-webkit-scrollbar { width: 8px; }
       .scroll-list::-webkit-scrollbar-thumb {
         background: rgba(140, 103, 239, 0.35); border-radius: 4px;
+      }
+
+      /* Authentication Styles */
+      .auth-container {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        min-height: 100vh;
+        width: 100vw;
+        padding: 1.5rem;
+        background: radial-gradient(circle at top right, #1a1235, #08060f) no-repeat;
+        position: fixed;
+        inset: 0;
+        z-index: 9999;
+      }
+      .auth-card {
+        background: var(--surface-raised);
+        border: 1px solid var(--border);
+        border-radius: 1.25rem;
+        padding: 2.5rem;
+        width: 100%;
+        max-width: 450px;
+        box-shadow: 0 20px 40px rgba(0, 0, 0, 0.4), 0 0 80px rgba(140, 103, 239, 0.05);
+        backdrop-filter: blur(16px);
+      }
+      .auth-brand {
+        text-align: center;
+        margin-bottom: 2.25rem;
+      }
+      .auth-brand .icon {
+        color: var(--accent);
+        margin-bottom: 0.75rem;
+        display: inline-block;
+      }
+      .auth-brand .title {
+        font-size: 2.25rem;
+        font-weight: 800;
+        letter-spacing: -0.02em;
+        margin-bottom: 0.5rem;
+        background: linear-gradient(135deg, #fff 0%, #b8a2f8 100%) !important;
+        -webkit-background-clip: text !important;
+        -webkit-text-fill-color: transparent !important;
+      }
+      .auth-brand .subtitle {
+        font-size: 0.9rem;
+        color: var(--text-muted) !important;
+      }
+      /* Input icons are positioned once, near `.control` above. Re-stating them
+         here shifted every icon up by half an input: `.icon.is-left` outranks a
+         bare `.icon`, so it kept `top: 0; height: 100%`, but the `translateY(-50%)`
+         that belonged with `top: 50%` had nothing to override it. */
+      .button.is-fullwidth {
+        width: 100%;
+      }
+      .text-warning {
+        color: #ffdd57 !important;
+      }
+      .text-link {
+        color: #8c67ef !important;
       }
     </style>
   </head>

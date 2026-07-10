@@ -102,6 +102,13 @@
 #text(12pt, weight: "bold")[#if invoice.subject != none [#invoice.subject] else [Rechnung]]
 #v(0.5cm)
 
+// Intro text above the table. `header_typst` is Markdown that the server has
+// already converted to Typst markup, with all user text escaped.
+#if invoice.at("header_typst", default: none) != none [
+  #eval(invoice.header_typst, mode: "markup")
+  #v(0.4cm)
+]
+
 // Items table
 #table(
   columns: (auto, 1fr, auto, auto, auto, auto),
@@ -128,8 +135,12 @@
 ]
 
 #v(0.5cm)
-#if invoice.footer_html != none [
-  #align(center)[#invoice.footer_html]
+// Closing text below the table: payment terms, thanks, bank details. Markdown,
+// so it can carry headings and lists rather than one centred sentence.
+#if invoice.at("footer_typst", default: none) != none [
+  #eval(invoice.footer_typst, mode: "markup")
+] else if invoice.footer != none [
+  #align(center)[#invoice.footer]
 ]
 
 #v(1.5cm)

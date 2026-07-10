@@ -9,7 +9,7 @@ use super::invoices::get_invoice;
 #[cfg(feature = "ssr")]
 use super::offers::get_offer;
 #[cfg(feature = "ssr")]
-use crate::typst_gen::{generate_invoice_typst, generate_offer_typst};
+use crate::typst_gen::generate_offer_typst;
 
 #[server(name = ExportInvoicePdf, prefix = "/api", endpoint = "export_invoice_pdf")]
 pub async fn export_invoice_pdf(invoice_id: i64) -> Result<shared::Document, ServerFnError> {
@@ -20,13 +20,14 @@ pub async fn export_invoice_pdf(invoice_id: i64) -> Result<shared::Document, Ser
             if invoice.committed_timestamp.is_none() {
                 return Err(ServerFnError::new("Can only export committed invoices"));
             }
-            let typst_code = generate_invoice_typst(&invoice);
-            
+
             let repo = use_context::<super::db::ActiveRepository>()
                 .ok_or_else(|| ServerFnError::new("Repository not found"))?;
-            let bytes = crate::pdf::compiler::compile_typst(typst_code)
+            // A committed invoice is archived as a ZUGFeRD PDF: PDF/A-3b with the
+            // EN 16931 XML embedded. It stays a perfectly ordinary PDF to read.
+            let bytes = crate::einvoice::render_invoice_pdf(&invoice)
                 .map_err(|e| ServerFnError::new(format!("Typst compilation failed: {}", e)))?;
-            
+
             let doc_id = invoice.document.as_ref().map(|d| d.id as i32);
             let prefix = format!("invoices/{}", invoice_id);
             let doc = super::documents::store_new_version(&repo, doc_id, "pdf", "application/pdf", &prefix, &bytes).await?;
@@ -63,7 +64,7 @@ pub async fn export_offer_pdf(offer_id: i64) -> Result<shared::Document, ServerF
             
             let repo = use_context::<super::db::ActiveRepository>()
                 .ok_or_else(|| ServerFnError::new("Repository not found"))?;
-            let bytes = crate::pdf::compiler::compile_typst(typst_code)
+            let bytes = crate::pdf::compiler::compile_typst_pdfa(typst_code)
                 .map_err(|e| ServerFnError::new(format!("Typst compilation failed: {}", e)))?;
             
             let doc_id = offer.document.as_ref().map(|d| d.id as i32);

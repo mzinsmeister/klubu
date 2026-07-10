@@ -128,8 +128,8 @@
 ]
 
 #v(0.5cm)
-#if invoice.footer_html != none [
-  #align(center)[#invoice.footer_html]
+#if invoice.footer != none [
+  #align(center)[#invoice.footer]
 ]
 
 #v(1.5cm)

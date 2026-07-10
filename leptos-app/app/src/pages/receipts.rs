@@ -4,11 +4,14 @@ use chrono::{NaiveDate, Utc};
 use shared::*;
 use wasm_bindgen::JsCast;
 
-use crate::components::{EmptyState, MoneyInput};
+use crate::components::{MoneyInput, PaymentsPanel};
 use crate::server::{
-    delete_receipt, get_ai_status, get_categories, get_contacts, get_receipt, get_receipts,
-    prefill_receipt, save_receipt,
+    add_receipt_payment, commit_receipt, delete_receipt, delete_receipt_payment, get_ai_status,
+    get_all_contacts, get_categories, get_receipt, get_receipts, parse_einvoice, prefill_receipt,
+    save_receipt,
 };
+
+const RECEIPT_PAGE_SIZE: u32 = 50;
 
 /// Reads the picked file as base64 and hands it to `on_load`.
 fn read_file_as_base64(file: web_sys::File, on_load: impl Fn(ReceiptDocumentData) + 'static) {
@@ -55,13 +58,43 @@ pub fn ReceiptsPage() -> impl IntoView {
     let (categories, set_categories) = create_signal(Vec::<ReceiptItemCategory>::new());
     let (contacts, set_contacts) = create_signal(Vec::<Contact>::new());
     let (ai_status, set_ai_status) = create_signal(AiStatus::default());
+    let (from_date_filter, set_from_date_filter) = create_signal(String::new());
+    let (to_date_filter, set_to_date_filter) = create_signal(String::new());
+    let (has_more_receipts, set_has_more_receipts) = create_signal(false);
+    let (list_generation, set_list_generation) = create_signal(0_u64);
 
-    let load_receipts = create_action(move |_: &()| async move {
-        match get_receipts().await {
-            Ok(list) => set_receipts.set(list),
-            Err(e) => logging::log!("Error fetching receipts: {:?}", e),
-        }
-    });
+    let load_receipts = create_action(
+        move |(generation, offset, from, to): &(u64, u32, String, String)| {
+            let generation = *generation;
+            let offset = *offset;
+            let from = from.clone();
+            let to = to.clone();
+            async move {
+                let from_date = NaiveDate::parse_from_str(&from, "%Y-%m-%d").ok();
+                let to_date = NaiveDate::parse_from_str(&to, "%Y-%m-%d").ok();
+                match get_receipts(offset, RECEIPT_PAGE_SIZE, from_date, to_date).await {
+                    Ok(page) => {
+                        if list_generation.get_untracked() != generation
+                            || from_date_filter.get_untracked() != from
+                            || to_date_filter.get_untracked() != to
+                        {
+                            return;
+                        }
+
+                        if offset == 0 {
+                            set_receipts.set(page.items);
+                        } else if receipts.get_untracked().len() as u32 == offset {
+                            set_receipts.update(|items| items.extend(page.items));
+                        } else {
+                            return;
+                        }
+                        set_has_more_receipts.set(page.has_more);
+                    }
+                    Err(e) => logging::log!("Error fetching receipts: {:?}", e),
+                }
+            }
+        },
+    );
 
     create_resource(
         || (),
@@ -69,7 +102,7 @@ pub fn ReceiptsPage() -> impl IntoView {
             if let Ok(list) = get_categories().await {
                 set_categories.set(list);
             }
-            if let Ok(list) = get_contacts().await {
+            if let Ok(list) = get_all_contacts().await {
                 set_contacts.set(list);
             }
             // When the server has the feature switched off we never show the
@@ -80,8 +113,7 @@ pub fn ReceiptsPage() -> impl IntoView {
         },
     );
 
-    load_receipts.dispatch(());
-
+    load_receipts.dispatch((0, 0, String::new(), String::new()));
 
     let new_receipt = move |_| {
         set_selected_receipt.set(Some(Receipt {
@@ -99,104 +131,195 @@ pub fn ReceiptsPage() -> impl IntoView {
         }));
     };
 
-    let selected_id = move || selected_receipt.get().and_then(|r| r.id);
+    // Full-screen editor: while booking a receipt the other ones are just noise.
+    let list_view = move || {
+        view! {
+            <div class="level">
+                <div class="level-left">
+                        <h1 class="title">"Belege"</h1>
+                    </div>
+                    <div class="level-right">
+                        <button class="button is-link" on:click=new_receipt>
+                            <span class="icon mr-1"><i class="mdi mdi-plus"></i></span>
+                            "Neuer Beleg"
+                        </button>
+                    </div>
+            </div>
+
+            <div class="box">
+                            <div class="field-row mb-4">
+                                <div class="field">
+                                    <label class="label is-small">"Von"</label>
+                                    <div class="control">
+                                        <input
+                                            class="input"
+                                            type="date"
+                                            prop:value=from_date_filter
+                                            on:input=move |ev| {
+                                                let from = event_target_value(&ev);
+                                                let generation = list_generation.get_untracked().wrapping_add(1);
+                                                set_list_generation.set(generation);
+                                                set_from_date_filter.set(from.clone());
+                                                set_receipts.set(Vec::new());
+                                                set_has_more_receipts.set(false);
+                                                load_receipts.dispatch((
+                                                    generation,
+                                                    0,
+                                                    from,
+                                                    to_date_filter.get_untracked(),
+                                                ));
+                                            }
+                                        />
+                                    </div>
+                                </div>
+                                <div class="field">
+                                    <label class="label is-small">"Bis (einschließlich)"</label>
+                                    <div class="control">
+                                        <input
+                                            class="input"
+                                            type="date"
+                                            prop:value=to_date_filter
+                                            on:input=move |ev| {
+                                                let to = event_target_value(&ev);
+                                                let generation = list_generation.get_untracked().wrapping_add(1);
+                                                set_list_generation.set(generation);
+                                                set_to_date_filter.set(to.clone());
+                                                set_receipts.set(Vec::new());
+                                                set_has_more_receipts.set(false);
+                                                load_receipts.dispatch((
+                                                    generation,
+                                                    0,
+                                                    from_date_filter.get_untracked(),
+                                                    to,
+                                                ));
+                                            }
+                                        />
+                                    </div>
+                                </div>
+                            </div>
+                            <Show
+                                when=move || !receipts.get().is_empty() || load_receipts.pending().get()
+                                fallback=|| view! {
+                                    <p class="text-muted has-text-centered p-4">"Noch keine Belege erfasst."</p>
+                                }
+                            >
+                                <div class="scroll-list">
+                                    <For
+                                        each=move || receipts.get()
+                                        key=|rec| (rec.id, rec.total_cents, rec.receipt_number.clone())
+                                        let:rec
+                                    >
+                                        {
+                                            let id = rec.id;
+                                            let supplier = rec.supplier_contact.as_ref()
+                                                .map(Contact::display_name)
+                                                .unwrap_or_else(|| "Kein Lieferant".to_string());
+                                            let number = rec.receipt_number.clone()
+                                                .filter(|n| !n.trim().is_empty())
+                                                .unwrap_or_else(|| format!("#{}", rec.id));
+                                            let date = rec.receipt_date
+                                                .map(|d| d.format("%d.%m.%Y").to_string())
+                                                .unwrap_or_else(|| "ohne Datum".to_string());
+                                            let total = format_euro(rec.total_cents);
+                                            let has_doc = rec.has_document;
+                                            let pay_status = rec.payment_status();
+                                            view! {
+                                                <div
+                                                    class="box list-item p-3 mb-2"
+                                                    on:click=move |_| {
+                                                        spawn_local(async move {
+                                                            match get_receipt(id).await {
+                                                                Ok(full) => set_selected_receipt.set(Some(full)),
+                                                                Err(e) => logging::log!("Error fetching receipt: {:?}", e),
+                                                            }
+                                                        });
+                                                    }
+                                                >
+                                                    <div class="is-flex is-justify-content-space-between">
+                                                        <span class="has-text-weight-bold">
+                                                            {number}
+                                                            {has_doc.then(|| view! {
+                                                                <span class="icon is-small ml-1 text-muted" title="Dokument hinterlegt">
+                                                                    <i class="mdi mdi-paperclip"></i>
+                                                                </span>
+                                                            })}
+                                                            {rec.committed.then(|| view! {
+                                                                <span class="tag is-warning is-small ml-1 py-0 px-1" style="height: 1.25rem; font-size: 0.65rem;" title="Festgeschrieben">
+                                                                    <span class="icon is-small"><i class="mdi mdi-lock"></i></span>
+                                                                </span>
+                                                            })}
+                                                        </span>
+                                                        <span class="has-text-weight-semibold is-numeric">{total}</span>
+                                                    </div>
+                                                    <div class="is-size-7 text-muted">
+                                                        {supplier} " • " {date}
+                                                        <span class=format!("tag {} is-small ml-2", pay_status.tag_class())>{pay_status.label()}</span>
+                                                    </div>
+                                                </div>
+                                            }
+                                        }
+                                    </For>
+                                </div>
+                            </Show>
+                            <Show when=move || has_more_receipts.get()>
+                                <div class="has-text-centered mt-3">
+                                    <button
+                                        class="button is-light"
+                                        prop:disabled=load_receipts.pending()
+                                        on:click=move |_| {
+                                        let offset = receipts.get_untracked().len() as u32;
+                                        load_receipts.dispatch((
+                                            list_generation.get_untracked(),
+                                            offset,
+                                            from_date_filter.get_untracked(),
+                                                to_date_filter.get_untracked(),
+                                            ));
+                                        }
+                                    >
+                                        {move || if load_receipts.pending().get() { "Lädt…" } else { "Mehr laden" }}
+                                    </button>
+                                </div>
+                            </Show>
+            </div>
+        }
+    };
 
     view! {
         <div class="container">
-            <div class="level">
-                <div class="level-left">
-                    <h1 class="title">"Belege"</h1>
-                </div>
-                <div class="level-right">
-                    <button class="button is-link" on:click=new_receipt>
-                        <span class="icon mr-1"><i class="mdi mdi-plus"></i></span>
-                        "Neuer Beleg"
-                    </button>
-                </div>
-            </div>
-
-            <div class="columns is-split">
-                <div class="column is-5">
-                    <div class="box">
-                        <Show
-                            when=move || !receipts.get().is_empty()
-                            fallback=|| view! {
-                                <p class="text-muted has-text-centered p-4">"Noch keine Belege erfasst."</p>
-                            }
-                        >
-                            <div class="scroll-list">
-                                <For
-                                    each=move || receipts.get()
-                                    key=|rec| (rec.id, rec.total_cents, rec.receipt_number.clone())
-                                    let:rec
-                                >
-                                    {
-                                        let id = rec.id;
-                                        let supplier = rec.supplier_contact.as_ref()
-                                            .map(Contact::display_name)
-                                            .unwrap_or_else(|| "Kein Lieferant".to_string());
-                                        let number = rec.receipt_number.clone()
-                                            .filter(|n| !n.trim().is_empty())
-                                            .unwrap_or_else(|| format!("#{}", rec.id));
-                                        let date = rec.receipt_date
-                                            .map(|d| d.format("%d.%m.%Y").to_string())
-                                            .unwrap_or_else(|| "ohne Datum".to_string());
-                                        let total = format_euro(rec.total_cents);
-                                        let has_doc = rec.has_document;
-                                        view! {
-                                            <div
-                                                class="box list-item p-3 mb-2"
-                                                class:is-active=move || selected_id() == Some(id)
-                                                on:click=move |_| {
-                                                    spawn_local(async move {
-                                                        match get_receipt(id).await {
-                                                            Ok(full) => set_selected_receipt.set(Some(full)),
-                                                            Err(e) => logging::log!("Error fetching receipt: {:?}", e),
-                                                        }
-                                                    });
-                                                }
-                                            >
-                                                <div class="is-flex is-justify-content-space-between">
-                                                    <span class="has-text-weight-bold">
-                                                        {number}
-                                                        {has_doc.then(|| view! {
-                                                            <span class="icon is-small ml-1 text-muted" title="Dokument hinterlegt">
-                                                                <i class="mdi mdi-paperclip"></i>
-                                                            </span>
-                                                        })}
-                                                    </span>
-                                                    <span class="has-text-weight-semibold is-numeric">{total}</span>
-                                                </div>
-                                                <div class="is-size-7 text-muted">{supplier} " • " {date}</div>
-                                            </div>
-                                        }
-                                    }
-                                </For>
-                            </div>
-                        </Show>
+            {move || match selected_receipt.get() {
+                None => list_view().into_view(),
+                Some(rec) => view! {
+                    <div class="level">
+                        <div class="level-left">
+                            <button class="button is-light" on:click=move |_| set_selected_receipt.set(None)>
+                                <span class="icon mr-1"><i class="mdi mdi-arrow-left"></i></span>
+                                "Zurück zur Übersicht"
+                            </button>
+                        </div>
                     </div>
-                </div>
-
-                <div class="column">
-                    {move || match selected_receipt.get() {
-                        None => view! {
-                            <EmptyState icon="receipt-text-outline" text="Wählen Sie einen Beleg aus." />
-                        }.into_view(),
-                        Some(rec) => view! {
-                            <ReceiptEditor
-                                // Remount the editor when a different receipt is picked so
-                                // its internal signals restart from the new data.
-                                rec=rec
-                                contacts=contacts
-                                categories=categories
-                                ai_status=ai_status
-                                on_change=Callback::new(move |_| load_receipts.dispatch(()))
-                                set_selected_receipt=set_selected_receipt
-                            />
-                        }.into_view(),
-                    }}
-                </div>
-            </div>
+                    <ReceiptEditor
+                        // Remount the editor when a different receipt is picked so
+                        // its internal signals restart from the new data.
+                        rec=rec
+                        contacts=contacts
+                        categories=categories
+                        ai_status=ai_status
+                        on_change=Callback::new(move |_| {
+                            let generation = list_generation.get_untracked().wrapping_add(1);
+                            set_list_generation.set(generation);
+                            set_receipts.set(Vec::new());
+                            set_has_more_receipts.set(false);
+                            load_receipts.dispatch((
+                                generation,
+                                0,
+                                from_date_filter.get_untracked(),
+                                to_date_filter.get_untracked(),
+                            ));
+                        })
+                        set_selected_receipt=set_selected_receipt
+                    />
+                }.into_view(),
+            }}
         </div>
     }
 }
@@ -211,10 +334,13 @@ fn ReceiptEditor(
     set_selected_receipt: WriteSignal<Option<Receipt>>,
 ) -> impl IntoView {
     let receipt_id = rec.id;
+    let is_committed = rec.committed_timestamp.is_some();
 
     let (receipt_num, set_receipt_num) = create_signal(rec.receipt_number.clone());
     let (receipt_date, set_receipt_date) = create_signal(
-        rec.receipt_date.map(|d| d.format("%Y-%m-%d").to_string()).unwrap_or_default(),
+        rec.receipt_date
+            .map(|d| d.format("%Y-%m-%d").to_string())
+            .unwrap_or_default(),
     );
     let (supplier_contact, set_supplier_contact) = create_signal(rec.supplier_contact.clone());
     let (document_data, set_document_data) = create_signal(rec.document_data.clone());
@@ -222,6 +348,45 @@ fn ReceiptEditor(
     let (items_list, set_items_list) = create_signal(rec.items.clone());
     let (error, set_error) = create_signal(Option::<String>::None);
     let (warnings, set_warnings) = create_signal(Vec::<String>::new());
+
+    let (payments_list, set_payments_list) = create_signal(rec.payments.clone());
+
+    let refresh_payments = move || {
+        if let Some(id) = receipt_id {
+            spawn_local(async move {
+                if let Ok(full) = get_receipt(id).await {
+                    set_payments_list.set(full.payments);
+                }
+            });
+        }
+    };
+
+    let add_payment_act = create_action(move |(amount, date): &(i64, NaiveDate)| {
+        let (amount, date) = (*amount, *date);
+        async move {
+            let Some(id) = receipt_id else { return };
+            match add_receipt_payment(id, amount, date).await {
+                Ok(()) => {
+                    refresh_payments();
+                    on_change.call(());
+                }
+                Err(e) => set_error.set(Some(format!("Zahlung konnte nicht erfasst werden: {e}"))),
+            }
+        }
+    });
+
+    let delete_payment_act = create_action(move |payment_id: &i64| {
+        let payment_id = *payment_id;
+        async move {
+            match delete_receipt_payment(payment_id).await {
+                Ok(()) => {
+                    refresh_payments();
+                    on_change.call(());
+                }
+                Err(e) => set_error.set(Some(format!("Zahlung konnte nicht gelöscht werden: {e}"))),
+            }
+        }
+    });
     let (file_name, set_file_name) = create_signal(Option::<String>::None);
 
     // New-item form.
@@ -229,7 +394,13 @@ fn ReceiptEditor(
     let item_price = create_rw_signal(0i64);
     let (item_cat_id, set_item_cat_id) = create_signal(Option::<i64>::None);
 
-    let total_cents = move || items_list.get().iter().map(|i| i.price.amount_cents).sum::<i64>();
+    let total_cents = move || {
+        items_list
+            .get()
+            .iter()
+            .map(|i| i.price.amount_cents)
+            .sum::<i64>()
+    };
 
     let save_act = create_action(move |r: &Receipt| {
         let r = r.clone();
@@ -259,6 +430,39 @@ fn ReceiptEditor(
         }
     });
 
+    let commit_act = create_action(move |id: &i64| {
+        let id = *id;
+        async move {
+            match commit_receipt(id).await {
+                Ok(()) => {
+                    on_change.call(());
+                    set_error.set(None);
+                    if let Ok(saved) = get_receipt(id).await {
+                        set_selected_receipt.set(Some(saved));
+                    }
+                }
+                Err(e) => set_error.set(Some(format!("Festschreiben fehlgeschlagen: {e}"))),
+            }
+        }
+    });
+
+    // Fills the form from a prefill, whatever produced it.
+    let apply_prefill = move |p: ReceiptPrefill| {
+        if let Some(n) = p.receipt_number {
+            set_receipt_num.set(n);
+        }
+        if let Some(d) = p.receipt_date {
+            set_receipt_date.set(d.format("%Y-%m-%d").to_string());
+        }
+        if let Some(c) = p.supplier_contact {
+            set_supplier_contact.set(Some(c));
+        }
+        if !p.items.is_empty() {
+            set_items_list.set(p.items);
+        }
+        set_warnings.set(p.warnings);
+    };
+
     // Runs the uploaded file through the local model and fills the form.
     let prefill_act = create_action(move |doc: &ReceiptDocumentData| {
         let doc = doc.clone();
@@ -266,20 +470,24 @@ fn ReceiptEditor(
             set_error.set(None);
             set_warnings.set(vec![]);
             match prefill_receipt(doc).await {
-                Ok(p) => {
-                    if let Some(n) = p.receipt_number {
-                        set_receipt_num.set(n);
-                    }
-                    if let Some(d) = p.receipt_date {
-                        set_receipt_date.set(d.format("%Y-%m-%d").to_string());
-                    }
-                    if let Some(c) = p.supplier_contact {
-                        set_supplier_contact.set(Some(c));
-                    }
-                    if !p.items.is_empty() {
-                        set_items_list.set(p.items);
-                    }
-                    set_warnings.set(p.warnings);
+                Ok(p) => apply_prefill(p),
+                Err(e) => set_error.set(Some(e.to_string())),
+            }
+        }
+    });
+
+    // An uploaded document is checked for embedded invoice data before anything
+    // else. An e-invoice *states* its fields, so there is nothing to guess and
+    // no reason to make the user press a button — or to have the AI enabled.
+    let einvoice_act = create_action(move |doc: &ReceiptDocumentData| {
+        let doc = doc.clone();
+        async move {
+            match parse_einvoice(doc).await {
+                // Not an e-invoice: stay quiet, the AI button is still there.
+                Ok(None) => {}
+                Ok(Some(p)) => {
+                    set_error.set(None);
+                    apply_prefill(p);
                 }
                 Err(e) => set_error.set(Some(e.to_string())),
             }
@@ -293,7 +501,10 @@ fn ReceiptEditor(
             return;
         }
         set_error.set(None);
-        let category = categories.get().into_iter().find(|c| Some(c.id) == item_cat_id.get());
+        let category = categories
+            .get()
+            .into_iter()
+            .find(|c| Some(c.id) == item_cat_id.get());
         set_items_list.update(|items| {
             items.push(ReceiptItem {
                 item: desc.trim().to_string(),
@@ -346,6 +557,7 @@ fn ReceiptEditor(
                     <div class="control">
                         <input class="input" type="text" placeholder="z. B. RG-2026-0042"
                             prop:value=receipt_num
+                            prop:disabled=is_committed
                             on:input=move |ev| set_receipt_num.set(event_target_value(&ev)) />
                     </div>
                 </div>
@@ -354,6 +566,7 @@ fn ReceiptEditor(
                     <div class="control">
                         <input class="input" type="date"
                             prop:value=receipt_date
+                            prop:disabled=is_committed
                             on:input=move |ev| set_receipt_date.set(event_target_value(&ev)) />
                     </div>
                 </div>
@@ -363,7 +576,7 @@ fn ReceiptEditor(
                 <label class="label">"Lieferant (Kontakt)"</label>
                 <div class="control">
                     <div class="select is-fullwidth">
-                        <select on:change=move |ev| {
+                        <select prop:disabled=is_committed on:change=move |ev| {
                             let val = event_target_value(&ev);
                             match val.parse::<i64>() {
                                 Ok(id) => set_supplier_contact.set(
@@ -391,45 +604,53 @@ fn ReceiptEditor(
                 set_doc_metadata=set_doc_metadata
                 document_data=document_data
                 set_document_data=set_document_data
+
                 file_name=file_name
                 set_file_name=set_file_name
                 ai_status=ai_status
                 prefill_pending=prefill_act.pending()
                 on_prefill=Callback::new(move |doc| prefill_act.dispatch(doc))
+                on_upload=Callback::new(move |doc| einvoice_act.dispatch(doc))
+                is_committed=is_committed
             />
 
+
             // Add item
-            <div class="box subbox p-4 mt-4">
-                <h3 class="has-text-weight-bold mb-3">"Position hinzufügen"</h3>
-                <div class="field-row">
-                    <div class="field is-wide">
-                        <label class="label is-small">"Beschreibung"</label>
-                        <input class="input" type="text" placeholder="Beschreibung"
-                            prop:value=item_desc
-                            on:input=move |ev| set_item_desc.set(event_target_value(&ev)) />
-                    </div>
-                    <div class="field is-narrow">
-                        <label class="label is-small">"Betrag (€)"</label>
-                        <MoneyInput value=item_price />
-                    </div>
-                    <div class="field">
-                        <label class="label is-small">"Kategorie"</label>
-                        <div class="select is-fullwidth">
-                            <select on:change=move |ev| {
-                                set_item_cat_id.set(event_target_value(&ev).parse::<i64>().ok())
-                            }>
-                                <option value="">"– wählen –"</option>
-                                {move || categories.get().into_iter().map(|cat| view! {
-                                    <option value=cat.id.to_string()>{cat.name}</option>
-                                }).collect::<Vec<_>>()}
-                            </select>
+            {if !is_committed {
+                view! {
+                    <div class="box subbox p-4 mt-4">
+                        <h3 class="has-text-weight-bold mb-3">"Position hinzufügen"</h3>
+                        <div class="field-row">
+                            <div class="field is-wide">
+                                <label class="label is-small">"Beschreibung"</label>
+                                <input class="input" type="text" placeholder="Beschreibung"
+                                    prop:value=item_desc
+                                    on:input=move |ev| set_item_desc.set(event_target_value(&ev)) />
+                            </div>
+                            <div class="field is-narrow">
+                                <label class="label is-small">"Betrag (€)"</label>
+                                <MoneyInput value=item_price />
+                            </div>
+                            <div class="field">
+                                <label class="label is-small">"Kategorie"</label>
+                                <div class="select is-fullwidth">
+                                    <select on:change=move |ev| {
+                                        set_item_cat_id.set(event_target_value(&ev).parse::<i64>().ok())
+                                    }>
+                                        <option value="">"– wählen –"</option>
+                                        {move || categories.get().into_iter().map(|cat| view! {
+                                            <option value=cat.id.to_string()>{cat.name}</option>
+                                        }).collect::<Vec<_>>()}
+                                    </select>
+                                </div>
+                            </div>
+                            <button class="button is-link" title="Hinzufügen" on:click=add_item>
+                                <span class="icon"><i class="mdi mdi-plus"></i></span>
+                            </button>
                         </div>
                     </div>
-                    <button class="button is-link" title="Hinzufügen" on:click=add_item>
-                        <span class="icon"><i class="mdi mdi-plus"></i></span>
-                    </button>
-                </div>
-            </div>
+                }.into_view()
+            } else { "".into_view() }}
 
             <div class="table-wrap mt-4">
                 <table class="table is-fullwidth is-striped">
@@ -461,13 +682,17 @@ fn ReceiptEditor(
                                         <td>{cat}</td>
                                         <td class="is-numeric">{format_euro(item.price.amount_cents)}</td>
                                         <td class="has-text-right">
-                                            <button
-                                                class="button is-small is-danger is-outlined"
-                                                title="Position entfernen"
-                                                on:click=move |_| set_items_list.update(|items| { items.remove(idx); })
-                                            >
-                                                <span class="icon is-small"><i class="mdi mdi-delete"></i></span>
-                                            </button>
+                                            {if !is_committed {
+                                                view! {
+                                                    <button
+                                                        class="button is-small is-danger is-outlined"
+                                                        title="Position entfernen"
+                                                        on:click=move |_| set_items_list.update(|items| { items.remove(idx); })
+                                                    >
+                                                        <span class="icon is-small"><i class="mdi mdi-delete"></i></span>
+                                                    </button>
+                                                }.into_view()
+                                            } else { "".into_view() }}
                                         </td>
                                     </tr>
                                 }
@@ -484,23 +709,57 @@ fn ReceiptEditor(
                 </table>
             </div>
 
+            // Unlike an invoice, a receipt records money *you* paid out, and that
+            // can happen before it is festgeschrieben — so the panel appears as
+            // soon as the receipt exists. Deletion stays possible until commit.
+            {if receipt_id.is_some() {
+                view! {
+                    <PaymentsPanel
+                        payments=payments_list
+                        total_cents=Signal::derive(move || items_list.get().iter().map(|i| i.price.amount_cents).sum::<i64>())
+                        on_add=Callback::new(move |(amount, date)| add_payment_act.dispatch((amount, date)))
+                        on_delete=Callback::new(move |id| delete_payment_act.dispatch(id))
+                    />
+                }.into_view()
+            } else { "".into_view() }}
+
             <div class="field is-grouped mt-5">
-                <div class="control">
-                    <button class="button is-success" prop:disabled=save_act.pending() on:click=save>
-                        {move || if save_act.pending().get() { "Speichern…" } else { "Speichern" }}
-                    </button>
-                </div>
-                {receipt_id.map(|id| view! {
-                    <div class="control">
-                        <button
-                            class="button is-danger"
-                            prop:disabled=delete_act.pending()
-                            on:click=move |_| delete_act.dispatch(id)
-                        >
-                            "Löschen"
-                        </button>
-                    </div>
-                })}
+                {if is_committed {
+                    view! {
+                        <div class="control">
+                            <span class="tag is-warning is-large">
+                                <span class="icon mr-1"><i class="mdi mdi-lock"></i></span>
+                                "Festgeschrieben"
+                            </span>
+                        </div>
+                    }.into_view()
+                } else {
+                    view! {
+                        <div class="control">
+                            <button class="button is-success" prop:disabled=save_act.pending() on:click=save>
+                                {move || if save_act.pending().get() { "Speichern…" } else { "Speichern" }}
+                            </button>
+                        </div>
+                        {if let Some(id) = receipt_id {
+                            view! {
+                                <div class="control">
+                                    <button class="button is-warning" prop:disabled=commit_act.pending() on:click=move |_| commit_act.dispatch(id)>
+                                        {move || if commit_act.pending().get() { "Finalisieren…" } else { "Finalisieren" }}
+                                    </button>
+                                </div>
+                                <div class="control">
+                                    <button
+                                        class="button is-danger"
+                                        prop:disabled=delete_act.pending()
+                                        on:click=move |_| delete_act.dispatch(id)
+                                    >
+                                        "Entwurf löschen"
+                                    </button>
+                                </div>
+                            }.into_view()
+                        } else { "".into_view() }}
+                    }.into_view()
+                }}
                 <div class="control">
                     <button class="button is-light" on:click=move |_| set_selected_receipt.set(None)>
                         "Abbrechen"
@@ -523,6 +782,9 @@ fn DocumentField(
     ai_status: ReadSignal<AiStatus>,
     prefill_pending: ReadSignal<bool>,
     on_prefill: Callback<ReceiptDocumentData>,
+    /// Fired as soon as a file is picked, before the user does anything else.
+    on_upload: Callback<ReceiptDocumentData>,
+    is_committed: bool,
 ) -> impl IntoView {
     view! {
         <div class="field">
@@ -537,15 +799,19 @@ fn DocumentField(
                                 "Dokument öffnen"
                             </a>
                         </div>
-                        <div class="control">
-                            <button class="button is-danger is-outlined" on:click=move |_| {
-                                set_doc_metadata.set(None);
-                                set_document_data.set(None);
-                                set_file_name.set(None);
-                            }>
-                                "Entfernen"
-                            </button>
-                        </div>
+                        {if !is_committed {
+                            view! {
+                                <div class="control">
+                                    <button class="button is-danger is-outlined" on:click=move |_| {
+                                        set_doc_metadata.set(None);
+                                        set_document_data.set(None);
+                                        set_file_name.set(None);
+                                    }>
+                                        "Entfernen"
+                                    </button>
+                                </div>
+                            }.into_view()
+                        } else { "".into_view() }}
                     </div>
                 }.into_view()
             } else if let Some(upload) = document_data.get() {
@@ -558,7 +824,7 @@ fn DocumentField(
                             </span>
                         </div>
                         // Hidden entirely when the server has AI switched off.
-                        <Show when=move || ai_status.get().enabled>
+                        <Show when=move || ai_status.get().enabled && !is_committed>
                             <div class="control">
                                 <button
                                     class="button is-link"
@@ -585,48 +851,66 @@ fn DocumentField(
                                 </button>
                             </div>
                         </Show>
-                        <div class="control">
-                            <button class="button is-danger is-outlined" on:click=move |_| {
-                                set_document_data.set(None);
-                                set_file_name.set(None);
-                            }>
-                                "Entfernen"
-                            </button>
-                        </div>
+                        {if !is_committed {
+                            view! {
+                                <div class="control">
+                                    <button class="button is-danger is-outlined" on:click=move |_| {
+                                        set_document_data.set(None);
+                                        set_file_name.set(None);
+                                    }>
+                                        "Entfernen"
+                                    </button>
+                                </div>
+                            }.into_view()
+                        } else { "".into_view() }}
                     </div>
                 }.into_view()
             } else {
-                view! {
-                    <div class="control">
-                        <div class="file is-fullwidth">
-                            <label class="file-label">
-                                <input
-                                    class="file-input"
-                                    type="file"
-                                    accept="application/pdf,image/png,image/jpeg"
-                                    on:change=move |ev| {
-                                        let Some(target) = ev.target() else { return };
-                                        let input = target.unchecked_into::<web_sys::HtmlInputElement>();
-                                        let Some(files) = input.files() else { return };
-                                        let Some(file) = files.get(0) else { return };
-                                        set_file_name.set(Some(file.name()));
-                                        read_file_as_base64(file, move |doc| set_document_data.set(Some(doc)));
-                                    }
-                                />
-                                <span class="file-cta">
-                                    <span class="file-icon"><i class="mdi mdi-upload"></i></span>
-                                    <span class="file-label">"PDF oder Bild hochladen…"</span>
-                                </span>
-                            </label>
-                        </div>
-                        <Show when=move || ai_status.get().enabled>
+                if !is_committed {
+                    view! {
+                        <div class="control">
+                            <div class="file is-fullwidth">
+                                <label class="file-label">
+                                    <input
+                                        class="file-input"
+                                        type="file"
+                                        accept="application/pdf,application/xml,text/xml,.xml,image/png,image/jpeg"
+                                        on:change=move |ev| {
+                                            let Some(target) = ev.target() else { return };
+                                            let input = target.unchecked_into::<web_sys::HtmlInputElement>();
+                                            let Some(files) = input.files() else { return };
+                                            let Some(file) = files.get(0) else { return };
+                                            set_file_name.set(Some(file.name()));
+                                            read_file_as_base64(file, move |doc| {
+                                                set_document_data.set(Some(doc.clone()));
+                                                // Structured invoice data, if any, beats any later guess.
+                                                on_upload.call(doc);
+                                            });
+                                        }
+                                    />
+                                    <span class="file-cta">
+                                        <span class="file-icon"><i class="mdi mdi-upload"></i></span>
+                                        <span class="file-label">"PDF, XML (E-Rechnung) oder Bild hochladen…"</span>
+                                    </span>
+                                </label>
+                            </div>
                             <p class="help">
-                                <span class="icon is-small mr-1"><i class="mdi mdi-auto-fix"></i></span>
-                                "Nach dem Hochladen kann ein PDF lokal per KI ausgelesen werden."
+                                <span class="icon is-small mr-1"><i class="mdi mdi-file-check-outline"></i></span>
+                                "E-Rechnungen (ZUGFeRD/Factur-X, XRechnung) werden beim Hochladen automatisch ausgelesen."
                             </p>
-                        </Show>
-                    </div>
-                }.into_view()
+                            <Show when=move || ai_status.get().enabled>
+                                <p class="help">
+                                    <span class="icon is-small mr-1"><i class="mdi mdi-auto-fix"></i></span>
+                                    "Andere PDFs können lokal per KI ausgelesen werden."
+                                </p>
+                            </Show>
+                        </div>
+                    }.into_view()
+                } else {
+                    view! {
+                        <p class="text-muted is-size-7">"Kein Dokument hinterlegt."</p>
+                    }.into_view()
+                }
             }}
         </div>
     }

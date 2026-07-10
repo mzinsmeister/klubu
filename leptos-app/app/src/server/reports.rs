@@ -22,10 +22,38 @@
 //! #table( .. )
 //! ```
 //!
-//! Header lines are `key: value` (`title`), or `param <name>: <kind> [= default]`
+//! Header lines are `key: value` (`title`), or
+//! `param <name> ["<label>"]: <kind> [options=<opts>] [= <default>]`
 //! where kind is `int` | `date` | `text`. A block starts with a line
 //! `--- <name> ---` and runs verbatim to the next such line. Recognised blocks:
-//! `description`, `template`, and one or more query blocks.
+//! `description`, `template`, one or more query blocks, and `options` blocks.
+//!
+//! ## Parameters
+//!
+//! Both a default and a dropdown may come from SQL rather than being written out:
+//!
+//! ```text
+//! param year "Jahr": int options=query(jahre) = query(vorjahr)
+//! param art "Belegart": text options=[Einnahme, Ausgabe] = Ausgabe
+//!
+//! --- options name=vorjahr dialect=postgres ---
+//! SELECT to_char(now() - interval '1 year', 'YYYY');
+//!
+//! --- options name=jahre dialect=postgres ---
+//! SELECT DISTINCT substring(payment_date FROM 1 FOR 4) FROM invoice_payment ORDER BY 1 DESC;
+//! ```
+//!
+//! An `options` block is a lookup: it runs *before* the parameters exist, so it
+//! takes no bind values, and its rows never reach the template. Its first column
+//! is the value bound into the query; a second column, if present, is the label
+//! shown to the user. `= query(name)` takes that block's first row — so a list
+//! sorted newest-first defaults to the newest entry.
+//!
+//! `options=` makes the field a dropdown and a closed set: a value outside the
+//! list is rejected before binding. Note the consequence — a `query(…)` default
+//! must be *in* its own dropdown, or the report cannot run. Where the default is
+//! computed rather than observed (e.g. "last year", which may have no rows yet),
+//! the options query has to include it explicitly.
 //!
 //! ## Queries
 //!
@@ -83,6 +111,10 @@ struct ReportManifest {
     /// One entry per named query. The template sees each result set under
     /// `data.<name>`; a report with a single unnamed query gets `data.main`.
     queries: std::collections::BTreeMap<String, QuerySpec>,
+    /// Lookup queries that feed parameter defaults and dropdowns. They run
+    /// *before* the parameters exist, so unlike `queries` they take no bind
+    /// values, and their rows never reach the template.
+    options: std::collections::BTreeMap<String, QuerySpec>,
     template: String,
 }
 
@@ -109,6 +141,28 @@ impl QuerySpec {
     }
 }
 
+/// Where a parameter's default comes from: written literally, or looked up.
+#[cfg(feature = "ssr")]
+#[derive(Debug, Clone, PartialEq)]
+enum ValueSpec {
+    Literal(String),
+    /// Name of an `--- options ---` block; the first row's first column wins.
+    Query(String),
+}
+
+/// Where a parameter's dropdown choices come from, if it has any.
+#[cfg(feature = "ssr")]
+#[derive(Debug, Clone, Default, PartialEq)]
+enum OptionsSpec {
+    /// A free-text/number/date input.
+    #[default]
+    Free,
+    Fixed(Vec<String>),
+    /// Name of an `--- options ---` block. First column is the bound value; a
+    /// second column, if present, is the label shown to the user.
+    Query(String),
+}
+
 #[cfg(feature = "ssr")]
 #[derive(Debug, Clone)]
 struct ParamManifest {
@@ -116,7 +170,8 @@ struct ParamManifest {
     label: String,
     /// "int" | "date" | "text"
     kind: String,
-    default: Option<String>,
+    default: Option<ValueSpec>,
+    options: OptionsSpec,
 }
 
 /// The kinds of block a `.report` file can contain.
@@ -125,6 +180,7 @@ enum BlockKind {
     Description,
     Template,
     Query,
+    Options,
 }
 
 /// A parsed block header, e.g. `--- query name=income dialect=postgres ---`.
@@ -147,6 +203,7 @@ fn parse_block_header(line: &str, origin: &str) -> Option<Result<BlockHeader, St
         "description" => BlockKind::Description,
         "template" => BlockKind::Template,
         "query" => BlockKind::Query,
+        "options" => BlockKind::Options,
         // Not a block keyword — treat the line as content.
         _ => return None,
     };
@@ -158,8 +215,8 @@ fn parse_block_header(line: &str, origin: &str) -> Option<Result<BlockHeader, St
             return Some(Err(format!("{origin}: block attribute '{tok}' must be key=value")));
         };
         match (&kind, key) {
-            (BlockKind::Query, "name") => name = value.to_string(),
-            (BlockKind::Query, "dialect") => {
+            (BlockKind::Query | BlockKind::Options, "name") => name = value.to_string(),
+            (BlockKind::Query | BlockKind::Options, "dialect") => {
                 if !matches!(value, "postgres" | "sqlite") {
                     return Some(Err(format!("{origin}: unknown dialect '{value}'")));
                 }
@@ -167,6 +224,11 @@ fn parse_block_header(line: &str, origin: &str) -> Option<Result<BlockHeader, St
             }
             _ => return Some(Err(format!("{origin}: '{key}' is not valid on this block"))),
         }
+    }
+    // An options block is always referenced by name; defaulting it to `main`
+    // would silently collide with the report's own query.
+    if matches!(kind, BlockKind::Options) && name == MAIN_QUERY {
+        return Some(Err(format!("{origin}: an options block needs an explicit name=…")));
     }
     Some(Ok(BlockHeader { kind, name, dialect }))
 }
@@ -196,8 +258,12 @@ fn parse_report(text: &str, origin: &str) -> Result<ReportManifest, String> {
                 }
                 manifest.template = content;
             }
-            BlockKind::Query => {
-                let spec = manifest.queries.entry(header.name.clone()).or_default();
+            BlockKind::Query | BlockKind::Options => {
+                let (bucket, what) = match header.kind {
+                    BlockKind::Options => (&mut manifest.options, "options"),
+                    _ => (&mut manifest.queries, "query"),
+                };
+                let spec = bucket.entry(header.name.clone()).or_default();
                 let slot = match header.dialect.as_deref() {
                     Some("postgres") => &mut spec.postgres,
                     Some("sqlite") => &mut spec.sqlite,
@@ -205,7 +271,7 @@ fn parse_report(text: &str, origin: &str) -> Result<ReportManifest, String> {
                 };
                 if slot.is_some() {
                     return Err(format!(
-                        "{origin}: duplicate query '{}'{}",
+                        "{origin}: duplicate {what} '{}'{}",
                         header.name,
                         header.dialect.as_deref().map(|d| format!(" ({d})")).unwrap_or_default()
                     ));
@@ -261,7 +327,43 @@ fn parse_report(text: &str, origin: &str) -> Result<ReportManifest, String> {
     if manifest.queries.is_empty() {
         return Err(format!("{origin}: no --- query --- block"));
     }
+
+    // A typo in `query(…)` should fail when the report is loaded, not silently
+    // yield an empty dropdown at the moment someone tries to run it.
+    for p in &manifest.params {
+        let referenced = [
+            match &p.default {
+                Some(ValueSpec::Query(q)) => Some(q),
+                _ => None,
+            },
+            match &p.options {
+                OptionsSpec::Query(q) => Some(q),
+                _ => None,
+            },
+        ];
+        for q in referenced.into_iter().flatten() {
+            if !manifest.options.contains_key(q) {
+                return Err(format!(
+                    "{origin}: param '{}' refers to query({q}), but there is no \
+                     '--- options name={q} ---' block",
+                    p.name
+                ));
+            }
+        }
+    }
     Ok(manifest)
+}
+
+/// Parses `value` or `query(name)` on the right of a `=`.
+#[cfg(feature = "ssr")]
+fn parse_value_spec(raw: &str) -> ValueSpec {
+    match raw
+        .strip_prefix("query(")
+        .and_then(|r| r.strip_suffix(')'))
+    {
+        Some(q) => ValueSpec::Query(q.trim().to_string()),
+        None => ValueSpec::Literal(raw.to_string()),
+    }
 }
 
 /// Parses one `param` header line:
@@ -269,19 +371,33 @@ fn parse_report(text: &str, origin: &str) -> Result<ReportManifest, String> {
 /// ```text
 /// param year: int = 2025
 /// param year "Veranlagungsjahr": int = 2025
+/// param year "Veranlagungsjahr": int options=query(jahre) = query(jahre)
+/// param art "Belegart": text options=[Einnahme, Ausgabe] = Einnahme
 /// ```
 ///
 /// The optional quoted label is what the UI shows; without it the name is used.
+/// `options=` makes the field a dropdown, either from a fixed list or from an
+/// `--- options name=… ---` block. A default may likewise be looked up with
+/// `query(name)`, which takes that block's first row and first column — so a
+/// dropdown of years sorted newest-first defaults to the newest year.
 #[cfg(feature = "ssr")]
 fn parse_param(rest: &str, origin: &str) -> Result<ParamManifest, String> {
-    let (decl, default) = match rest.split_once('=') {
-        Some((decl, def)) => (decl, Some(def.trim().to_string())),
-        None => (rest, None),
+    // The label is quoted and may itself contain a colon, so find the separator
+    // outside quotes rather than taking the first one.
+    let sep = {
+        let mut in_quotes = false;
+        rest.char_indices()
+            .find(|&(_, c)| {
+                if c == '"' {
+                    in_quotes = !in_quotes;
+                }
+                c == ':' && !in_quotes
+            })
+            .map(|(i, _)| i)
+            .ok_or_else(|| format!("{origin}: param needs 'name: kind' (got '{}')", rest.trim()))?
     };
-    let (name_part, kind) = decl
-        .split_once(':')
-        .ok_or_else(|| format!("{origin}: param needs 'name: kind' (got '{}')", rest.trim()))?;
-    let name_part = name_part.trim();
+    let name_part = rest[..sep].trim();
+    let mut tail = rest[sep + 1..].trim();
 
     let (name, label) = if let Some(q1) = name_part.find('"') {
         let after = &name_part[q1 + 1..];
@@ -292,19 +408,64 @@ fn parse_param(rest: &str, origin: &str) -> Result<ParamManifest, String> {
     } else {
         (name_part.to_string(), name_part.to_string())
     };
-
-    let kind = kind.trim().to_string();
     if name.is_empty() {
         return Err(format!("{origin}: param has empty name"));
     }
+
+    let kind_end = tail.find(char::is_whitespace).unwrap_or(tail.len());
+    let kind = tail[..kind_end].trim().to_string();
+    tail = tail[kind_end..].trim();
     if !matches!(kind.as_str(), "int" | "date" | "text") {
         return Err(format!("{origin}: param '{name}' has unknown kind '{kind}'"));
     }
+
+    let mut options = OptionsSpec::Free;
+    if let Some(after) = tail.strip_prefix("options=") {
+        let (spec, remainder) = if let Some(inner) = after.strip_prefix('[') {
+            let close = inner
+                .find(']')
+                .ok_or_else(|| format!("{origin}: param '{name}': options list is missing its ']'"))?;
+            let values: Vec<String> = inner[..close]
+                .split(',')
+                .map(|s| s.trim().to_string())
+                .filter(|s| !s.is_empty())
+                .collect();
+            if values.is_empty() {
+                return Err(format!("{origin}: param '{name}': empty options list"));
+            }
+            (OptionsSpec::Fixed(values), &inner[close + 1..])
+        } else {
+            let end = after.find(char::is_whitespace).unwrap_or(after.len());
+            let token = &after[..end];
+            match parse_value_spec(token) {
+                ValueSpec::Query(q) => (OptionsSpec::Query(q), &after[end..]),
+                ValueSpec::Literal(_) => {
+                    return Err(format!(
+                        "{origin}: param '{name}': options must be '[a, b]' or 'query(name)'"
+                    ))
+                }
+            }
+        };
+        options = spec;
+        tail = remainder.trim();
+    }
+
+    let default = match tail.strip_prefix('=') {
+        Some(raw) => Some(parse_value_spec(raw.trim())),
+        None if tail.is_empty() => None,
+        None => {
+            return Err(format!(
+                "{origin}: param '{name}': cannot parse '{tail}' (expected 'options=…' then '= default')"
+            ))
+        }
+    };
+
     Ok(ParamManifest {
         name,
         label,
         kind,
         default,
+        options,
     })
 }
 
@@ -338,21 +499,12 @@ fn load_manifest(name: &str) -> Result<ReportManifest, ServerFnError> {
 }
 
 #[cfg(feature = "ssr")]
-fn manifest_to_info(name: String, m: ReportManifest) -> ReportInfo {
+fn manifest_to_info(name: String, m: ReportManifest, params: Vec<shared::ReportParamInfo>) -> ReportInfo {
     ReportInfo {
         name,
         title: m.title,
         description: m.description,
-        params: m
-            .params
-            .into_iter()
-            .map(|p| shared::ReportParamInfo {
-                name: p.name,
-                label: p.label,
-                kind: p.kind,
-                default: p.default,
-            })
-            .collect(),
+        params,
     }
 }
 
@@ -372,7 +524,7 @@ enum Bound {
 
 #[cfg(feature = "ssr")]
 fn bind_values(
-    params: &[ParamManifest],
+    params: &[shared::ReportParamInfo],
     supplied: &[(String, String)],
 ) -> Result<Vec<Bound>, ServerFnError> {
     params
@@ -386,6 +538,15 @@ fn bind_values(
                 .ok_or_else(|| {
                     ServerFnError::new(format!("Missing value for parameter '{}'", p.name))
                 })?;
+            // A dropdown is a closed set. Values are bound, never interpolated,
+            // so this is not an injection guard — it stops a stale or hand-made
+            // request from quietly reporting on something that is not offered.
+            if !p.options.is_empty() && !p.options.iter().any(|o| o.value == raw) {
+                return Err(ServerFnError::new(format!(
+                    "Parameter '{}' must be one of the offered options",
+                    p.name
+                )));
+            }
             match p.kind.as_str() {
                 "int" => raw
                     .trim()
@@ -446,59 +607,241 @@ fn rows_to_json(rows: &[super::db::DbRow]) -> serde_json::Value {
 }
 
 /// Runs a report query read-only and returns the decoded rows. The write barrier
-/// is enforced by the database (see the module docs), not by inspecting the SQL.
-#[cfg(all(feature = "ssr", feature = "postgres"))]
+/// is enforced by the database (see the module docs), not by inspecting the SQL —
+/// which mechanism depends on the dialect the pool is talking to at runtime.
+///
+/// Dates bind as their ISO string: both dialects store document dates as text,
+/// and the `Any` driver has no date type of its own.
+#[cfg(feature = "ssr")]
 async fn fetch_rows(
     pool: &super::db::DbPool,
     sql: &str,
     bound: &[Bound],
-) -> Result<serde_json::Value, ServerFnError> {
+) -> Result<Vec<super::db::DbRow>, ServerFnError> {
     let err = |e: sqlx::Error| ServerFnError::new(format!("Report query failed: {e}"));
 
-    let mut tx = pool.begin().await.map_err(err)?;
-    sqlx::query("SET TRANSACTION READ ONLY").execute(&mut *tx).await.map_err(err)?;
-    sqlx::query("SET LOCAL statement_timeout = '15s'").execute(&mut *tx).await.map_err(err)?;
-
-    let mut q = sqlx::query(sql);
-    for b in bound {
-        q = match b {
-            Bound::Int(i) => q.bind(i),
-            Bound::Date(d) => q.bind(d),
-            Bound::Text(s) => q.bind(s),
-        };
+    fn bind_all<'q>(
+        mut q: sqlx::query::Query<'q, sqlx::Any, sqlx::any::AnyArguments<'q>>,
+        bound: &'q [Bound],
+    ) -> sqlx::query::Query<'q, sqlx::Any, sqlx::any::AnyArguments<'q>> {
+        for b in bound {
+            q = match b {
+                Bound::Int(i) => q.bind(*i),
+                Bound::Date(d) => q.bind(d.format("%Y-%m-%d").to_string()),
+                Bound::Text(s) => q.bind(s),
+            };
+        }
+        q
     }
-    let rows = q.fetch_all(&mut *tx).await.map_err(err)?;
-    // Report queries only read; rolling back keeps that a hard guarantee even if
-    // a function-based side effect slipped through.
-    let _ = tx.rollback().await;
-    Ok(rows_to_json(&rows))
+
+    if super::db::dialect(pool) == "postgres" {
+        let mut tx = pool.begin().await.map_err(err)?;
+        sqlx::query("SET TRANSACTION READ ONLY").execute(&mut *tx).await.map_err(err)?;
+        sqlx::query("SET LOCAL statement_timeout = '15s'").execute(&mut *tx).await.map_err(err)?;
+
+        let rows = bind_all(sqlx::query(sql), bound).fetch_all(&mut *tx).await.map_err(err)?;
+        // Report queries only read; rolling back keeps that a hard guarantee even
+        // if a function-based side effect slipped through.
+        let _ = tx.rollback().await;
+        Ok(rows)
+    } else {
+        // `query_only` is connection-scoped, so pin one connection, arm it, run,
+        // and disarm before it returns to the pool.
+        let mut conn = pool.acquire().await.map_err(err)?;
+        sqlx::query("PRAGMA query_only = ON").execute(&mut *conn).await.map_err(err)?;
+
+        let result = bind_all(sqlx::query(sql), bound).fetch_all(&mut *conn).await;
+        let _ = sqlx::query("PRAGMA query_only = OFF").execute(&mut *conn).await;
+        result.map_err(err)
+    }
 }
 
-#[cfg(all(feature = "ssr", feature = "sqlite"))]
-async fn fetch_rows(
-    pool: &super::db::DbPool,
-    sql: &str,
-    bound: &[Bound],
-) -> Result<serde_json::Value, ServerFnError> {
-    let err = |e: sqlx::Error| ServerFnError::new(format!("Report query failed: {e}"));
-
-    // `query_only` is connection-scoped, so pin one connection, arm it, run, and
-    // disarm before it returns to the pool.
-    let mut conn = pool.acquire().await.map_err(err)?;
-    sqlx::query("PRAGMA query_only = ON").execute(&mut *conn).await.map_err(err)?;
-
-    let mut q = sqlx::query(sql);
-    for b in bound {
-        q = match b {
-            Bound::Int(i) => q.bind(i),
-            Bound::Date(d) => q.bind(d),
-            Bound::Text(s) => q.bind(s),
-        };
+/// Renders a decoded cell as the plain string a parameter binds/displays.
+#[cfg(feature = "ssr")]
+fn cell_to_string(v: &serde_json::Value) -> String {
+    match v {
+        serde_json::Value::Null => String::new(),
+        serde_json::Value::String(s) => s.clone(),
+        other => other.to_string(),
     }
-    let result = q.fetch_all(&mut *conn).await;
-    let _ = sqlx::query("PRAGMA query_only = OFF").execute(&mut *conn).await;
-    let rows = result.map_err(err)?;
-    Ok(rows_to_json(&rows))
+}
+
+/// Runs one `--- options ---` block. These take no bind values, because they
+/// exist to produce the parameters in the first place.
+#[cfg(feature = "ssr")]
+async fn fetch_options(
+    manifest: &ReportManifest,
+    qname: &str,
+    pool: &super::db::DbPool,
+) -> Result<Vec<shared::ReportParamOption>, ServerFnError> {
+    use sqlx::Row;
+    let dialect = super::db::dialect(pool);
+    let spec = manifest
+        .options
+        .get(qname)
+        .ok_or_else(|| ServerFnError::new(format!("Unknown options query '{qname}'")))?;
+    let sql = spec.for_dialect(dialect).ok_or_else(|| {
+        ServerFnError::new(format!("Options query '{qname}' has no SQL for dialect '{dialect}'"))
+    })?;
+
+    let rows = fetch_rows(pool, sql, &[]).await?;
+    Ok(rows
+        .iter()
+        .map(|row| {
+            let value = cell_to_string(&value_at(row, 0));
+            // A second column, when present, is the human-readable label.
+            let label = if row.columns().len() > 1 {
+                cell_to_string(&value_at(row, 1))
+            } else {
+                value.clone()
+            };
+            shared::ReportParamOption { value, label }
+        })
+        .collect())
+}
+
+/// Turns the declared parameters into what the form needs: dropdown choices
+/// resolved, `query(…)` defaults executed.
+///
+/// A lookup referenced by both `options=` and `=` runs once.
+#[cfg(feature = "ssr")]
+async fn resolve_params(
+    manifest: &ReportManifest,
+    pool: &super::db::DbPool,
+) -> Result<Vec<shared::ReportParamInfo>, ServerFnError> {
+    let mut cache: std::collections::HashMap<String, Vec<shared::ReportParamOption>> =
+        std::collections::HashMap::new();
+    let mut out = Vec::with_capacity(manifest.params.len());
+
+    for p in &manifest.params {
+        for qname in [
+            match &p.options {
+                OptionsSpec::Query(q) => Some(q),
+                _ => None,
+            },
+            match &p.default {
+                Some(ValueSpec::Query(q)) => Some(q),
+                _ => None,
+            },
+        ]
+        .into_iter()
+        .flatten()
+        {
+            if !cache.contains_key(qname) {
+                let opts = fetch_options(manifest, qname, pool).await?;
+                cache.insert(qname.clone(), opts);
+            }
+        }
+
+        let options = match &p.options {
+            OptionsSpec::Free => Vec::new(),
+            OptionsSpec::Fixed(values) => values
+                .iter()
+                .map(|v| shared::ReportParamOption { value: v.clone(), label: v.clone() })
+                .collect(),
+            OptionsSpec::Query(q) => cache.get(q).cloned().unwrap_or_default(),
+        };
+
+        let default = match &p.default {
+            None => None,
+            Some(ValueSpec::Literal(s)) => Some(s.clone()),
+            // An empty lookup yields no default rather than an error: the report
+            // is simply not runnable until there is data, and the form says so.
+            Some(ValueSpec::Query(q)) => cache.get(q).and_then(|o| o.first()).map(|o| o.value.clone()),
+        };
+
+        out.push(shared::ReportParamInfo {
+            name: p.name.clone(),
+            label: p.label.clone(),
+            kind: p.kind.clone(),
+            default,
+            options,
+        });
+    }
+    Ok(out)
+}
+
+/// Quotes one CSV field per RFC 4180: wrap in quotes when the value contains a
+/// separator, a quote, a newline, or edge whitespace; double any inner quote.
+#[cfg(feature = "ssr")]
+fn csv_field(v: &serde_json::Value) -> String {
+    let raw = match v {
+        serde_json::Value::Null => String::new(),
+        serde_json::Value::String(s) => s.clone(),
+        other => other.to_string(),
+    };
+    let needs_quotes = raw.contains([',', '"', '\n', '\r'])
+        || raw.starts_with(' ')
+        || raw.ends_with(' ');
+    if needs_quotes {
+        format!("\"{}\"", raw.replace('"', "\"\""))
+    } else {
+        raw
+    }
+}
+
+/// Serialises rows as RFC 4180 CSV, preserving the column order of the SQL —
+/// unlike the JSON handed to Typst, whose object keys sort alphabetically.
+///
+/// Prefixed with a UTF-8 BOM: the audience is an auditor opening the file in
+/// Excel, which otherwise mangles the umlauts in names and journal entries.
+/// Returns an empty string for an empty result set — with no row there is no
+/// column list to write a header from.
+#[cfg(feature = "ssr")]
+fn rows_to_csv(rows: &[super::db::DbRow]) -> String {
+    use sqlx::{Column, Row};
+    let Some(first) = rows.first() else {
+        return String::new();
+    };
+
+    let mut out = String::from("\u{feff}");
+    let columns = first.columns();
+    let header: Vec<String> = columns
+        .iter()
+        .map(|c| csv_field(&serde_json::Value::from(c.name())))
+        .collect();
+    out.push_str(&header.join(","));
+    out.push_str("\r\n");
+
+    for row in rows {
+        let fields: Vec<String> = (0..row.columns().len())
+            .map(|i| csv_field(&value_at(row, i)))
+            .collect();
+        out.push_str(&fields.join(","));
+        out.push_str("\r\n");
+    }
+    out
+}
+
+/// Runs a report and returns one query's rows as CSV.
+///
+/// A report with several named queries has no single tabular shape, so the one
+/// named `main` is exported; that is also the name a single unnamed query gets.
+#[cfg(feature = "ssr")]
+pub async fn render_csv(
+    name: &str,
+    supplied: &[(String, String)],
+    pool: &super::db::DbPool,
+) -> Result<String, ServerFnError> {
+    let manifest = load_manifest(name)?;
+    let resolved = resolve_params(&manifest, pool).await?;
+    let bound = bind_values(&resolved, supplied)?;
+    let dialect = super::db::dialect(pool);
+
+    let spec = manifest.queries.get(MAIN_QUERY).ok_or_else(|| {
+        let names: Vec<_> = manifest.queries.keys().cloned().collect();
+        ServerFnError::new(format!(
+            "Report '{name}' has no '{MAIN_QUERY}' query to export as CSV (has: {})",
+            names.join(", ")
+        ))
+    })?;
+    let sql = spec.for_dialect(dialect).ok_or_else(|| {
+        ServerFnError::new(format!(
+            "Report '{name}': query '{MAIN_QUERY}' has no SQL for dialect '{dialect}'"
+        ))
+    })?;
+
+    Ok(rows_to_csv(&fetch_rows(pool, sql, &bound).await?))
 }
 
 /// Builds the Typst markup: the report's template with `data` (query rows) and
@@ -533,8 +876,9 @@ pub async fn render_markup(
     pool: &super::db::DbPool,
 ) -> Result<String, ServerFnError> {
     let manifest = load_manifest(name)?;
-    let bound = bind_values(&manifest.params, supplied)?;
-    let dialect = super::db::DIALECT;
+    let resolved = resolve_params(&manifest, pool).await?;
+    let bound = bind_values(&resolved, supplied)?;
+    let dialect = super::db::dialect(pool);
 
     // Each named query becomes `data.<name>` in the template.
     let mut data = serde_json::Map::new();
@@ -544,14 +888,34 @@ pub async fn render_markup(
                 "Report '{name}': query '{qname}' has no SQL for dialect '{dialect}'"
             ))
         })?;
-        data.insert(qname.clone(), fetch_rows(pool, sql, &bound).await?);
+        data.insert(qname.clone(), rows_to_json(&fetch_rows(pool, sql, &bound).await?));
     }
 
     Ok(assemble_markup(
         &manifest.template,
         &serde_json::Value::Object(data),
-        supplied,
+        &effective_params(&resolved, supplied),
     ))
+}
+
+/// The values the report actually ran with, defaults included. The template sees
+/// these as `params`, so a heading can print the year even when nobody typed it.
+#[cfg(feature = "ssr")]
+fn effective_params(
+    resolved: &[shared::ReportParamInfo],
+    supplied: &[(String, String)],
+) -> Vec<(String, String)> {
+    resolved
+        .iter()
+        .filter_map(|p| {
+            supplied
+                .iter()
+                .find(|(k, _)| k == &p.name)
+                .map(|(_, v)| v.clone())
+                .or_else(|| p.default.clone())
+                .map(|v| (p.name.clone(), v))
+        })
+        .collect()
 }
 
 #[cfg(feature = "ssr")]
@@ -572,6 +936,8 @@ async fn render(
 pub async fn list_reports() -> Result<Vec<ReportInfo>, ServerFnError> {
     #[cfg(feature = "ssr")]
     {
+        let repo = use_context::<super::db::ActiveRepository>()
+            .ok_or_else(|| ServerFnError::new("Repository not found"))?;
         let mut reports = Vec::new();
         if let Ok(entries) = std::fs::read_dir(reports_dir()) {
             for entry in entries.flatten() {
@@ -586,8 +952,13 @@ pub async fn list_reports() -> Result<Vec<ReportInfo>, ServerFnError> {
                 if !is_safe_name(&name) {
                     continue;
                 }
+                // A report whose lookup query is broken is skipped with a log
+                // line, exactly like one that fails to parse — the others still list.
                 match load_manifest(&name) {
-                    Ok(m) => reports.push(manifest_to_info(name, m)),
+                    Ok(m) => match resolve_params(&m, repo.pool()).await {
+                        Ok(params) => reports.push(manifest_to_info(name, m, params)),
+                        Err(e) => logging::log!("Skipping report '{name}': {e:?}"),
+                    },
                     Err(e) => logging::log!("Skipping report '{name}': {e}"),
                 }
             }
@@ -617,6 +988,40 @@ pub async fn run_report(
         .await;
         if let Err(ref e) = res {
             logging::log!("run_report({name}): {e:?}");
+        }
+        res
+    }
+    #[cfg(not(feature = "ssr"))]
+    {
+        _ = (name, params);
+        Err(ServerFnError::new("server only"))
+    }
+}
+
+/// The machine-readable counterpart to the PDF: the report's underlying rows,
+/// not its layout. A Betriebsprüfer asking for Datenzugriff nach Z3 (GoBD
+/// Rz. 165 ff.) wants exactly this — data they can import, sort and re-total.
+#[server(name = ExportReportCsv, prefix = "/api", endpoint = "export_report_csv")]
+pub async fn export_report_csv(
+    name: String,
+    params: Vec<(String, String)>,
+) -> Result<ReportDownload, ServerFnError> {
+    #[cfg(feature = "ssr")]
+    {
+        use base64::Engine;
+        let res = async {
+            let repo = use_context::<super::db::ActiveRepository>()
+                .ok_or_else(|| ServerFnError::new("Repository not found"))?;
+            let csv = render_csv(&name, &params, repo.pool()).await?;
+            Ok::<_, ServerFnError>(ReportDownload {
+                filename: format!("{name}.csv"),
+                media_type: "text/csv;charset=utf-8".to_string(),
+                base64: base64::engine::general_purpose::STANDARD.encode(csv.as_bytes()),
+            })
+        }
+        .await;
+        if let Err(ref e) = res {
+            logging::log!("export_report_csv({name}): {e:?}");
         }
         res
     }
@@ -688,7 +1093,8 @@ SELECT 1 WHERE $1::text = '2025';
         assert_eq!(year.name, "year");
         assert_eq!(year.label, "Jahr"); // quoted label wins over the name
         assert_eq!(year.kind, "int");
-        assert_eq!(year.default.as_deref(), Some("2025"));
+        assert_eq!(year.default, Some(ValueSpec::Literal("2025".into())));
+        assert_eq!(year.options, OptionsSpec::Free);
 
         let from = &m.params[1];
         assert_eq!(from.name, "from");
@@ -779,5 +1185,95 @@ SELECT 3;
     fn duplicate_block_is_an_error() {
         let src = "title: T\n--- template ---\na\n--- template ---\nb\n";
         assert!(parse_report(src, "t").is_err());
+    }
+
+    const WITH_OPTIONS: &str = "\
+title: T
+param year \"Jahr\": int options=query(jahre) = query(vorjahr)
+param art \"Belegart\": text options=[Einnahme, Ausgabe] = Ausgabe
+param frei: text
+
+--- options name=jahre ---
+SELECT '2026' UNION SELECT '2025';
+
+--- options name=vorjahr ---
+SELECT '2025';
+
+--- query ---
+SELECT 1;
+
+--- template ---
+x
+";
+
+    #[test]
+    fn parses_dropdowns_and_looked_up_defaults() {
+        let m = parse_report(WITH_OPTIONS, "t").unwrap();
+        assert_eq!(m.options.len(), 2);
+
+        let year = &m.params[0];
+        assert_eq!(year.options, OptionsSpec::Query("jahre".into()));
+        assert_eq!(year.default, Some(ValueSpec::Query("vorjahr".into())));
+
+        let art = &m.params[1];
+        assert_eq!(
+            art.options,
+            OptionsSpec::Fixed(vec!["Einnahme".into(), "Ausgabe".into()])
+        );
+        assert_eq!(art.default, Some(ValueSpec::Literal("Ausgabe".into())));
+
+        // A plain param keeps working: no options, no default.
+        let frei = &m.params[2];
+        assert_eq!(frei.options, OptionsSpec::Free);
+        assert_eq!(frei.default, None);
+    }
+
+    /// The lookup runs before the parameters exist, so it cannot be one of the
+    /// report's own queries; a name that resolves to neither is a load error.
+    #[test]
+    fn a_param_referring_to_a_missing_options_block_is_an_error() {
+        let src = "title: T\nparam y: int = query(nope)\n--- query ---\nSELECT 1;\n--- template ---\nx\n";
+        let err = parse_report(src, "t").unwrap_err();
+        assert!(err.contains("options name=nope"), "{err}");
+    }
+
+    #[test]
+    fn an_options_block_needs_a_name() {
+        let src = "title: T\n--- options ---\nSELECT 1;\n--- query ---\nSELECT 1;\n--- template ---\nx\n";
+        let err = parse_report(src, "t").unwrap_err();
+        assert!(err.contains("explicit name"), "{err}");
+    }
+
+    /// A colon inside the quoted label must not be mistaken for the `: kind`
+    /// separator.
+    #[test]
+    fn a_label_may_contain_a_colon() {
+        let src = "title: T\nparam y \"Jahr: welches?\": int = 2025\n--- query ---\nSELECT 1;\n--- template ---\nx\n";
+        let m = parse_report(src, "t").unwrap();
+        assert_eq!(m.params[0].label, "Jahr: welches?");
+        assert_eq!(m.params[0].kind, "int");
+    }
+
+    #[test]
+    fn malformed_options_are_an_error() {
+        for src in [
+            "title: T\nparam y: int options=[2025\n--- query ---\nSELECT 1;\n--- template ---\nx\n",
+            "title: T\nparam y: int options=2025\n--- query ---\nSELECT 1;\n--- template ---\nx\n",
+            "title: T\nparam y: int options=[]\n--- query ---\nSELECT 1;\n--- template ---\nx\n",
+        ] {
+            assert!(parse_report(src, "t").is_err(), "should reject: {src}");
+        }
+    }
+
+    #[test]
+    fn csv_quotes_only_what_rfc4180_requires() {
+        use serde_json::Value;
+        assert_eq!(csv_field(&Value::from("plain")), "plain");
+        assert_eq!(csv_field(&Value::from("a,b")), "\"a,b\"");
+        assert_eq!(csv_field(&Value::from("say \"hi\"")), "\"say \"\"hi\"\"\"");
+        assert_eq!(csv_field(&Value::from("two\nlines")), "\"two\nlines\"");
+        assert_eq!(csv_field(&Value::from(" padded ")), "\" padded \"");
+        assert_eq!(csv_field(&Value::Null), "");
+        assert_eq!(csv_field(&Value::from(42)), "42");
     }
 }

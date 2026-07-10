@@ -3,7 +3,22 @@ use wasm_bindgen::JsCast;
 use shared::{ReportInfo, ReportParamInfo};
 
 use crate::components::EmptyState;
-use crate::server::{export_report_pdf, list_reports, run_report};
+use crate::server::{export_report_csv, export_report_pdf, list_reports, run_report};
+
+/// Hands the browser a `data:` URL and clicks it, so the file lands as a normal
+/// download without a round-trip through a route.
+fn offer_download(dl: &shared::ReportDownload) {
+    let href = format!("data:{};base64,{}", dl.media_type, dl.base64);
+    if let Some(doc) = web_sys::window().and_then(|w| w.document()) {
+        if let Ok(a) = doc.create_element("a") {
+            let _ = a.set_attribute("href", &href);
+            let _ = a.set_attribute("download", &dl.filename);
+            if let Some(a) = a.dyn_ref::<web_sys::HtmlElement>() {
+                a.click();
+            }
+        }
+    }
+}
 
 /// One parameter's live input state, carrying enough to render the field and to
 /// send `(name, value)` back to the server.
@@ -26,9 +41,16 @@ pub fn ReportsPage() -> impl IntoView {
         let states = report
             .params
             .iter()
-            .map(|p| ParamState {
-                info: p.clone(),
-                value: create_rw_signal(p.default.clone().unwrap_or_default()),
+            .map(|p| {
+                // A dropdown without a declared default still shows its first
+                // option, so seed the state with it rather than the empty string
+                // the form would otherwise submit.
+                let initial = p
+                    .default
+                    .clone()
+                    .or_else(|| p.options.first().map(|o| o.value.clone()))
+                    .unwrap_or_default();
+                ParamState { info: p.clone(), value: create_rw_signal(initial) }
             })
             .collect::<Vec<_>>();
         set_params.set(states);
@@ -65,20 +87,19 @@ pub fn ReportsPage() -> impl IntoView {
         async move {
             set_error.set(None);
             match export_report_pdf(name, args).await {
-                Ok(dl) => {
-                    // Hand the browser a data: URL and click it, so the PDF lands
-                    // as a normal download without a round-trip through a route.
-                    let href = format!("data:{};base64,{}", dl.media_type, dl.base64);
-                    if let Some(doc) = web_sys::window().and_then(|w| w.document()) {
-                        if let Ok(a) = doc.create_element("a") {
-                            let _ = a.set_attribute("href", &href);
-                            let _ = a.set_attribute("download", &dl.filename);
-                            if let Some(a) = a.dyn_ref::<web_sys::HtmlElement>() {
-                                a.click();
-                            }
-                        }
-                    }
-                }
+                Ok(dl) => offer_download(&dl),
+                Err(e) => set_error.set(Some(e.to_string())),
+            }
+        }
+    });
+
+    let export_csv = create_action(move |(name, args): &(String, Vec<(String, String)>)| {
+        let name = name.clone();
+        let args = args.clone();
+        async move {
+            set_error.set(None);
+            match export_report_csv(name, args).await {
+                Ok(dl) => offer_download(&dl),
                 Err(e) => set_error.set(Some(e.to_string())),
             }
         }
@@ -129,6 +150,7 @@ pub fn ReportsPage() -> impl IntoView {
                             let report_name = report.name.clone();
                             let run_name = report_name.clone();
                             let export_name = report_name.clone();
+                            let csv_name = report_name.clone();
                             view! {
                                 <div class="box">
                                     <h2 class="subtitle">{report.title.clone()}</h2>
@@ -141,14 +163,35 @@ pub fn ReportsPage() -> impl IntoView {
                                                 _ => "text",
                                             };
                                             let value = p.value;
+                                            // A parameter with options is a closed set, so offer
+                                            // exactly those; `kind` still governs how it is bound.
+                                            let control = if p.info.options.is_empty() {
+                                                view! {
+                                                    <input class="input" type=input_type
+                                                        prop:value=move || value.get()
+                                                        on:input=move |ev| value.set(event_target_value(&ev)) />
+                                                }.into_view()
+                                            } else {
+                                                let options = p.info.options.clone();
+                                                view! {
+                                                    <div class="select is-fullwidth">
+                                                        <select on:change=move |ev| value.set(event_target_value(&ev))>
+                                                            {options.into_iter().map(|o| {
+                                                                let is_selected = value.get_untracked() == o.value;
+                                                                view! {
+                                                                    <option value=o.value.clone() selected=is_selected>
+                                                                        {o.label.clone()}
+                                                                    </option>
+                                                                }
+                                                            }).collect_view()}
+                                                        </select>
+                                                    </div>
+                                                }.into_view()
+                                            };
                                             view! {
                                                 <div class="field">
                                                     <label class="label">{p.info.label.clone()}</label>
-                                                    <div class="control">
-                                                        <input class="input" type=input_type
-                                                            prop:value=move || value.get()
-                                                            on:input=move |ev| value.set(event_target_value(&ev)) />
-                                                    </div>
+                                                    <div class="control">{control}</div>
                                                 </div>
                                             }
                                         }).collect_view()}
@@ -169,6 +212,15 @@ pub fn ReportsPage() -> impl IntoView {
                                                 on:click=move |_| export.dispatch((export_name.clone(), current_args()))>
                                                 <span class="icon mr-1"><i class="mdi mdi-file-pdf-box"></i></span>
                                                 "PDF herunterladen"
+                                            </button>
+                                        </div>
+                                        <div class="control">
+                                            <button class="button"
+                                                title="Rohdaten des Berichts, maschinenlesbar (z.B. für eine Betriebsprüfung)"
+                                                prop:disabled=move || export_csv.pending().get()
+                                                on:click=move |_| export_csv.dispatch((csv_name.clone(), current_args()))>
+                                                <span class="icon mr-1"><i class="mdi mdi-table-arrow-down"></i></span>
+                                                "CSV herunterladen"
                                             </button>
                                         </div>
                                     </div>

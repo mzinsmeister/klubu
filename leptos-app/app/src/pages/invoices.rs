@@ -1,13 +1,14 @@
 use leptos::*;
 
+use crate::components::{EmptyState, MoneyInput, PaymentsPanel, QuantityInput, TextFieldHint};
+use crate::server::{
+    add_invoice_payment, cancel_invoice, commit_invoice, delete_invoice, delete_invoice_payment,
+    export_invoice_pdf, get_all_contacts, get_invoice, get_invoices, save_invoice,
+};
 use chrono::{NaiveDate, Utc};
 use shared::*;
-use crate::components::{EmptyState, MoneyInput, QuantityInput};
-use crate::server::{
-    get_contacts, get_invoices, get_invoice, save_invoice, cancel_invoice,
-    commit_invoice, delete_invoice,
-    export_invoice_pdf,
-};
+
+const INVOICE_PAGE_SIZE: u32 = 50;
 
 #[component]
 fn InvoiceEditor(
@@ -29,10 +30,14 @@ fn InvoiceEditor(
         String::new()
     };
 
-    let (invoice_date, set_invoice_date) = create_signal(inv.invoice_date.map(|d| d.format("%Y-%m-%d").to_string()).unwrap_or_default());
+    let (invoice_date, set_invoice_date) = create_signal(
+        inv.invoice_date
+            .map(|d| d.format("%Y-%m-%d").to_string())
+            .unwrap_or_default(),
+    );
     let (subject, set_subject) = create_signal(inv.subject.clone().unwrap_or_default());
-    let (header, set_header) = create_signal(inv.header_html.clone().unwrap_or_default());
-    let (footer, set_footer) = create_signal(inv.footer_html.clone().unwrap_or_default());
+    let (header, set_header) = create_signal(inv.header.clone().unwrap_or_default());
+    let (footer, set_footer) = create_signal(inv.footer.clone().unwrap_or_default());
     let (customer_contact, set_customer_contact) = create_signal(inv.customer_contact.clone());
     let (document, set_document) = create_signal(inv.document.clone());
     let (items_list, set_items_list) = create_signal(inv.items.clone());
@@ -50,18 +55,67 @@ fn InvoiceEditor(
     });
 
     let (recipient_name, set_recipient_name) = create_signal(recipient.name.clone());
-    let (recipient_first_name, set_recipient_first_name) = create_signal(recipient.first_name.clone().unwrap_or_default());
-    let (recipient_title, set_recipient_title) = create_signal(recipient.title.clone().unwrap_or_default());
-    let (recipient_form_of_address, set_recipient_form_of_address) = create_signal(recipient.form_of_address.clone().unwrap_or_default());
-    let (recipient_street, set_recipient_street) = create_signal(recipient.street.clone().unwrap_or_default());
-    let (recipient_house_number, set_recipient_house_number) = create_signal(recipient.house_number.clone().unwrap_or_default());
-    let (recipient_zip_code, set_recipient_zip_code) = create_signal(recipient.zip_code.clone().unwrap_or_default());
-    let (recipient_city, set_recipient_city) = create_signal(recipient.city.clone().unwrap_or_default());
-    let (recipient_country, set_recipient_country) = create_signal(recipient.country.clone().unwrap_or_default());
+    let (recipient_first_name, set_recipient_first_name) =
+        create_signal(recipient.first_name.clone().unwrap_or_default());
+    let (recipient_title, set_recipient_title) =
+        create_signal(recipient.title.clone().unwrap_or_default());
+    let (recipient_form_of_address, set_recipient_form_of_address) =
+        create_signal(recipient.form_of_address.clone().unwrap_or_default());
+    let (recipient_street, set_recipient_street) =
+        create_signal(recipient.street.clone().unwrap_or_default());
+    let (recipient_house_number, set_recipient_house_number) =
+        create_signal(recipient.house_number.clone().unwrap_or_default());
+    let (recipient_zip_code, set_recipient_zip_code) =
+        create_signal(recipient.zip_code.clone().unwrap_or_default());
+    let (recipient_city, set_recipient_city) =
+        create_signal(recipient.city.clone().unwrap_or_default());
+    let (recipient_country, set_recipient_country) =
+        create_signal(recipient.country.clone().unwrap_or_default());
 
     let (item_desc, set_item_desc) = create_signal(String::new());
     let item_qty = create_rw_signal(1.0f64);
     let item_price = create_rw_signal(0i64);
+
+    let (payments_list, set_payments_list) = create_signal(inv.payments.clone());
+
+    // After booking or removing a tranche, re-read the invoice: the server owns
+    // the payment ids and rejects bookings the client cannot foresee.
+    let refresh_payments = move || {
+        if let Some(id) = invoice_id {
+            spawn_local(async move {
+                if let Ok(full) = get_invoice(id).await {
+                    set_payments_list.set(full.payments);
+                }
+            });
+        }
+    };
+
+    let add_payment_act = create_action(move |(amount, date): &(i64, NaiveDate)| {
+        let (amount, date) = (*amount, *date);
+        async move {
+            let Some(id) = invoice_id else { return };
+            match add_invoice_payment(id, amount, date).await {
+                Ok(()) => {
+                    refresh_payments();
+                    on_change.call(());
+                }
+                Err(e) => logging::log!("Error adding payment: {:?}", e),
+            }
+        }
+    });
+
+    let delete_payment_act = create_action(move |payment_id: &i64| {
+        let payment_id = *payment_id;
+        async move {
+            match delete_invoice_payment(payment_id).await {
+                Ok(()) => {
+                    refresh_payments();
+                    on_change.call(());
+                }
+                Err(e) => logging::log!("Error deleting payment: {:?}", e),
+            }
+        }
+    });
 
     let save_invoice_act = create_action(move |i: &Invoice| {
         let i = i.clone();
@@ -70,7 +124,7 @@ fn InvoiceEditor(
                 Ok(saved) => {
                     on_change.call(());
                     set_selected_invoice.set(Some(saved));
-                },
+                }
                 Err(e) => logging::log!("Error saving invoice: {:?}", e),
             }
         }
@@ -83,7 +137,7 @@ fn InvoiceEditor(
                 Ok(_) => {
                     on_change.call(());
                     set_selected_invoice.set(None);
-                },
+                }
                 Err(e) => logging::log!("Error canceling invoice: {:?}", e),
             }
         }
@@ -98,7 +152,7 @@ fn InvoiceEditor(
                     if let Ok(full_inv) = get_invoice(id).await {
                         set_selected_invoice.set(Some(full_inv));
                     }
-                },
+                }
                 Err(e) => logging::log!("Error finalizing invoice: {:?}", e),
             }
         }
@@ -111,7 +165,7 @@ fn InvoiceEditor(
                 Ok(_) => {
                     on_change.call(());
                     set_selected_invoice.set(None);
-                },
+                }
                 Err(e) => logging::log!("Error deleting invoice: {:?}", e),
             }
         }
@@ -213,6 +267,7 @@ fn InvoiceEditor(
             <div class="field">
                 <label class="label">"Einleitungstext"</label>
                 <div class="control"><textarea class="textarea" prop:value=header on:input=move |ev| set_header.set(event_target_value(&ev)) prop:disabled=is_committed></textarea></div>
+                <TextFieldHint />
             </div>
 
             {move || if !is_committed {
@@ -279,6 +334,7 @@ fn InvoiceEditor(
             <div class="field">
                 <label class="label">"Schlusstext"</label>
                 <div class="control"><textarea class="textarea" prop:value=footer on:input=move |ev| set_footer.set(event_target_value(&ev)) prop:disabled=is_committed></textarea></div>
+                <TextFieldHint />
             </div>
 
             <div class="field is-grouped mt-5">
@@ -289,8 +345,8 @@ fn InvoiceEditor(
                                 let mut save_inv = inv.clone();
                                 save_inv.invoice_date = NaiveDate::parse_from_str(&invoice_date.get(), "%Y-%m-%d").ok();
                                 save_inv.subject = Some(subject.get());
-                                save_inv.header_html = Some(header.get());
-                                save_inv.footer_html = Some(footer.get());
+                                save_inv.header = Some(header.get());
+                                save_inv.footer = Some(footer.get());
                                 save_inv.items = items_list.get();
                                 save_inv.customer_contact = customer_contact.get();
                                 save_inv.recipient = Some(Recipient {
@@ -339,6 +395,19 @@ fn InvoiceEditor(
             {move || if !is_committed && customer_contact.get().is_none() {
                 view! { <div class="message is-warning mt-2"><div class="message-body p-2 is-size-7"><span class="icon mr-1"><i class="mdi mdi-alert-circle"></i></span>"Ein Kontakt muss zugewiesen sein, bevor die Rechnung finalisiert werden kann."</div></div> }.into_view()
             } else { "".into_view() }}
+
+            // Payments belong to an *issued* invoice. A draft has not been sent,
+            // so there is nothing for a customer to have paid yet.
+            {if is_committed && invoice_id.is_some() {
+                view! {
+                    <PaymentsPanel
+                        payments=payments_list
+                        total_cents=Signal::derive(move || items_list.get().iter().map(Item::total_cents).sum::<i64>())
+                        on_add=Callback::new(move |(amount, date)| add_payment_act.dispatch((amount, date)))
+                        on_delete=Callback::new(move |id| delete_payment_act.dispatch(id))
+                    />
+                }.into_view()
+            } else { "".into_view() }}
         </div>
     }
 }
@@ -348,117 +417,263 @@ pub fn InvoicesPage() -> impl IntoView {
     let (invoices, set_invoices) = create_signal(Vec::<InvoiceListItem>::new());
     let (selected_invoice, set_selected_invoice) = create_signal(Option::<Invoice>::None);
     let (contacts, set_contacts) = create_signal(Vec::<Contact>::new());
+    let (from_date_filter, set_from_date_filter) = create_signal(String::new());
+    let (to_date_filter, set_to_date_filter) = create_signal(String::new());
+    let (has_more_invoices, set_has_more_invoices) = create_signal(false);
+    let (list_generation, set_list_generation) = create_signal(0_u64);
 
-    let load_invoices = create_action(move |_| async move {
-        match get_invoices().await {
-            Ok(list) => set_invoices.set(list),
-            Err(e) => logging::log!("Error fetching invoices: {:?}", e),
-        }
-    });
+    let load_invoices = create_action(
+        move |(generation, offset, from, to): &(u64, u32, String, String)| {
+            let generation = *generation;
+            let offset = *offset;
+            let from = from.clone();
+            let to = to.clone();
+            async move {
+                let from_date = NaiveDate::parse_from_str(&from, "%Y-%m-%d").ok();
+                let to_date = NaiveDate::parse_from_str(&to, "%Y-%m-%d").ok();
+                match get_invoices(offset, INVOICE_PAGE_SIZE, from_date, to_date).await {
+                    Ok(page) => {
+                        if list_generation.get_untracked() != generation
+                            || from_date_filter.get_untracked() != from
+                            || to_date_filter.get_untracked() != to
+                        {
+                            return;
+                        }
+
+                        if offset == 0 {
+                            set_invoices.set(page.items);
+                        } else if invoices.get_untracked().len() as u32 == offset {
+                            set_invoices.update(|items| items.extend(page.items));
+                        } else {
+                            return;
+                        }
+                        set_has_more_invoices.set(page.has_more);
+                    }
+                    Err(e) => logging::log!("Error fetching invoices: {:?}", e),
+                }
+            }
+        },
+    );
 
     let load_contacts = create_action(move |_| async move {
-        match get_contacts().await {
+        match get_all_contacts().await {
             Ok(list) => set_contacts.set(list),
             Err(e) => logging::log!("Error fetching contacts: {:?}", e),
         }
     });
 
-    load_invoices.dispatch(());
+    load_invoices.dispatch((0, 0, String::new(), String::new()));
     load_contacts.dispatch(());
 
-
-    view! {
-        <div class="container">
+    // The editor takes the whole page: while writing an invoice, the list of the
+    // other ones is noise. Selecting swaps the pane, "Zurück" swaps it back.
+    let list_view = move || {
+        view! {
             <div class="level">
                 <div class="level-left"><h1 class="title">"Rechnungen"</h1></div>
-                <div class="level-right">
-                    <button class="button is-link" on:click=move |_| {
-                        set_selected_invoice.set(Some(Invoice {
-                            id: None,
-                            items: vec![],
-                            created_timestamp: None,
-                            committed_timestamp: None,
-                            invoice_number: None,
-                            payments: vec![],
-                            invoice_date: Some(Utc::now().naive_utc().date()),
-                            is_canceled: false,
-                            is_cancelation: false,
-                            corrected_invoice_id: None,
-                            customer_contact: None,
-                            document: None,
-                            recipient: Some(Recipient {
-                                form_of_address: Some("Herr".to_string()),
-                                title: None,
-                                name: "Name".to_string(),
-                                first_name: Some("Vorname".to_string()),
-                                street: Some("Musterstraße".to_string()),
-                                zip_code: Some("12345".to_string()),
-                                city: Some("Stadt".to_string()),
-                                house_number: Some("1".to_string()),
-                                country: Some("Deutschland".to_string()),
-                            }),
-                            header_html: Some("Vielen Dank für Ihre Bestellung.".to_string()),
-                            footer_html: Some("Bitte überweisen Sie den Betrag innerhalb von 14 Tagen.".to_string()),
-                            title: Some("Rechnung".to_string()),
-                            subject: Some("Rechnung".to_string()),
-                        }));
-                    }>{"Neue Rechnung"}</button>
-                </div>
+                    <div class="level-right">
+                        <button class="button is-link" on:click=move |_| {
+                            set_selected_invoice.set(Some(Invoice {
+                                id: None,
+                                items: vec![],
+                                created_timestamp: None,
+                                committed_timestamp: None,
+                                invoice_number: None,
+                                payments: vec![],
+                                invoice_date: Some(Utc::now().naive_utc().date()),
+                                is_canceled: false,
+                                is_cancelation: false,
+                                corrected_invoice_id: None,
+                                customer_contact: None,
+                                document: None,
+                                recipient: Some(Recipient {
+                                    form_of_address: Some("Herr".to_string()),
+                                    title: None,
+                                    name: "Name".to_string(),
+                                    first_name: Some("Vorname".to_string()),
+                                    street: Some("Musterstraße".to_string()),
+                                    zip_code: Some("12345".to_string()),
+                                    city: Some("Stadt".to_string()),
+                                    house_number: Some("1".to_string()),
+                                    country: Some("Deutschland".to_string()),
+                                }),
+                                header: Some("Vielen Dank für Ihre Bestellung.".to_string()),
+                                footer: Some("Bitte überweisen Sie den Betrag innerhalb von 14 Tagen.".to_string()),
+                                title: Some("Rechnung".to_string()),
+                                subject: Some("Rechnung".to_string()),
+                            }));
+                        }>{"Neue Rechnung"}</button>
+                    </div>
             </div>
 
-            <div class="columns is-split">
-                <div class="column is-5">
-                    <div class="box">
-                        <div>
-                            {move || invoices.get().into_iter().map(|inv| {
-                                let inv_id = inv.id;
-                                let contact_name = inv.customer_contact.as_ref().map(Contact::display_name).unwrap_or_else(|| "Gast".to_string());
-                                let status_badge = if !inv.committed {
-                                    view! { <span class="tag is-warning ml-2">"ENTWURF"</span> }.into_view()
-                                } else if inv.is_canceled {
-                                    view! { <span class="tag is-danger ml-2">"Storniert"</span> }.into_view()
-                                } else {
-                                    view! { <span class="tag is-success ml-2">"Finalisiert"</span> }.into_view()
-                                };
-                                let display_title = inv.subject.clone().unwrap_or_else(|| "Rechnung".to_string());
-                                // The badge already says ENTWURF; show the date instead of repeating it.
-                                let secondary = if inv.committed {
-                                    format!("Rechnung #{}", inv.invoice_number.unwrap_or_default())
-                                } else {
-                                    inv.created_timestamp.format("%d.%m.%Y").to_string()
-                                };
-                                view! {
-                                    <div
-                                        class="box list-item p-3 mb-2"
-                                        class:is-active=move || selected_invoice.get().and_then(|i| i.id) == Some(inv_id)
-                                        on:click=move |_| {
-                                            spawn_local(async move {
-                                                if let Ok(full_inv) = get_invoice(inv_id).await {
-                                                    set_selected_invoice.set(Some(full_inv));
-                                                }
-                                            });
-                                        }
-                                    >
-                                        <div class="has-text-weight-bold">{display_title} {status_badge}</div>
-                                        <div class="is-size-7 text-muted">{secondary} " • " {contact_name}</div>
-                                    </div>
+            <div class="box">
+                <div class="field-row mb-4">
+                    <div class="field">
+                        <label class="label is-small">"Von"</label>
+                        <div class="control">
+                            <input
+                                class="input"
+                                type="date"
+                                prop:value=from_date_filter
+                                on:input=move |ev| {
+                                    let from = event_target_value(&ev);
+                                    let generation = list_generation.get_untracked().wrapping_add(1);
+                                    set_list_generation.set(generation);
+                                    set_from_date_filter.set(from.clone());
+                                    set_invoices.set(Vec::new());
+                                    set_has_more_invoices.set(false);
+                                    load_invoices.dispatch((
+                                        generation,
+                                        0,
+                                        from,
+                                        to_date_filter.get_untracked(),
+                                    ));
                                 }
-                            }).collect::<Vec<_>>()}
+                            />
+                        </div>
+                    </div>
+                    <div class="field">
+                        <label class="label is-small">"Bis (einschließlich)"</label>
+                        <div class="control">
+                            <input
+                                class="input"
+                                type="date"
+                                prop:value=to_date_filter
+                                on:input=move |ev| {
+                                    let to = event_target_value(&ev);
+                                    let generation = list_generation.get_untracked().wrapping_add(1);
+                                    set_list_generation.set(generation);
+                                    set_to_date_filter.set(to.clone());
+                                    set_invoices.set(Vec::new());
+                                    set_has_more_invoices.set(false);
+                                    load_invoices.dispatch((
+                                        generation,
+                                        0,
+                                        from_date_filter.get_untracked(),
+                                        to,
+                                    ));
+                                }
+                            />
                         </div>
                     </div>
                 </div>
-
-                <div class="column">
-                    {move || match selected_invoice.get() {
-                        None => view! {
-                            <EmptyState icon="file-document-outline" text="Wählen Sie eine Rechnung aus." />
-                        }.into_view(),
-                        Some(inv) => view! {
-                            <InvoiceEditor inv=inv contacts=contacts on_change=Callback::new(move |_| load_invoices.dispatch(())) set_selected_invoice=set_selected_invoice />
-                        }.into_view(),
-                    }}
+                <div>
+                                {move || invoices.get().into_iter().map(|inv| {
+                                    let inv_id = inv.id;
+                                    let contact_name = inv.customer_contact.as_ref().map(Contact::display_name).unwrap_or_else(|| "Gast".to_string());
+                                    let status_badge = if !inv.committed {
+                                        view! { <span class="tag is-warning ml-2">"ENTWURF"</span> }.into_view()
+                                    } else if inv.is_canceled {
+                                        view! { <span class="tag is-danger ml-2">"Storniert"</span> }.into_view()
+                                    } else {
+                                        // For an issued invoice the settlement state is the
+                                        // useful thing to see; "Finalisiert" is implied by
+                                        // the invoice number shown underneath.
+                                        let status = inv.payment_status();
+                                        view! { <span class=format!("tag {} ml-2", status.tag_class())>{status.label()}</span> }.into_view()
+                                    };
+                                    let amount_line = if inv.committed && !inv.is_canceled {
+                                        let status = inv.payment_status();
+                                        let text = match status {
+                                            PaymentStatus::Partial => format!(
+                                                "{} von {} • offen {}",
+                                                format_euro(inv.paid_cents),
+                                                format_euro(inv.total_cents),
+                                                format_euro(inv.outstanding_cents()),
+                                            ),
+                                            PaymentStatus::Overpaid => format!(
+                                                "{} von {} • überzahlt {}",
+                                                format_euro(inv.paid_cents),
+                                                format_euro(inv.total_cents),
+                                                format_euro(-inv.outstanding_cents()),
+                                            ),
+                                            _ => format_euro(inv.total_cents),
+                                        };
+                                        view! { <div class="is-size-7 text-muted">{text}</div> }.into_view()
+                                    } else { "".into_view() };
+                                    let display_title = inv.subject.clone().unwrap_or_else(|| "Rechnung".to_string());
+                                    // The badge already says ENTWURF; show the date instead of repeating it.
+                                    let secondary = if inv.committed {
+                                        format!("Rechnung #{}", inv.invoice_number.unwrap_or_default())
+                                    } else {
+                                        inv.created_timestamp.format("%d.%m.%Y").to_string()
+                                    };
+                                    view! {
+                                        <div
+                                            class="box list-item p-3 mb-2"
+                                            on:click=move |_| {
+                                                spawn_local(async move {
+                                                    if let Ok(full_inv) = get_invoice(inv_id).await {
+                                                        set_selected_invoice.set(Some(full_inv));
+                                                    }
+                                                });
+                                            }
+                                        >
+                                            <div class="has-text-weight-bold">{display_title} {status_badge}</div>
+                                            <div class="is-size-7 text-muted">{secondary} " • " {contact_name}</div>
+                                            {amount_line}
+                                        </div>
+                                    }
+                                }).collect::<Vec<_>>()}
                 </div>
+                <Show when=move || has_more_invoices.get()>
+                    <div class="has-text-centered mt-3">
+                        <button
+                            class="button is-light"
+                            prop:disabled=load_invoices.pending()
+                            on:click=move |_| {
+                                let offset = invoices.get_untracked().len() as u32;
+                                load_invoices.dispatch((
+                                    list_generation.get_untracked(),
+                                    offset,
+                                    from_date_filter.get_untracked(),
+                                    to_date_filter.get_untracked(),
+                                ));
+                            }
+                        >
+                            {move || if load_invoices.pending().get() { "Lädt…" } else { "Mehr laden" }}
+                        </button>
+                    </div>
+                </Show>
+                {move || if invoices.get().is_empty() && !load_invoices.pending().get() {
+                    view! { <EmptyState icon="file-document-outline" text="Noch keine Rechnung angelegt." /> }.into_view()
+                } else { "".into_view() }}
             </div>
+        }
+    };
+
+    view! {
+        <div class="container">
+            {move || match selected_invoice.get() {
+                None => list_view().into_view(),
+                Some(inv) => view! {
+                    <div class="level">
+                        <div class="level-left">
+                            <button class="button is-light" on:click=move |_| set_selected_invoice.set(None)>
+                                <span class="icon mr-1"><i class="mdi mdi-arrow-left"></i></span>
+                                "Zurück zur Übersicht"
+                            </button>
+                        </div>
+                    </div>
+                    <InvoiceEditor
+                        inv=inv
+                        contacts=contacts
+                        on_change=Callback::new(move |_| {
+                            let generation = list_generation.get_untracked().wrapping_add(1);
+                            set_list_generation.set(generation);
+                            set_invoices.set(Vec::new());
+                            set_has_more_invoices.set(false);
+                            load_invoices.dispatch((
+                                generation,
+                                0,
+                                from_date_filter.get_untracked(),
+                                to_date_filter.get_untracked(),
+                            ));
+                        })
+                        set_selected_invoice=set_selected_invoice
+                    />
+                }.into_view(),
+            }}
         </div>
     }
 }

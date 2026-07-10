@@ -106,7 +106,13 @@ fn StatsView(stats: DashboardStats) -> impl IntoView {
             <StatCard
                 label="Belege"
                 value=stats.receipt_count.to_string()
-                sub=format!("{} Kontakte", stats.contact_count)
+                sub=format!("Erfasst in {}", stats.year)
+            />
+            // Contacts are not year-scoped, unlike every other card in this row.
+            <StatCard
+                label="Kontakte"
+                value=stats.contact_count.to_string()
+                sub="Insgesamt"
             />
         </div>
     }

@@ -1,19 +1,55 @@
+use crate::components::EmptyState;
+use crate::server::{archive_contact, get_archived_contacts, get_contacts, restore_contact, save_contact};
 use leptos::*;
 use shared::*;
-use crate::components::EmptyState;
-use crate::server::{get_contacts, save_contact, delete_contact};
+
+const CONTACT_PAGE_SIZE: u32 = 50;
 
 #[component]
 pub fn ContactsPage() -> impl IntoView {
     let (contacts, set_contacts) = create_signal(Vec::<Contact>::new());
     let (selected_contact, set_selected_contact) = create_signal(Option::<Contact>::None);
     let (search_query, set_search_query) = create_signal(String::new());
-    
-    // Load contacts action
-    let load_contacts = create_action(move |_| async move {
-        match get_contacts().await {
-            Ok(list) => set_contacts.set(list),
-            Err(e) => logging::log!("Error fetching contacts: {:?}", e),
+    let (has_more_contacts, set_has_more_contacts) = create_signal(false);
+    let (list_generation, set_list_generation) = create_signal(0_u64);
+    // Archived contacts live in a separate view, not interleaved with active
+    // ones: they are out of the pickers, and the list should say so clearly.
+    let (show_archive, set_show_archive) = create_signal(false);
+
+    // Each request carries the filter it was made for. This prevents a slow
+    // response to an earlier keystroke from replacing a newer search result.
+    let load_contacts = create_action(move |(generation, offset, query, archived): &(u64, u32, String, bool)| {
+        let generation = *generation;
+        let offset = *offset;
+        let query = query.clone();
+        let archived = *archived;
+        async move {
+            let server_query = (!query.trim().is_empty()).then(|| query.trim().to_string());
+            let result = if archived {
+                get_archived_contacts(offset, CONTACT_PAGE_SIZE, server_query).await
+            } else {
+                get_contacts(offset, CONTACT_PAGE_SIZE, server_query).await
+            };
+            match result {
+                Ok(page) => {
+                    if list_generation.get_untracked() != generation
+                        || search_query.get_untracked() != query
+                        || show_archive.get_untracked() != archived
+                    {
+                        return;
+                    }
+
+                    if offset == 0 {
+                        set_contacts.set(page.items);
+                    } else if contacts.get_untracked().len() as u32 == offset {
+                        set_contacts.update(|items| items.extend(page.items));
+                    } else {
+                        return;
+                    }
+                    set_has_more_contacts.set(page.has_more);
+                }
+                Err(e) => logging::log!("Error fetching contacts: {:?}", e),
+            }
         }
     });
 
@@ -23,46 +59,68 @@ pub fn ContactsPage() -> impl IntoView {
         async move {
             match save_contact(c).await {
                 Ok(_) => {
-                    load_contacts.dispatch(());
+                    let generation = list_generation.get_untracked().wrapping_add(1);
+                    set_list_generation.set(generation);
+                    set_contacts.set(Vec::new());
+                    set_has_more_contacts.set(false);
+                    load_contacts.dispatch((generation, 0, search_query.get_untracked(), show_archive.get_untracked()));
                     set_selected_contact.set(None);
-                },
+                }
                 Err(e) => logging::log!("Error saving contact: {:?}", e),
             }
         }
     });
 
-    // Delete contact action
-    let delete_contact_act = create_action(move |id: &i64| {
+    // Archive moves a contact out of pickers and lists; restore brings it
+    // back. Both reload the current view afterwards.
+    let archive_contact_act = create_action(move |(id, restore): &(i64, bool)| {
         let id = *id;
+        let restore = *restore;
         async move {
-            match delete_contact(id).await {
+            let result = if restore {
+                restore_contact(id).await
+            } else {
+                archive_contact(id).await
+            };
+            match result {
                 Ok(_) => {
-                    load_contacts.dispatch(());
+                    let generation = list_generation.get_untracked().wrapping_add(1);
+                    set_list_generation.set(generation);
+                    set_contacts.set(Vec::new());
+                    set_has_more_contacts.set(false);
+                    load_contacts.dispatch((generation, 0, search_query.get_untracked(), show_archive.get_untracked()));
                     set_selected_contact.set(None);
-                },
-                Err(e) => logging::log!("Error deleting contact: {:?}", e),
+                }
+                Err(e) => logging::log!("Error archiving/restoring contact: {:?}", e),
             }
         }
     });
 
     // Initial load
-    load_contacts.dispatch(());
-
-    let filtered_contacts = move || {
-        let query = search_query.get().to_lowercase();
-        contacts.get().into_iter().filter(|c| {
-            c.name.to_lowercase().contains(&query) || 
-            c.first_name.as_ref().map_or(false, |f| f.to_lowercase().contains(&query))
-        }).collect::<Vec<_>>()
-    };
+    load_contacts.dispatch((0, 0, String::new(), false));
 
     view! {
         <div class="container">
             <div class="level">
                 <div class="level-left">
-                    <h1 class="title">"Kunden & Kontakte"</h1>
+                    <h1 class="title">
+                        {move || if show_archive.get() { "Kontakte — Archiv" } else { "Kunden & Kontakte" }}
+                    </h1>
                 </div>
                 <div class="level-right">
+                    <button class="button is-light mr-2" on:click=move |_| {
+                        let archived = !show_archive.get_untracked();
+                        set_show_archive.set(archived);
+                        let generation = list_generation.get_untracked().wrapping_add(1);
+                        set_list_generation.set(generation);
+                        set_contacts.set(Vec::new());
+                        set_has_more_contacts.set(false);
+                        set_selected_contact.set(None);
+                        load_contacts.dispatch((generation, 0, search_query.get_untracked(), archived));
+                    }>
+                        <span class="icon"><i class="mdi mdi-archive-outline"></i></span>
+                        <span>{move || if show_archive.get() { "Aktive Kontakte" } else { "Archiv" }}</span>
+                    </button>
                     <button class="button is-link" on:click=move |_| {
                         set_selected_contact.set(Some(Contact {
                             id: None,
@@ -77,6 +135,7 @@ pub fn ContactsPage() -> impl IntoView {
                             country: Some("Deutschland".to_string()),
                             phone: Some("".to_string()),
                             is_person: true,
+                            archived_timestamp: None,
                         }));
                     }>
                         "Neuer Kontakt"
@@ -91,7 +150,16 @@ pub fn ContactsPage() -> impl IntoView {
                         <div class="field">
                             <p class="control has-icons-left">
                                 <input class="input" type="text" placeholder="Suchen..."
-                                    on:input=move |ev| set_search_query.set(event_target_value(&ev)) />
+                                    prop:value=search_query
+                                    on:input=move |ev| {
+                                        let query = event_target_value(&ev);
+                                        let generation = list_generation.get_untracked().wrapping_add(1);
+                                        set_list_generation.set(generation);
+                                        set_search_query.set(query.clone());
+                                        set_contacts.set(Vec::new());
+                                        set_has_more_contacts.set(false);
+                                        load_contacts.dispatch((generation, 0, query, show_archive.get_untracked()));
+                                    } />
                                 <span class="icon is-small is-left">
                                     <i class="mdi mdi-magnify"></i>
                                 </span>
@@ -99,7 +167,7 @@ pub fn ContactsPage() -> impl IntoView {
                         </div>
                         <hr/>
                         <div style="max-height: 60vh; overflow-y: auto;">
-                            {move || filtered_contacts().into_iter().map(|contact| {
+                            {move || contacts.get().into_iter().map(|contact| {
                                 let name = contact.display_name();
                                 let address = contact.display_address();
                                 let contact_id = contact.id;
@@ -115,6 +183,25 @@ pub fn ContactsPage() -> impl IntoView {
                                     </div>
                                 }
                             }).collect::<Vec<_>>()}
+                            <Show when=move || has_more_contacts.get()>
+                                <div class="has-text-centered mt-3">
+                                    <button
+                                        class="button is-light is-small"
+                                        prop:disabled=load_contacts.pending()
+                                        on:click=move |_| {
+                                            let offset = contacts.get_untracked().len() as u32;
+                                            load_contacts.dispatch((
+                                                list_generation.get_untracked(),
+                                                offset,
+                                                search_query.get_untracked(),
+                                                show_archive.get_untracked(),
+                                            ));
+                                        }
+                                    >
+                                        {move || if load_contacts.pending().get() { "Lädt…" } else { "Mehr laden" }}
+                                    </button>
+                                </div>
+                            </Show>
                         </div>
                     </div>
                 </div>
@@ -139,6 +226,7 @@ pub fn ContactsPage() -> impl IntoView {
                             let (c_is_person, set_c_is_person) = create_signal(contact.is_person);
                             let is_edit = contact.id.is_some();
                             let contact_id = contact.id;
+                            let contact_archived = contact.archived_timestamp.is_some();
 
                             view! {
                                 <div class="box">
@@ -242,14 +330,24 @@ pub fn ContactsPage() -> impl IntoView {
                                             </button>
                                         </div>
                                         {if is_edit {
+                                            // An archived contact offers restore; an active one
+                                            // offers archive. There is no hard delete: the id is
+                                            // the Kundennummer on committed invoices.
+                                            let archived = contact_archived;
                                             view! {
                                                 <div class="control">
-                                                    <button class="button is-danger" on:click=move |_| {
-                                                        if let Some(id) = contact_id {
-                                                            delete_contact_act.dispatch(id);
+                                                    <button
+                                                        class="button"
+                                                        class:is-warning=!archived
+                                                        class:is-success=archived
+                                                        on:click=move |_| {
+                                                            if let Some(id) = contact_id {
+                                                                archive_contact_act.dispatch((id, archived));
+                                                            }
                                                         }
-                                                    }>
-                                                        "Löschen"
+                                                    >
+                                                        <span class="icon"><i class=if archived { "mdi mdi-archive-arrow-up-outline" } else { "mdi mdi-archive-arrow-down-outline" }></i></span>
+                                                        <span>{if archived { "Wiederherstellen" } else { "Archivieren" }}</span>
                                                     </button>
                                                 </div>
                                             }.into_view()
