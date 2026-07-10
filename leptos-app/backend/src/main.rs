@@ -18,6 +18,8 @@ use dbcopy::{connect_pool, migrator_for, run_db_migration, shutdown_pool};
 
 mod mail;
 
+const DEFAULT_DATABASE_URL: &str = "sqlite://klubu.db?mode=rwc";
+
 /// Endpoints reachable without a session. Everything else under `/api` needs one.
 ///
 /// Matched exactly, not by prefix: `login` and `initialize_admin` are the only
@@ -242,7 +244,7 @@ async fn main() {
     let db_url = std::env::var("DATABASE_URL")
         .ok()
         .or_else(|| props.get("klubu.database.url").cloned())
-        .unwrap_or_else(|| "sqlite://klubu.db?mode=rwc".to_string());
+        .unwrap_or_else(|| DEFAULT_DATABASE_URL.to_string());
 
     // `migrate-db --to <target-url>` copies this instance's data into another
     // database (typically the other dialect) and exits. See `dbcopy.rs`.

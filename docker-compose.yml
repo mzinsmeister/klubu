@@ -1,37 +1,54 @@
-version: "3"
 services:
   db:
+    profiles: [postgres]
     image: postgres:16
     environment:
-      - POSTGRES_DB=klubu
-      - POSTGRES_USER=klubu
-      - POSTGRES_PASSWORD=klubu-test
-      - POSTGRES_ROOT_PASSWORD=abc123testroot
+      POSTGRES_DB: klubu
+      POSTGRES_USER: klubu
+      POSTGRES_PASSWORD: klubu-test
     ports:
       - "5433:5432"
     volumes:
-      - klubu-data:/var/lib/postgresql/data:z
+      - klubu-data:/var/lib/postgresql/data
 
-  backend:
-    image: klubu:test
+  app:
+    image: klubu:latest
     build: .
-    shm_size: '2gb'
     ports:
       - "8080:8080"
-    depends_on:
-      - db
+      - "2525:2525"
+      - "2143:2143"
     volumes:
-      - ./templates:/templates
-      - ./config:/app/config
-      - ./files:/app/files
-      - klubu-chromedata:/chromedata
-    user: 1000:1000
+      - klubu-sqlite:/app/data
+      - klubu-documents:/app/document_storage
+      - klubu-mail:/app/mail_storage
     environment:
-      - SPRING_PROFILES_ACTIVE=dev
-      - SPRING_CONFIG_LOCATION=/app/config/
-      - SPRING_DATASOURCE_URL=jdbc:postgresql://db:5432/klubu
-      - KLUBU_EXPORT_TEMPLATES_PATH=/templates
-      - KLUBU_EXPORT_CHROMIUM_DATAPATH=/chromedata
+      DATABASE_URL: ${DATABASE_URL:-sqlite:///app/data/klubu.db?mode=rwc}
+      KLUBU_EXPORT_TEMPLATES_PATH: /app/templates
+      KLUBU_DOCUMENT_STORAGE_PATH: /app/document_storage
+      KLUBU_MAIL_STORAGE_PATH: /app/mail_storage
+
+  # Optional — start with `docker compose --profile ai up` for receipt prefill.
+  ollama:
+    image: ollama/ollama:latest
+    profiles: [ai]
+    ports:
+      - "11434:11434"
+    volumes:
+      - ollama-models:/root/.ollama
+
+  ollama-pull:
+    image: ollama/ollama:latest
+    profiles: [ai]
+    depends_on:
+      - ollama
+    environment:
+      OLLAMA_HOST: http://ollama:11434
+    entrypoint: ["ollama", "pull", "qwen2.5:3b"]
+
 volumes:
   klubu-data:
-  klubu-chromedata:
+  klubu-sqlite:
+  klubu-documents:
+  klubu-mail:
+  ollama-models:

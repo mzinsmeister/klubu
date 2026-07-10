@@ -1,0 +1,13 @@
+.git
+.github
+.idea
+.claude
+.jpb
+leptos-app/.git
+leptos-app/target
+leptos-app/frontend/dist
+leptos-app/document_storage
+leptos-app/mail_storage
+leptos-app/*.db
+config
+files

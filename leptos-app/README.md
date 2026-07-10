@@ -1,8 +1,9 @@
 # KlubU (Leptos Version)
 
-A modern, fast, and lightweight port of the **Klubu** invoicing tool, written entirely in Rust using the **Leptos** web framework.
+A modern, fast, and lightweight invoicing tool, written entirely in Rust using
+the **Leptos** web framework.
 
-Compared to the Kotlin/Spring Boot version, this version has a significantly lighter footprint:
+The application has a lightweight footprint:
 - **No Headless Chromium/Selenium dependency**: PDFs are compiled directly in-memory from Typst templates using the `typst` and `typst-pdf` crates.
 - **Fast and lightweight**: Single-binary deployment for the backend, and a compiled WebAssembly client.
 
@@ -324,10 +325,11 @@ it is.
 ### 1. Set Up the Database
 
 SQLite is the default development database and needs no setup: `klubu.db` is
-created on first start. PostgreSQL is optional; to use it locally, spin one up
-(e.g. with Docker) and point `DATABASE_URL` at it:
+created on first start. PostgreSQL is optional and is behind the `postgres`
+profile in the workspace Compose file:
 ```bash
-docker run --name klubu-db -e POSTGRES_USER=klubu -e POSTGRES_PASSWORD=klubu-test -e POSTGRES_DB=klubu -p 5433:5432 -d postgres:latest
+docker compose --profile postgres up -d klubu-postgres-dev
+DATABASE_URL=postgres://klubu:klubu-test@localhost:5433/klubu cargo run --package backend
 ```
 
 ### 2. Start the Backend
@@ -335,7 +337,7 @@ docker run --name klubu-db -e POSTGRES_USER=klubu -e POSTGRES_PASSWORD=klubu-tes
 The backend listens on `http://localhost:8080`, so start it first in one terminal from the `leptos-app` root directory:
 
 ```bash
-DATABASE_URL=sqlite://klubu.db?mode=rwc cargo run --package backend
+cargo run --package backend
 # or, when PostgreSQL is explicitly selected:
 DATABASE_URL=postgres://klubu:klubu-test@localhost:5433/klubu cargo run --package backend
 ```

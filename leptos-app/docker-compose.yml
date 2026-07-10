@@ -1,7 +1,6 @@
-version: "3.8"
-
 services:
   klubu-postgres-dev:
+    profiles: [postgres]
     image: postgres:15-alpine
     container_name: klubu-postgres-dev
     environment:
