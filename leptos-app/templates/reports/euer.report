@@ -1,0 +1,322 @@
+title: Anlage EÜR
+param year "Veranlagungsjahr": int options=query(jahre) = query(vorjahr)
+
+--- description ---
+Einnahmenüberschussrechnung nach § 4 Abs. 3 EStG, gegliedert nach den Zeilen der
+amtlichen Anlage EÜR. Die Werte sind zum manuellen Übertrag in Mein ELSTER
+gedacht — je Zeile stehen ELSTER-Kennzahl und Betrag bereit. Kassenprinzip
+(§ 11 EStG): gezählt wird, was im Jahr geflossen ist.
+
+--- options name=vorjahr dialect=postgres ---
+-- The EÜR is filed for the year that has ended, so the form opens on it.
+SELECT to_char(now() - interval '1 year', 'YYYY');
+
+--- options name=vorjahr dialect=sqlite ---
+SELECT CAST(CAST(strftime('%Y', 'now') AS INTEGER) - 1 AS TEXT);
+
+--- options name=jahre dialect=postgres ---
+-- Every year that has bookings, newest first, plus the Vorjahr — which must be
+-- in the list even in a year with no data, because it is the default and the
+-- engine only binds values the dropdown actually offers.
+SELECT DISTINCT jahr FROM (
+    SELECT substring(ip.payment_date FROM 1 FOR 4) AS jahr FROM invoice_payment ip
+    UNION ALL
+    SELECT substring(COALESCE(rp.first_payment_date, r.receipt_date) FROM 1 FOR 4)
+    FROM receipt r
+    LEFT JOIN (
+        SELECT receipt_id, MIN(payment_date) AS first_payment_date
+        FROM receipt_payment GROUP BY receipt_id
+    ) rp ON rp.receipt_id = r.id
+    UNION ALL
+    SELECT to_char(now() - interval '1 year', 'YYYY')
+) y
+WHERE jahr IS NOT NULL
+ORDER BY jahr DESC;
+
+--- options name=jahre dialect=sqlite ---
+SELECT DISTINCT jahr FROM (
+    SELECT substr(ip.payment_date, 1, 4) AS jahr FROM invoice_payment ip
+    UNION ALL
+    SELECT substr(COALESCE(rp.first_payment_date, r.receipt_date), 1, 4)
+    FROM receipt r
+    LEFT JOIN (
+        SELECT receipt_id, MIN(payment_date) AS first_payment_date
+        FROM receipt_payment GROUP BY receipt_id
+    ) rp ON rp.receipt_id = r.id
+    UNION ALL
+    SELECT CAST(CAST(strftime('%Y', 'now') AS INTEGER) - 1 AS TEXT)
+) y
+WHERE jahr IS NOT NULL
+ORDER BY jahr DESC;
+
+--- query dialect=postgres ---
+-- One row per contributing line item ($1 = year). The template groups these by
+-- ELSTER-Kennzahl, sums them, and lays them out against its Zeile table; the
+-- individual rows also serve as the per-Zeile Beleg-Nachweis.
+--
+-- Basis (§ 4 Abs. 3, § 11 EStG, Kassenprinzip):
+--   Income   — invoice PAYMENT date (Zufluss). Kleinunternehmer (§ 19 UStG), so
+--              every payment books onto Kennzahl 111. If you leave § 19, split
+--              this onto 112 (netto) and 140 (USt).
+--   Expenses — receipt ABFLUSSDATUM: the first recorded payment on the receipt,
+--              falling back to the Belegdatum when no payment was recorded. A
+--              receipt dated 28 Dec but paid 3 Jan is an expense of the *paying*
+--              year. The fallback keeps un-paid-out receipts from vanishing from
+--              the report (Vollständigkeit) at the cost of dating them by Beleg.
+--              Receipts settled in instalments across two years are dated by the
+--              first instalment, not split; book those as separate receipts.
+-- Amounts in cents. NULL kennzahl = expense category with no EÜR mapping; the
+-- template surfaces it under "nicht zugeordnet" instead of dropping it.
+--
+-- Cancelled invoices are NOT filtered out, and that is the point: under the
+-- Kassenprinzip what counts is money that moved, not the document it hung on.
+-- Cancelling an invoice that was already paid does not un-receive the cash, so
+-- dropping its payments here would silently restate a period that has already
+-- been declared — exactly what GoBD-Unveränderbarkeit forbids. A refund is
+-- booked as its own (negative) payment on the payment date it actually happened.
+--
+-- Stornorechnungen carry negated *line items*, which this query never reads; the
+-- reversal an EÜR cares about is the refund payment, not the storno document.
+SELECT
+    '111'                          AS kennzahl,
+    0                              AS is_expense,
+    ip.amount                      AS amount_cents,
+    ip.payment_date                AS doc_date,
+    CAST(i.invoice_number AS TEXT) AS doc_number,
+    i.recipient_name               AS party,
+    'Zahlungseingang Rechnung'     AS description
+FROM invoice_payment ip
+JOIN invoice i ON i.id = ip.invoice_id
+WHERE substring(ip.payment_date FROM 1 FOR 4) = $1::text
+UNION ALL
+SELECT
+    t.euer_kennzahl                             AS kennzahl,
+    1                                           AS is_expense,
+    ri.total                                    AS amount_cents,
+    COALESCE(rp.first_payment_date, r.receipt_date) AS doc_date,
+    r.receipt_number                            AS doc_number,
+    COALESCE(con.name, r.recipient_name)        AS party,
+    ri.item                                     AS description
+FROM receipt_item ri
+JOIN receipt r ON r.id = ri.receipt_id
+LEFT JOIN (
+    SELECT receipt_id, MIN(payment_date) AS first_payment_date
+    FROM receipt_payment
+    GROUP BY receipt_id
+) rp ON rp.receipt_id = r.id
+LEFT JOIN receipt_item_category c ON ri.category_id = c.id
+LEFT JOIN receipt_item_category_type t ON c.category_type_id = t.id
+LEFT JOIN contact con ON con.id = r.customer_contact_id
+WHERE r.is_canceled = 0
+  AND substring(COALESCE(rp.first_payment_date, r.receipt_date) FROM 1 FOR 4) = $1::text
+ORDER BY is_expense, kennzahl, doc_date;
+
+--- query dialect=sqlite ---
+-- SQLite dialect of the query above; see the postgres block for the rationale.
+SELECT
+    '111'                          AS kennzahl,
+    0                              AS is_expense,
+    ip.amount                      AS amount_cents,
+    ip.payment_date                AS doc_date,
+    CAST(i.invoice_number AS TEXT) AS doc_number,
+    i.recipient_name               AS party,
+    'Zahlungseingang Rechnung'     AS description
+FROM invoice_payment ip
+JOIN invoice i ON i.id = ip.invoice_id
+WHERE substr(ip.payment_date, 1, 4) = CAST(?1 AS TEXT)
+UNION ALL
+SELECT
+    t.euer_kennzahl                             AS kennzahl,
+    1                                           AS is_expense,
+    ri.total                                    AS amount_cents,
+    COALESCE(rp.first_payment_date, r.receipt_date) AS doc_date,
+    r.receipt_number                            AS doc_number,
+    COALESCE(con.name, r.recipient_name)        AS party,
+    ri.item                                     AS description
+FROM receipt_item ri
+JOIN receipt r ON r.id = ri.receipt_id
+LEFT JOIN (
+    SELECT receipt_id, MIN(payment_date) AS first_payment_date
+    FROM receipt_payment
+    GROUP BY receipt_id
+) rp ON rp.receipt_id = r.id
+LEFT JOIN receipt_item_category c ON ri.category_id = c.id
+LEFT JOIN receipt_item_category_type t ON c.category_type_id = t.id
+LEFT JOIN contact con ON con.id = r.customer_contact_id
+WHERE r.is_canceled = 0
+  AND substr(COALESCE(rp.first_payment_date, r.receipt_date), 1, 4) = CAST(?1 AS TEXT)
+ORDER BY is_expense, kennzahl, doc_date;
+
+--- template ---
+// This block owns everything specific to the Anlage EÜR: the official line table
+// (Kennzahl, Zeile, label, section), the aggregation of the query's evidence
+// rows, the layout, and the transfer hints for Mein ELSTER. The Rust engine
+// knows none of it — it runs the query and hands the rows in as `data`, plus the
+// run parameters as `params`. The same markup renders to the on-screen HTML view
+// and to the downloadable PDF; `target()` guards the paged-only page setup.
+//
+// Line table source: BMF-Schreiben vom 29. August 2025,
+// GZ IV C 6 - S 2142/00023/010/001, "Standardisierte Einnahmenüberschussrechnung
+// nach § 60 Absatz 4 EStDV; Anlage EÜR 2025". `kennzahl` is stable across years;
+// `zeile` is that year's printed line number. For a new year, copy this file and
+// correct the `zeile` values.
+
+#let year = params.at("year", default: "")
+
+// section: "ein" = Betriebseinnahmen, "aus" = Betriebsausgaben,
+//          "besch" = beschränkt abziehbare Betriebsausgaben.
+#let lines = (
+  (kz: "111", zeile: 12, section: "ein", label: "Betriebseinnahmen als Kleinunternehmer (§ 19 Abs. 1 UStG)"),
+  (kz: "112", zeile: 15, section: "ein", label: "Umsatzsteuerpflichtige Betriebseinnahmen"),
+  (kz: "103", zeile: 16, section: "ein", label: "Umsatzsteuerfreie / nicht umsatzsteuerbare Betriebseinnahmen"),
+  (kz: "140", zeile: 17, section: "ein", label: "Vereinnahmte Umsatzsteuer sowie USt auf unentgeltliche Wertabgaben"),
+  (kz: "141", zeile: 18, section: "ein", label: "Vom Finanzamt erstattete und ggf. verrechnete Umsatzsteuer"),
+  (kz: "102", zeile: 19, section: "ein", label: "Veräußerung oder Entnahme von Anlagevermögen"),
+
+  (kz: "100", zeile: 27, section: "aus", label: "Waren, Rohstoffe und Hilfsstoffe einschließlich Nebenkosten"),
+  (kz: "110", zeile: 29, section: "aus", label: "Bezogene Fremdleistungen"),
+  (kz: "120", zeile: 30, section: "aus", label: "Ausgaben für eigenes Personal"),
+  (kz: "132", zeile: 36, section: "aus", label: "Aufwendungen für geringwertige Wirtschaftsgüter (§ 6 Abs. 2 EStG)"),
+  (kz: "150", zeile: 39, section: "aus", label: "Miete/Pacht für Geschäftsräume und betrieblich genutzte Grundstücke"),
+  (kz: "280", zeile: 43, section: "aus", label: "Aufwendungen für Telekommunikation"),
+  (kz: "221", zeile: 44, section: "aus", label: "Übernachtungs- und Reisenebenkosten bei Geschäftsreisen"),
+  (kz: "281", zeile: 45, section: "aus", label: "Fortbildungskosten (ohne Reisekosten)"),
+  (kz: "194", zeile: 46, section: "aus", label: "Kosten für Rechts- und Steuerberatung, Buchführung"),
+  (kz: "222", zeile: 47, section: "aus", label: "Miete/Leasing für bewegliche Wirtschaftsgüter (ohne Kfz)"),
+  (kz: "225", zeile: 48, section: "aus", label: "Erhaltungsaufwendungen (Instandhaltung, Wartung, Reparatur)"),
+  (kz: "223", zeile: 49, section: "aus", label: "Beiträge, Gebühren, Abgaben und Versicherungen (ohne Gebäude/Kfz)"),
+  (kz: "228", zeile: 50, section: "aus", label: "Laufende EDV-Kosten"),
+  (kz: "229", zeile: 51, section: "aus", label: "Arbeitsmittel (z. B. Bürobedarf, Porto, Fachliteratur)"),
+  (kz: "227", zeile: 53, section: "aus", label: "Kosten für Verpackung und Transport"),
+  (kz: "224", zeile: 54, section: "aus", label: "Werbekosten"),
+  (kz: "185", zeile: 57, section: "aus", label: "Gezahlte und nach § 15 UStG abziehbare Vorsteuerbeträge"),
+  (kz: "186", zeile: 58, section: "aus", label: "An das Finanzamt gezahlte und ggf. verrechnete Umsatzsteuer"),
+  (kz: "183", zeile: 60, section: "aus", label: "Übrige unbeschränkt abziehbare Betriebsausgaben"),
+
+  (kz: "174", zeile: 62, section: "besch", label: "Geschenke (abziehbarer Anteil)"),
+  (kz: "175", zeile: 63, section: "besch", label: "Bewirtungsaufwendungen (abziehbarer Anteil)"),
+  (kz: "171", zeile: 64, section: "besch", label: "Verpflegungsmehraufwendungen"),
+  (kz: "163", zeile: 66, section: "besch", label: "Tagespauschale für die Tätigkeit in der häuslichen Wohnung"),
+)
+
+#let fmt-eur(cents) = {
+  let neg = cents < 0
+  let c = calc.abs(cents)
+  let euros = calc.floor(c / 100)
+  let rem = c - euros * 100
+  let rem-str = if rem < 10 { "0" + str(rem) } else { str(rem) }
+  let s = str(euros)
+  let n = s.len()
+  let out = ""
+  for (i, ch) in s.clusters().enumerate() {
+    if i > 0 and calc.rem(n - i, 3) == 0 { out += "." }
+    out += ch
+  }
+  (if neg { "−" } else { "" }) + out + "," + rem-str + " €"
+}
+
+#let sum-for(kz) = data.main.filter(r => r.kennzahl == kz).fold(0, (a, r) => a + r.amount_cents)
+#let rows-for(kz) = data.main.filter(r => r.kennzahl == kz)
+
+#let total-ein = lines.filter(l => l.section == "ein").fold(0, (a, l) => a + sum-for(l.kz))
+#let total-aus = lines.filter(l => l.section != "ein").fold(0, (a, l) => a + sum-for(l.kz))
+#let gewinn = total-ein - total-aus
+
+#let mapped-kz = lines.map(l => l.kz)
+#let unmapped = data.main.filter(r => not mapped-kz.contains(r.kennzahl))
+#let unmapped-total = unmapped.fold(0, (a, r) => a + r.amount_cents)
+
+// Returns a flat array of table cells. Built explicitly (rather than as a
+// for-comprehension) so an all-zero section yields an empty array, not `none`.
+#let form-rows(section) = {
+  let cells = ()
+  for l in lines.filter(l => l.section == section) {
+    let amt = sum-for(l.kz)
+    if amt != 0 {
+      cells += ([Z. #str(l.zeile)], [Kz #l.kz], [#l.label], [#fmt-eur(amt)])
+    }
+  }
+  cells
+}
+
+#let section-table(title, section, sum) = {
+  [== #title]
+  table(
+    columns: (auto, auto, 1fr, auto),
+    align: (left, left, left, right),
+    inset: 6pt,
+    table.header([Zeile], [Kennzahl], [Position], [Betrag]),
+    ..form-rows(section),
+    table.hline(stroke: 0.5pt),
+    table.cell(colspan: 3)[*Summe #title*], [*#fmt-eur(sum)*],
+  )
+}
+
+// `set page` is inert for HTML export and shapes the PDF; safe to set always.
+#set page(paper: "a4", margin: (x: 2cm, y: 2cm))
+#set text(font: "Liberation Sans", size: 9pt)
+
+= Anlage EÜR #year
+#emph[Einnahmenüberschussrechnung nach § 4 Abs. 3 EStG — Werte zum manuellen Übertrag in Mein ELSTER]
+
+#section-table("Betriebseinnahmen", "ein", total-ein)
+
+#section-table("Betriebsausgaben", "aus", total-aus)
+
+#{
+  let besch = lines.filter(l => l.section == "besch" and sum-for(l.kz) != 0)
+  if besch.len() > 0 {
+    [== Beschränkt abziehbare Betriebsausgaben]
+    table(
+      columns: (auto, auto, 1fr, auto),
+      align: (left, left, left, right),
+      inset: 6pt,
+      table.header([Zeile], [Kennzahl], [Position], [Betrag]),
+      ..form-rows("besch"),
+    )
+  }
+}
+
+== Ergebnis
+#table(
+  columns: (1fr, auto),
+  align: (left, right),
+  inset: 6pt,
+  [Summe Betriebseinnahmen (Zeile 23, Kennzahl 159)], [#fmt-eur(total-ein)],
+  [Summe Betriebsausgaben (Zeile 75, Kennzahl 199)], [#fmt-eur(total-aus)],
+  table.hline(stroke: 0.5pt),
+  [*#if gewinn >= 0 [Gewinn] else [Verlust] (Zeile 91)*], [*#fmt-eur(gewinn)*],
+)
+
+#if unmapped.len() > 0 {
+  [== ⚠ Nicht zugeordnet: #fmt-eur(unmapped-total)]
+  [
+    Diese Beträge tragen eine Kategorie ohne EÜR-Kennzahl und sind in keiner Summe
+    oben enthalten. Ordnen Sie den betreffenden Kategorietypen eine Kennzahl zu,
+    damit sie in der Anlage EÜR erscheinen.
+  ]
+  table(
+    columns: (1fr, auto, auto),
+    align: (left, left, right),
+    inset: 6pt,
+    table.header([Position], [Beleg], [Betrag]),
+    ..unmapped.map(r => ([#r.description], [#r.at("doc_number", default: "—")], [#fmt-eur(r.amount_cents)])).flatten(),
+  )
+}
+
+== Beleg-Nachweis
+#emph[Zusammensetzung jeder Zeile aus den zugrunde liegenden Belegen.]
+
+#for l in lines {
+  let rs = rows-for(l.kz)
+  if rs.len() > 0 {
+    [=== Zeile #str(l.zeile) · Kennzahl #l.kz — #l.label]
+    table(
+      columns: (auto, 1fr, auto, auto),
+      align: (left, left, left, right),
+      inset: 5pt,
+      table.header([Datum], [Position], [Partner], [Betrag]),
+      ..rs.map(r => ([#r.at("doc_date", default: "—")], [#r.description], [#r.at("party", default: "—")], [#fmt-eur(r.amount_cents)])).flatten(),
+    )
+  }
+}

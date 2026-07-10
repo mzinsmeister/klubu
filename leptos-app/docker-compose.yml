@@ -1,0 +1,56 @@
+services:
+  klubu-postgres-dev:
+    profiles: [postgres]
+    image: postgres:15-alpine
+    container_name: klubu-postgres-dev
+    environment:
+      POSTGRES_USER: klubu
+      POSTGRES_PASSWORD: klubu-test
+      POSTGRES_DB: klubu
+    ports:
+      - "5433:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    restart: unless-stopped
+
+  # Optional — only needed for the local AI receipt prefill (see README).
+  # Not started by `docker compose up`; opt in with the `ai` profile:
+  #
+  #   docker compose --profile ai up -d
+  #
+  # Published on the host port the backend's KLUBU_AI_URL defaults to, so
+  # `KLUBU_AI_ENABLED=true cargo run --package backend` needs no extra config.
+  ollama:
+    image: ollama/ollama:latest
+    container_name: klubu-ollama
+    profiles: ["ai"]
+    ports:
+      - "11434:11434"
+    volumes:
+      - ollama-models:/root/.ollama
+    restart: unless-stopped
+    # Uncomment to run the model on an NVIDIA GPU (needs nvidia-container-toolkit).
+    # deploy:
+    #   resources:
+    #     reservations:
+    #       devices:
+    #         - driver: nvidia
+    #           count: all
+    #           capabilities: [gpu]
+
+  # Pulls the default model once, then exits. Runs on `--profile ai` too, so a
+  # first `up` leaves a ready-to-use Ollama rather than one that 404s on chat.
+  ollama-pull:
+    image: ollama/ollama:latest
+    container_name: klubu-ollama-pull
+    profiles: ["ai"]
+    depends_on:
+      - ollama
+    environment:
+      OLLAMA_HOST: http://ollama:11434
+    entrypoint: ["ollama", "pull", "qwen2.5:3b"]
+    restart: on-failure
+
+volumes:
+  pgdata:
+  ollama-models:

@@ -1,0 +1,201 @@
+title: Änderungsjournal
+param von "Von (Datum)": date = query(erster_tag)
+param bis "Bis (Datum)": date = query(heute)
+param bereich "Bereich": text options=query(bereiche) = (alle)
+
+--- description ---
+Das lückenlose Protokoll aller schreibenden Zugriffe (GoBD Rz. 107): wer hat
+wann was geändert. Die Tabelle ist per Datenbank-Trigger append-only — Einträge
+lassen sich anfügen, aber weder ändern noch löschen.
+
+Für eine Betriebsprüfung (Datenzugriff Z3) ist der CSV-Export gedacht: er
+enthält dieselben Zeilen unformatiert und maschinenlesbar.
+
+--- options name=heute dialect=postgres ---
+SELECT to_char(now(), 'YYYY-MM-DD');
+
+--- options name=heute dialect=sqlite ---
+SELECT date('now');
+
+--- options name=erster_tag dialect=postgres ---
+-- Der erste protokollierte Tag; ohne Einträge der heutige, damit die Maske
+-- immer ein gültiges Datum anbietet.
+SELECT to_char(
+    COALESCE(
+        (SELECT to_timestamp(CAST(al."timestamp" AS BIGINT)) FROM audit_log al ORDER BY al.id LIMIT 1),
+        now()
+    ),
+    'YYYY-MM-DD'
+);
+
+--- options name=erster_tag dialect=sqlite ---
+SELECT COALESCE(
+    (SELECT date(CAST(al."timestamp" AS INTEGER), 'unixepoch') FROM audit_log al ORDER BY al.id LIMIT 1),
+    date('now')
+);
+
+--- options name=bereiche dialect=postgres ---
+-- "(alle)" ist ein Sentinel: die Hauptabfrage vergleicht darauf, statt einen
+-- zweiten Parameter für "nicht filtern" zu brauchen.
+SELECT '(alle)' AS value, 'Alle Bereiche' AS label
+UNION ALL
+SELECT DISTINCT entity_name, entity_name FROM audit_log
+ORDER BY 1;
+
+--- options name=bereiche dialect=sqlite ---
+SELECT '(alle)' AS value, 'Alle Bereiche' AS label
+UNION ALL
+SELECT DISTINCT entity_name, entity_name FROM audit_log
+ORDER BY 1;
+
+--- query dialect=postgres ---
+-- $1 = von, $2 = bis (inklusive), $3 = Bereich oder '(alle)'.
+--
+-- `timestamp` ist als Unix-Sekunden in einer Textspalte abgelegt; für Anzeige
+-- und Filter wird sie in UTC-Zeit zurückgerechnet. Sortiert wird nach `id`,
+-- nicht nach Zeit: die id ist die Reihenfolge, in der die Einträge tatsächlich
+-- geschrieben wurden, und sie ist monoton.
+SELECT
+    al.id                                                                    AS id,
+    to_char(to_timestamp(CAST(al."timestamp" AS BIGINT)) AT TIME ZONE 'UTC',
+            'YYYY-MM-DD HH24:MI:SS')                                         AS zeitpunkt_utc,
+    al.user_name                                                             AS benutzer,
+    al.entity_name                                                           AS bereich,
+    al.entity_id                                                             AS datensatz,
+    al.action                                                                AS aktion,
+    COALESCE(al.changes, '')                                                 AS aenderung
+FROM audit_log al
+WHERE CAST(to_timestamp(CAST(al."timestamp" AS BIGINT)) AT TIME ZONE 'UTC' AS DATE)
+      BETWEEN $1 AND $2
+  AND ($3 = '(alle)' OR al.entity_name = $3)
+ORDER BY al.id;
+
+--- query dialect=sqlite ---
+SELECT
+    al.id                                                        AS id,
+    datetime(CAST(al."timestamp" AS INTEGER), 'unixepoch')       AS zeitpunkt_utc,
+    al.user_name                                                 AS benutzer,
+    al.entity_name                                               AS bereich,
+    al.entity_id                                                 AS datensatz,
+    al.action                                                    AS aktion,
+    COALESCE(al.changes, '')                                     AS aenderung
+FROM audit_log al
+WHERE date(CAST(al."timestamp" AS INTEGER), 'unixepoch') BETWEEN ?1 AND ?2
+  AND (?3 = '(alle)' OR al.entity_name = ?3)
+ORDER BY al.id;
+
+--- template ---
+// Renders the change journal for review. The engine supplies `data.main` (the
+// entries) and `params` (the range they were selected with).
+
+#let von = params.at("von", default: "")
+#let bis = params.at("bis", default: "")
+#let bereich = params.at("bereich", default: "(alle)")
+#let rows = data.main
+
+#let aktion-label = (
+  create: "Angelegt",
+  update: "Geändert",
+  delete: "Gelöscht",
+  commit: "Festgeschrieben",
+  cancel: "Storniert",
+)
+#let label-of(a) = aktion-label.at(a, default: a)
+
+#let count-of(a) = rows.filter(r => r.aktion == a).len()
+#let benutzer = {
+  let seen = ()
+  for r in rows { if not seen.contains(r.benutzer) { seen.push(r.benutzer) } }
+  seen
+}
+#let bereiche = {
+  let seen = ()
+  for r in rows { if not seen.contains(r.bereich) { seen.push(r.bereich) } }
+  seen.sorted()
+}
+
+#set page(paper: "a4", margin: (x: 1.6cm, y: 2cm))
+#set text(font: "Liberation Sans", size: 8.5pt)
+
+#let kopf = (
+  "Zeitraum " + von + " bis " + bis
+  + (if bereich != "(alle)" { " · Bereich: " + bereich } else { "" })
+  + " · " + str(rows.len()) + " Einträge"
+)
+
+= Änderungsjournal
+#emph[#kopf]
+
+#if rows.len() == 0 [
+  #block(inset: 8pt, radius: 3pt, fill: luma(240))[
+    Keine Einträge in diesem Zeitraum. Das ist nur dann unauffällig, wenn in
+    diesem Zeitraum auch nicht gearbeitet wurde.
+  ]
+] else {
+  [== Überblick]
+  table(
+    columns: (1fr, auto),
+    align: (left, right),
+    inset: 5pt,
+    [Einträge insgesamt], [#rows.len()],
+    ..{
+      let cells = ()
+      for a in ("create", "update", "delete", "commit", "cancel") {
+        if count-of(a) > 0 { cells += ([#label-of(a)], [#count-of(a)]) }
+      }
+      cells
+    },
+    [Handelnde Benutzer], [#benutzer.join(", ")],
+    [Betroffene Bereiche], [#bereiche.len()],
+  )
+
+  // A deletion is the entry an auditor looks for first: it is the only action
+  // that removes information from the live data, and the journal is the only
+  // place the removed content survives.
+  let loeschungen = rows.filter(r => r.aktion == "delete")
+  if loeschungen.len() > 0 {
+    [== Löschungen (#loeschungen.len())]
+    [Jede Löschung mit dem Inhalt, der dabei entfernt wurde.]
+    table(
+      columns: (auto, auto, auto, 1fr),
+      align: (left, left, left, left),
+      inset: 5pt,
+      table.header([Nr.], [Zeitpunkt (UTC)], [Benutzer], [Entfernter Inhalt]),
+      ..loeschungen.map(r => (
+        [#r.id], [#r.zeitpunkt_utc], [#r.benutzer], [#r.aenderung],
+      )).flatten(),
+    )
+  }
+
+  [== Alle Einträge]
+  table(
+    columns: (auto, auto, auto, auto, auto, auto, 1fr),
+    align: (right, left, left, left, right, left, left),
+    inset: 4.5pt,
+    table.header(
+      [Nr.], [Zeitpunkt (UTC)], [Benutzer], [Bereich], [Datensatz], [Aktion], [Änderung],
+    ),
+    ..rows.map(r => (
+      [#r.id],
+      [#r.zeitpunkt_utc],
+      [#r.benutzer],
+      [#r.bereich],
+      [#r.datensatz],
+      [#label-of(r.aktion)],
+      [#r.aenderung],
+    )).flatten(),
+  )
+
+  [== Hinweise zur Prüfung]
+  [
+    - Die Spalte *Nr.* ist die Schreibreihenfolge. Sie ist monoton, aber *nicht
+      lückenlos*: eine Transaktion, die abgebrochen wird, verbraucht die Nummer
+      trotzdem. Eine Lücke ist daher kein Beweis für eine entfernte Zeile.
+    - Änderungen am Journal selbst sind auf Datenbankebene unterbunden
+      (Trigger auf `UPDATE` und `DELETE`). Wer Datenbankadministrator ist, kann
+      diese Sperre aufheben; die Zugriffsbeschränkung auf die Datenbank ist
+      daher Teil des Schutzes, nicht nur der Trigger.
+    - Schreibende Vorgänge ohne angemeldeten Benutzer werden abgewiesen, es gibt
+      also keine Einträge ohne Zuordnung.
+  ]
+}

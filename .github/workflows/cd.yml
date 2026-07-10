@@ -1,0 +1,126 @@
+name: CD Pipeline
+
+on:
+  workflow_dispatch:
+    inputs:
+      bump:
+        description: "Version bump type"
+        required: false
+        default: build
+        type: choice
+        options:
+          - build
+          - patch
+          - minor
+          - major
+
+jobs:
+  release:
+    name: Release and publish Docker image
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      packages: write
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Calculate version
+        id: version
+        env:
+          BUMP_TYPE: ${{ inputs.bump || 'build' }}
+        run: |
+          set -euo pipefail
+          git fetch --tags --force
+
+          latest_tag="$(git tag --list 'v[0-9]*' --sort=-v:refname | head -n 1)"
+          latest_tag="${latest_tag:-v0.0.0+0}"
+          version_clean="${latest_tag#v}"
+          version_name="${version_clean%%+*}"
+
+          if [[ "$version_clean" == "$version_name" ]]; then
+            build_number=0
+          else
+            build_number="${version_clean##*+}"
+          fi
+
+          IFS='.' read -r major minor patch <<< "$version_name"
+          major="${major:-0}"
+          minor="${minor:-0}"
+          patch="${patch:-0}"
+
+          case "$BUMP_TYPE" in
+            major)
+              major=$((major + 1))
+              minor=0
+              patch=0
+              ;;
+            minor)
+              minor=$((minor + 1))
+              patch=0
+              ;;
+            patch)
+              patch=$((patch + 1))
+              ;;
+            build)
+              ;;
+            *)
+              echo "Unsupported bump type: $BUMP_TYPE" >&2
+              exit 1
+              ;;
+          esac
+
+          build_number=$((build_number + 1))
+          version_name="${major}.${minor}.${patch}"
+          version_full="${version_name}+${build_number}"
+          git_tag="v${version_full}"
+          docker_tag="v${version_name}-${build_number}"
+
+          echo "version_full=${version_full}" >> "$GITHUB_OUTPUT"
+          echo "git_tag=${git_tag}" >> "$GITHUB_OUTPUT"
+          echo "docker_tag=${docker_tag}" >> "$GITHUB_OUTPUT"
+          echo "Calculated ${version_full}"
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Extract Docker metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ghcr.io/${{ github.repository }}
+          tags: |
+            type=raw,value=latest
+            type=raw,value=${{ steps.version.outputs.docker_tag }}
+          labels: |
+            org.opencontainers.image.version=${{ steps.version.outputs.version_full }}
+
+      - name: Build and push Docker image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: ./Dockerfile
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Create GitHub release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.version.outputs.git_tag }}
+          name: Release ${{ steps.version.outputs.version_full }}
+          generate_release_notes: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

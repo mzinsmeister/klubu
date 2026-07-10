@@ -1,0 +1,97 @@
+[package]
+name = "app"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+leptos = { version = "0.6.12" }
+leptos_router = { version = "0.6.12" }
+serde = { version = "1.0", features = ["derive"] }
+chrono = { version = "0.4", features = ["serde"] }
+shared = { path = "../shared" }
+serde_json = "1.0"
+web-sys = { version = "0.3", features = ["File", "FileList", "FileReader", "Event", "Window", "Document", "Element", "HtmlElement"] }
+wasm-bindgen = "0.2"
+
+
+toml = { version = "0.8.19", optional = true }
+
+
+# Server-only dependencies (enabled under ssr feature)
+sqlx = { version = "0.8.0", features = ["runtime-tokio", "chrono"], optional = true }
+typst = { version = "0.15.0", optional = true }
+typst-pdf = { version = "0.15.0", optional = true }
+typst-html = { version = "0.15.0", optional = true }
+# Embedded fallback fonts. The templates ask for "Liberation Sans"; without a
+# bundled set, a container with no system fonts silently renders blank glyphs.
+typst-assets = { version = "0.15.0", features = ["fonts"], optional = true }
+walkdir = { version = "2.5", optional = true }
+sha2 = { version = "0.10", optional = true }
+base64 = { version = "0.22", optional = true }
+# Local-AI receipt prefill. Talks to Ollama over plain HTTP on localhost, so no
+# TLS backend is pulled in.
+reqwest = { version = "0.12", default-features = false, features = ["json"], optional = true }
+pdf-extract = { version = "0.7", optional = true }
+tokio = { version = "1.38", features = ["rt"], optional = true }
+# `PagedDocument` lives here, not in the `typst` facade crate.
+typst-layout = { version = "0.15.0", optional = true }
+leptos_axum = { version = "0.6.12", optional = true }
+http = { version = "1.0", optional = true }
+# Password hashing. Argon2id is a memory-hard KDF: unlike a bare SHA-256, a
+# leaked `users` row is not worth feeding to a GPU.
+# `std` pulls in `rand_core/std`, which is what supplies `OsRng` for salt
+# generation. Without it the salt only compiles because the Postgres driver
+# happens to enable `getrandom` somewhere in its own tree.
+argon2 = { version = "0.5", optional = true, features = ["std"] }
+# CSPRNG for session tokens. Fails loudly rather than degrading to a guessable
+# fallback, which is the whole point of using it for a bearer token.
+getrandom = { version = "0.2", optional = true }
+# Markdown in the free-text blocks of invoices and offers. Converted to Typst
+# markup server-side, never handed to `eval` unescaped.
+pulldown-cmark = { version = "0.12", default-features = false, optional = true }
+# E-Rechnung. `roxmltree` reads incoming CII/UBL; `lopdf` pulls the embedded XML
+# out of a ZUGFeRD PDF. Writing CII needs no library — it is a fixed shape.
+roxmltree = { version = "0.20", optional = true }
+lopdf = { version = "0.34", default-features = false, features = ["nom_parser"], optional = true }
+
+# Only needed so `cargo test -p app --features ssr` can compile the
+# server-fn registrations, which require server_fn's axum integration.
+[dev-dependencies]
+leptos_axum = "0.6.12"
+
+[features]
+default = []
+csr = ["leptos/csr", "leptos_router/csr"]
+hydrate = ["leptos/hydrate", "leptos_router/hydrate"]
+# Both database drivers are always compiled into the server; the backend is
+# chosen at runtime from the DATABASE_URL scheme via sqlx's `Any` driver.
+# Wasm builds stay free of sqlx because the dependency itself is ssr-only.
+ssr = [
+    "leptos/ssr",
+    "leptos_router/ssr",
+    "dep:sqlx",
+    "sqlx?/postgres",
+    "sqlx?/sqlite",
+    "sqlx?/any",
+    "dep:typst",
+    "dep:typst-pdf",
+    "dep:typst-html",
+    "dep:typst-layout",
+    "dep:typst-assets",
+    "dep:walkdir",
+    "dep:sha2",
+    "dep:base64",
+    "dep:reqwest",
+    "dep:pdf-extract",
+    "dep:tokio",
+    "dep:leptos_axum",
+    "dep:http",
+    "dep:argon2",
+    "dep:getrandom",
+    "dep:pulldown-cmark",
+    "dep:roxmltree",
+    "dep:lopdf",
+    "dep:toml"
+]
+
+
