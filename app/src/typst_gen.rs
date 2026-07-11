@@ -865,7 +865,10 @@ mod tests {
         let mut credit_note = sample_invoice();
         credit_note.is_credit_note = true;
         let page = render(&credit_note);
-        assert!(!page.contains("Zahlbar bis"), "Gutschrift prints a due date");
+        assert!(
+            !page.contains("Zahlbar bis"),
+            "Gutschrift prints a due date"
+        );
         assert!(!page.contains("Originalrechnung Nr."));
 
         let mut plain = sample_invoice();
