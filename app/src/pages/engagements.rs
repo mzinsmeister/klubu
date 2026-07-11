@@ -74,8 +74,14 @@ pub fn EngagementsPage() -> impl IntoView {
             };
             let mut offers = get_offers(0, PAGE_SIZE, None, None, None).await?.items;
             let mut invoices = get_invoices(0, PAGE_SIZE, None, None, None).await?.items;
-            let mut emails = list_emails("INBOX".to_string(), 0, PAGE_SIZE).await?.items;
-            emails.extend(list_emails("Sent".to_string(), 0, PAGE_SIZE).await?.items);
+            let mut emails = list_emails("INBOX".to_string(), 0, PAGE_SIZE, None, None)
+                .await?
+                .items;
+            emails.extend(
+                list_emails("Sent".to_string(), 0, PAGE_SIZE, None, None)
+                    .await?
+                    .items,
+            );
             let offer_rank = |offer: &OfferListItem| {
                 (
                     offer

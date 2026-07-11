@@ -155,6 +155,33 @@ pub mod compiler {
         finish(typst_pdf::pdf(&document, &typst_pdf::PdfOptions::default()))
     }
 
+    /// Compiles markup and returns the text a reader would actually see.
+    ///
+    /// The markup still carries every branch of a `#if` in it, so only laid-out
+    /// text can show that a conditional row was left out of the page.
+    #[cfg(test)]
+    pub fn compile_typst_page_text(markup: String) -> Result<String, String> {
+        use typst::layout::{Frame, FrameItem};
+
+        fn collect(frame: &Frame, out: &mut String) {
+            for (_, item) in frame.items() {
+                match item {
+                    FrameItem::Text(text) => out.push_str(&text.text),
+                    FrameItem::Group(group) => collect(&group.frame, out),
+                    _ => {}
+                }
+            }
+        }
+
+        let world = KlubuWorld::new(markup);
+        let document = finish(typst::compile::<PagedDocument>(&world).output)?;
+        let mut text = String::new();
+        for page in document.pages() {
+            collect(&page.frame, &mut text);
+        }
+        Ok(text)
+    }
+
     /// Compiles Typst markup to a standalone PDF/A-3b document.
     ///
     /// This is the archival format used for committed documents that do not

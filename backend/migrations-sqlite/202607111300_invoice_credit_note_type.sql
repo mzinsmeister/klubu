@@ -1,0 +1,1 @@
+ALTER TABLE invoice ADD COLUMN is_credit_note INTEGER NOT NULL DEFAULT 0;

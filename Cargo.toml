@@ -4,6 +4,5 @@ members = [
     "app",
     "backend",
     "frontend",
-    "mcp",
     "shared",
 ]

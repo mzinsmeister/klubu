@@ -19,28 +19,63 @@ All writes are attributed to the authenticated MCP actor and pass through Klubu'
 
 #[derive(Clone)]
 pub struct ToolService {
-    // The Leptos context owns another clone. Keeping this clone makes the
-    // service's database lifetime explicit and available for future resources.
-    _repository: ActiveRepository,
+    repository: ActiveRepository,
     actor: String,
 }
 
 impl ToolService {
     pub fn new(repository: ActiveRepository, actor: String) -> Self {
-        Self {
-            _repository: repository,
-            actor,
-        }
+        Self { repository, actor }
+    }
+
+    /// Klubu's server functions read the repository and acting user from a
+    /// thread-local Leptos runtime (`use_context`). The backend's multi-thread
+    /// Tokio runtime migrates futures between threads, so each call is driven
+    /// to completion on one dedicated blocking thread that owns a private
+    /// Leptos runtime for exactly this call — the same isolation
+    /// `leptos_axum::handle_server_fns_with_context` gives `/api` requests.
+    async fn on_leptos_thread<T, F, Fut>(&self, run: F) -> Result<T, String>
+    where
+        T: Send + 'static,
+        F: FnOnce(ToolService) -> Fut + Send + 'static,
+        Fut: std::future::Future<Output = Result<T, String>>,
+    {
+        let service = self.clone();
+        let handle = tokio::runtime::Handle::current();
+        tokio::task::spawn_blocking(move || {
+            let runtime = leptos::create_runtime();
+            leptos::provide_context(service.repository.clone());
+            leptos::provide_context(app::server::auth::CurrentUser(service.actor.clone()));
+            let result = handle.block_on(run(service));
+            runtime.dispose();
+            result
+        })
+        .await
+        .map_err(|error| format!("Klubu tool execution failed: {error}"))?
     }
 
     pub async fn read_resource(&self, uri: &str) -> Result<(&'static str, String), String> {
+        let uri = uri.to_string();
+        self.on_leptos_thread(move |service| async move { service.dispatch_resource(&uri).await })
+            .await
+    }
+
+    pub async fn call(&self, name: &str, arguments: Value) -> Result<Value, String> {
+        let name = name.to_string();
+        self.on_leptos_thread(
+            move |service| async move { service.dispatch(&name, arguments).await },
+        )
+        .await
+    }
+
+    async fn dispatch_resource(&self, uri: &str) -> Result<(&'static str, String), String> {
         match uri {
             "klubu://operating-guide" => Ok(("text/markdown", OPERATING_INSTRUCTIONS.into())),
             "klubu://current-session" => Ok((
                 "application/json",
                 serde_json::to_string_pretty(&json!({
                     "actor": self.actor,
-                    "transport": "stdio",
+                    "transport": "http",
                     "write_attribution": "Every mutation is journalled as this existing Klubu user."
                 }))
                 .map_err(|error| error.to_string())?,
@@ -56,7 +91,7 @@ impl ToolService {
         }
     }
 
-    pub async fn call(&self, name: &str, arguments: Value) -> Result<Value, String> {
+    async fn dispatch(&self, name: &str, arguments: Value) -> Result<Value, String> {
         let arguments = arguments
             .as_object()
             .cloned()
@@ -73,6 +108,7 @@ impl ToolService {
                 "instructions": OPERATING_INSTRUCTIONS
             })),
             "get_dashboard" => result_json(app::server::get_dashboard_stats().await),
+            "get_notifications" => result_json(app::server::get_notifications().await),
 
             "list_contacts" => {
                 let (offset, limit) = pagination(&arguments, 50)?;
@@ -131,9 +167,14 @@ impl ToolService {
             "finalize_invoice" => {
                 result_json(app::server::commit_invoice(required(&arguments, "id")?).await)
             }
-            "cancel_invoice" => {
-                result_json(app::server::cancel_invoice(required(&arguments, "id")?).await)
-            }
+            "cancel_invoice" => result_json(
+                app::server::cancel_invoice(
+                    required(&arguments, "id")?,
+                    None,
+                    optional_string(&arguments, "reason")?,
+                )
+                .await,
+            ),
             "delete_invoice_draft" => {
                 result_json(app::server::delete_invoice(required(&arguments, "id")?).await)
             }
@@ -147,6 +188,14 @@ impl ToolService {
             ),
             "delete_invoice_payment" => result_json(
                 app::server::delete_invoice_payment(required(&arguments, "payment_id")?).await,
+            ),
+            "create_invoice_reminder" => result_json(
+                app::server::create_invoice_reminder(
+                    required(&arguments, "invoice_id")?,
+                    optional(&arguments, "fee_cents")?.unwrap_or(0),
+                    optional_string(&arguments, "note")?.unwrap_or_default(),
+                )
+                .await,
             ),
             "send_invoice_email" => result_json(
                 app::server::send_invoice_email(
@@ -296,6 +345,8 @@ impl ToolService {
                             .unwrap_or_else(|| "INBOX".to_string()),
                         offset,
                         limit,
+                        optional(&arguments, "customer_contact_id")?,
+                        optional_string(&arguments, "search")?,
                     )
                     .await,
                 )
@@ -628,8 +679,14 @@ fn invoice_schema() -> Value {
             "invoice_number": {"type": ["integer", "null"], "readOnly": true},
             "payments": {"type": "array", "readOnly": true, "items": {"type": "object"}},
             "invoice_date": {"type": ["string", "null"], "format": "date"},
+            "due_date": {"type": ["string", "null"], "format": "date", "description": "Normal payment deadline."},
+            "discount_date": {"type": ["string", "null"], "format": "date", "description": "Skonto payment deadline."},
+            "discount_basis_points": {"type": "integer", "minimum": 0, "maximum": 9999, "description": "Skonto percentage in basis points; 200 means 2%."},
+            "discount_taken_cents": {"type": "integer", "readOnly": true},
+            "reminders": {"type": "array", "readOnly": true, "items": {"type": "object"}},
             "is_canceled": {"type": "boolean", "readOnly": true},
             "is_cancelation": {"type": "boolean", "readOnly": true},
+            "is_credit_note": {"type": "boolean", "description": "True for a standalone Gutschrift; set on a new draft and then immutable."},
             "corrected_invoice_id": {"type": ["integer", "null"], "readOnly": true},
             "cancellation_invoice_id": {"type": ["integer", "null"], "readOnly": true},
             "customer_contact": {"oneOf": [contact_schema(), {"type": "null"}]},
@@ -753,6 +810,7 @@ pub fn tool_definitions() -> Vec<Value> {
     vec![
         tool("system_overview", "System overview", "Return the authenticated actor, supported business domains, data conventions, and autonomous operating rules.", empty(), true, false, true, false),
         tool("get_dashboard", "Get dashboard", "Read current Klubu business totals and counts for a quick operational overview.", empty(), true, false, true, false),
+        tool("get_notifications", "Get notifications", "List actionable business notifications such as overdue invoices, with dates, outstanding amounts, and application links.", empty(), true, false, true, false),
         tool("list_contacts", "List contacts", "Search and paginate active or archived customer/supplier contacts. Continue while has_more is true.", list_schema(json!({"query": {"type": "string"}, "archived": {"type": "boolean", "default": false}})), true, false, true, false),
         tool("get_contact_crm", "Get contact CRM", "Read one contact with notes, recent email, related offers, invoices, engagements, and exact relation counts.", id_schema("id", "Contact id."), true, false, true, false),
         tool("save_contact", "Save contact", "Create a contact when id is absent, or update the identified contact and journal the full before/after state.", object_schema(json!({"contact": contact_schema()}), &["contact"]), false, true, false, false),
@@ -764,10 +822,11 @@ pub fn tool_definitions() -> Vec<Value> {
         tool("get_invoice", "Get invoice", "Read a complete invoice, including line items, recipient snapshot, documents, cancellation links, and payments.", id_schema("id", "Invoice id."), true, false, true, false),
         tool("save_invoice", "Save invoice draft", "Create or replace the editable fields and line items of an invoice draft. Fetch first when updating and preserve server-managed fields.", object_schema(json!({"invoice": invoice_schema()}), &["invoice"]), false, true, false, false),
         tool("finalize_invoice", "Finalize invoice", "Irreversibly assign an invoice number and freeze the invoice. Inspect the complete draft before calling.", id_schema("id", "Draft invoice id."), false, true, false, false),
-        tool("cancel_invoice", "Cancel finalized invoice", "Cancel a finalized invoice by creating a separate, auditable cancellation invoice; the original remains immutable.", id_schema("id", "Finalized invoice id."), false, true, false, false),
+        tool("cancel_invoice", "Cancel finalized invoice", "Create a full cancellation draft for a finalized unpaid invoice. Every original position is copied as a locked negative position; partial cancellation is not supported.", object_schema(json!({"id": {"type": "integer", "description": "Finalized unpaid original invoice id."}, "reason": {"type": "string", "description": "Reason printed on the cancellation."}}), &["id"]), false, true, false, false),
         tool("delete_invoice_draft", "Delete invoice draft", "Delete an unfinalized invoice draft. Finalized invoices are protected and cannot be deleted.", id_schema("id", "Draft invoice id."), false, true, false, false),
         tool("add_invoice_payment", "Record invoice payment", "Record an actual customer payment or negative correction against an invoice.", payment_schema("invoice_id"), false, false, false, false),
         tool("delete_invoice_payment", "Delete invoice payment", "Delete a mistaken payment only while the invoice remains editable; use a negative counter-booking after finalization.", id_schema("payment_id", "Payment row id from get_invoice."), false, true, false, false),
+        tool("create_invoice_reminder", "Create invoice reminder", "Create the next reminder level for an overdue finalized invoice, with an optional fee and note.", object_schema(json!({"invoice_id": {"type": "integer"}, "fee_cents": {"type": "integer", "minimum": 0, "default": 0}, "note": {"type": "string"}}), &["invoice_id"]), false, true, false, false),
         tool("send_invoice_email", "Send invoice email", "Generate the finalized invoice PDF, send it to an external recipient, archive the exact MIME message, and optionally link it to an engagement.", send_business_email_schema("invoice_id"), false, true, false, true),
         tool("export_invoice_pdf", "Archive invoice PDF", "Generate a finalized invoice as ZUGFeRD PDF/A, store it in the managed archive, and link it to the invoice.", id_schema("invoice_id", "Finalized invoice id."), false, false, false, false),
 
@@ -799,7 +858,7 @@ pub fn tool_definitions() -> Vec<Value> {
         tool("save_engagement", "Save engagement", "Create an engagement or update its title, description, and customer for the authenticated actor.", object_schema(json!({"engagement": object_schema(json!({"id": {"type": ["integer", "null"]}, "title": {"type": "string", "minLength": 1}, "description": {"type": ["string", "null"]}, "customer_contact_id": {"type": ["integer", "null"]}}), &["title"])}), &["engagement"]), false, true, false, false),
         tool("link_engagement_record", "Link engagement record", "Append an offer, invoice, or archived email link to an engagement. Links cannot later be removed.", object_schema(json!({"engagement_id": {"type": "integer"}, "kind": {"type": "string", "enum": ["Offer", "Invoice", "Email"]}, "record_id": {"type": "integer"}}), &["engagement_id", "kind", "record_id"]), false, true, true, false),
 
-        tool("list_emails", "List archived email", "Paginate non-expunged messages in the authenticated actor's INBOX or Sent mailbox.", list_schema(json!({"mailbox": {"type": "string", "enum": ["INBOX", "Sent"], "default": "INBOX"}})), true, false, true, false),
+        tool("list_emails", "List archived email", "Paginate and filter non-expunged messages in the authenticated actor's INBOX or Sent mailbox.", list_schema(json!({"mailbox": {"type": "string", "enum": ["INBOX", "Sent"], "default": "INBOX"}, "customer_contact_id": {"type": "integer"}, "search": {"type": "string"}})), true, false, true, false),
         tool("get_email", "Get archived email", "Read an archived message as safe plain text with attachment metadata and linked business documents.", id_schema("id", "Archived email id."), true, false, true, false),
         tool("send_email", "Send email", "Compose and send a plain-text message with optional base64 attachments, archive it, and optionally link an engagement.", object_schema(json!({"email": object_schema(json!({"to": {"type": "string"}, "cc": {"type": "string", "default": ""}, "bcc": {"type": "string", "default": ""}, "subject": {"type": "string"}, "body": {"type": "string"}, "attachments": {"type": "array", "default": [], "items": object_schema(json!({"filename": {"type": "string"}, "media_type": {"type": "string"}, "base64": {"type": "string", "contentEncoding": "base64"}}), &["filename", "media_type", "base64"])}, "engagement_id": {"type": ["integer", "null"]}}), &["to", "subject", "body"])}), &["email"]), false, true, false, true),
         tool("mark_email_read", "Mark email read", "Set or clear the read flag on one archived message for the authenticated actor.", object_schema(json!({"id": {"type": "integer"}, "read": {"type": "boolean"}}), &["id", "read"]), false, false, true, false),

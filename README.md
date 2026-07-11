@@ -7,17 +7,45 @@ The application has a lightweight footprint:
 - **No Headless Chromium/Selenium dependency**: PDFs are compiled directly in-memory from Typst templates using the `typst` and `typst-pdf` crates.
 - **Fast and lightweight**: Single-binary deployment for the backend, and a compiled WebAssembly client.
 
+## Configurable document defaults
+
+Default draft texts can be set in `config/application.toml`. The values support
+the placeholders shown in the document editor.
+
+```toml
+[klubu.documents.invoice]
+title = "Rechnung"
+subject = "Rechnung {{nummer}}"
+header = "Vielen Dank für Ihre Bestellung."
+footer = "Bitte überweisen Sie den Betrag bis zum angegebenen Zahlungsziel."
+
+[klubu.documents.creditNote]
+title = "Gutschrift"
+subject = "Gutschrift {{nummer}}"
+header = "Wir schreiben Ihnen die nachfolgend aufgeführten Beträge gut."
+footer = "Der Gutschriftbetrag wird Ihnen bis zum angegebenen Datum erstattet."
+
+[klubu.documents.cancellation]
+title = "Stornorechnung"
+subject = "Stornierung der Rechnung Nr. {{referenz_rechnung_nr}}"
+header = "Hiermit stornieren wir die Rechnung Nr. {{referenz_rechnung_nr}} vollständig."
+footer = "Dieses Stornodokument hebt die Rechnung Nr. {{referenz_rechnung_nr}} vollständig auf."
+```
+
+Environment-variable equivalents use `KLUBU_INVOICE_*`,
+`KLUBU_CREDIT_NOTE_*`, or `KLUBU_CANCELLATION_*` with the suffix `TITLE`,
+`SUBJECT`, `HEADER`, or `FOOTER`.
+
 ---
 
 ## Project Structure
 
-This is a Cargo workspace consisting of five crates:
+This is a Cargo workspace consisting of four crates:
 
 - **[`shared`](./shared)**: Contains shared data models (e.g. `Invoice`, `Offer`, `Contact`, `Receipt`, `Payment`) and helpers used by both client and server.
 - **[`app`](./app)**: The core UI logic and router built with Leptos. It defines the components and routing for all views (Dashboard, Contacts, Invoices, Offers, Receipts) and contains Typst templates for PDFs.
 - **[`frontend`](./frontend)**: The client-side entry point that compiles to WebAssembly using Trunk.
-- **[`backend`](./backend)**: The server-side application built with Axum and `leptos_axum`. It serves the compiled WebAssembly frontend, runs database migrations, handles server functions (endpoints queryable directly from the frontend), and serves PDF downloads.
-- **[`mcp`](./mcp)**: A local stdio MCP server that exposes the application's audited business operations to LLM agents.
+- **[`backend`](./backend)**: The server-side application built with Axum and `leptos_axum`. It serves the compiled WebAssembly frontend, runs database migrations, handles server functions (endpoints queryable directly from the frontend), serves PDF downloads, and hosts the MCP endpoint that exposes the application's audited business operations to LLM agents.
 
 ---
 
@@ -159,96 +187,50 @@ the exact outgoing message is then archived like every other mail.
 
 ## MCP server for autonomous operation
 
-The `klubu-mcp` workspace binary is a
-[Model Context Protocol](https://modelcontextprotocol.io/) server with local
-stdio and authenticated remote Streamable HTTP transports.
-It exposes 60 typed tools covering the dashboard, contacts and CRM notes,
-invoices and payments, offer revisions, receipts and e-invoice/AI extraction,
-engagements, email, managed documents, and reports. It also exposes an operating
-guide, the current session, and the live dashboard as MCP resources.
+The backend serves a [Model Context Protocol](https://modelcontextprotocol.io/)
+Streamable HTTP endpoint at `/mcp`, in the same process and on the same port as
+the web app. It exposes 60 typed tools covering the dashboard, contacts and CRM
+notes, invoices and payments, offer revisions, receipts and e-invoice/AI
+extraction, engagements, email, managed documents, and reports. It also exposes
+an operating guide, the current session, and the live dashboard as MCP
+resources.
 
-The MCP server opens the same SQLite or PostgreSQL database and calls Klubu's
+Because the endpoint runs inside the backend, it shares the backend's database
+pool, migrations, configuration, and shutdown path, and it calls Klubu's
 existing server functions. It does not provide raw SQL or a validation bypass:
 draft/finalization rules, immutable records, document integrity checks, and the
 audit journal therefore behave exactly as they do in the web app. Every write
 is attributed to an existing Klubu user.
 
-Build it with:
-
-```bash
-cargo build --release --package klubu-mcp
-```
-
-For local stdio use, add the binary to an MCP host. The shape below is accepted
-by hosts that use the common `mcpServers` JSON configuration:
-
-```json
-{
-  "mcpServers": {
-    "klubu": {
-      "command": "/absolute/path/to/target/release/klubu-mcp",
-      "env": {
-        "KLUBU_MCP_WORKDIR": "/absolute/path/to",
-        "DATABASE_URL": "sqlite:///absolute/path/to/klubu.db?mode=rwc",
-        "KLUBU_MCP_USER": "anna"
-      }
-    }
-  }
-}
-```
-
-`KLUBU_MCP_WORKDIR` makes relative template, document archive, mail archive,
-and configuration paths resolve as they do for the backend. A binary built in
-this workspace auto-detects the workspace in its normal `target` location, but
-setting the variable explicitly is recommended for deployment. The usual
-`KLUBU_DOCUMENT_STORAGE_PATH`, `KLUBU_MAIL_STORAGE_PATH`,
-`KLUBU_EXPORT_TEMPLATES_PATH`, mail, and AI environment variables are honored.
-
-`KLUBU_MCP_USER` must name a user already initialized in Klubu. It may be
-omitted only when the database contains exactly one user, in which case that
-identity is selected automatically. In stdio mode no password is accepted:
-process launch is the authorization boundary, so only configure it in a trusted
-MCP host. Finalization, cancellation, deletion, append-only linking, and
-email-sending tools carry explicit MCP safety annotations.
-
-### Remote MCP over HTTPS
-
-Remote mode serves Streamable HTTP at `/mcp`. It requires a static bearer token
-of at least 32 random characters and binds to loopback by default:
+The endpoint is disabled unless `KLUBU_MCP_TOKEN` is set to a static bearer
+token of at least 32 random characters:
 
 ```bash
 # Generate this once and keep it in a secret manager or protected environment file.
 openssl rand -hex 32
 
-KLUBU_MCP_TRANSPORT=http \
-KLUBU_MCP_BIND=127.0.0.1:8090 \
 KLUBU_MCP_TOKEN='replace-with-the-generated-token' \
 KLUBU_MCP_USER=anna \
-KLUBU_MCP_WORKDIR=/srv/klubu/app \
 DATABASE_URL='sqlite:///srv/klubu/data/klubu.db?mode=rwc' \
-/srv/klubu/app/target/release/klubu-mcp
+/srv/klubu/app/target/release/backend
 ```
 
-Do not publish port 8090 directly. Terminate TLS in a reverse proxy. A minimal
-Caddy configuration is:
+`KLUBU_MCP_USER` must name a user already initialized in Klubu. It may be
+omitted only when the database contains exactly one user, in which case that
+identity is selected automatically. Finalization, cancellation, deletion,
+append-only linking, and email-sending tools carry explicit MCP safety
+annotations.
 
-```caddyfile
-mcp.example.com {
-    request_body {
-        max_size 75MB
-    }
-    reverse_proxy 127.0.0.1:8090
-}
-```
-
-Configure a remote-capable MCP client with the URL and authorization header;
-the exact secret interpolation syntax depends on the client:
+Expose the server the same way as the web app: terminate TLS in a reverse
+proxy in front of port 8080. Then configure a remote-capable MCP client with
+the URL and authorization header; the exact secret interpolation syntax
+depends on the client:
 
 ```json
 {
   "mcpServers": {
     "klubu": {
-      "url": "https://mcp.example.com/mcp",
+      "url": "https://klubu.example.com/mcp",
       "headers": {
         "Authorization": "Bearer ${KLUBU_MCP_TOKEN}"
       }
@@ -258,18 +240,16 @@ the exact secret interpolation syntax depends on the client:
 ```
 
 The token is bound server-side to `KLUBU_MCP_USER`; a caller cannot select or
-impersonate a different user in a request. Run a separate instance, port, URL,
-and token for each Klubu identity when multiple users need remote access. Token
-comparison is constant-time, every request is authenticated, unsupported MCP
-protocol versions are rejected, and browser `Origin` headers are denied unless
-listed in the comma-separated `KLUBU_MCP_ALLOWED_ORIGINS` setting.
-
-Remote mode deliberately refuses a non-loopback bind unless
-`KLUBU_MCP_ALLOW_NON_LOOPBACK=true` is set. That override is intended only for
-a protected container/private network where an HTTPS proxy cannot reach the
-process through loopback. Because this mode uses a configured bearer token
-rather than interactive OAuth discovery, the MCP client must support static
-HTTP headers or an equivalent secret setting.
+impersonate a different user in a request. Run a separate instance and token
+for each Klubu identity when multiple users need MCP access. Token comparison
+is constant-time, every request is authenticated independently of web-app
+sessions, unsupported MCP protocol versions are rejected, and browser `Origin`
+headers are denied unless listed in the comma-separated
+`KLUBU_MCP_ALLOWED_ORIGINS` setting. Request bodies are limited to 75 MiB by
+default (`KLUBU_MCP_BODY_LIMIT_MIB`); size the reverse proxy's body limit to
+match. Because the endpoint uses a configured bearer token rather than
+interactive OAuth discovery, the MCP client must support static HTTP headers
+or an equivalent secret setting.
 
 ---
 

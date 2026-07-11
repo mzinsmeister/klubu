@@ -776,8 +776,6 @@ impl KlubuRepository for SqlRepository {
             FROM invoice i
             JOIN invoice_item ii ON ii.invoice_id = i.id
             WHERE i.committed_timestamp IS NOT NULL
-              AND i.is_canceled = 0
-              AND i.is_cancelation = 0
               AND i.invoice_date LIKE $1
             "#,
         )
@@ -811,6 +809,7 @@ impl KlubuRepository for SqlRepository {
             FROM (
                 SELECT i.id,
                        COALESCE((SELECT SUM(ii.total) FROM invoice_item ii WHERE ii.invoice_id = i.id), 0)
+                     - COALESCE((SELECT -SUM(cii.total) FROM invoice credit JOIN invoice_item cii ON cii.invoice_id = credit.id WHERE credit.corrected_invoice_id = i.id AND credit.is_cancelation = 1 AND credit.committed_timestamp IS NOT NULL), 0)
                      - COALESCE((SELECT SUM(p.amount) FROM invoice_payment p WHERE p.invoice_id = i.id), 0)
                        AS outstanding
                 FROM invoice i
@@ -1088,11 +1087,13 @@ impl KlubuRepository for SqlRepository {
 
         let rows = sqlx::query(
             r#"
-            SELECT i.id, i.created_timestamp, i.invoice_date, i.invoice_number,
-                   i.is_canceled, i.is_cancelation, i.committed_timestamp, i.subject,
+            SELECT i.id, i.created_timestamp, i.invoice_date, i.due_date, i.discount_date, i.discount_basis_points, i.invoice_number,
+                   i.is_canceled, i.is_cancelation, i.is_credit_note, i.committed_timestamp, i.subject,
+                   (SELECT original.invoice_number FROM invoice original WHERE original.id = i.corrected_invoice_id) AS corrected_invoice_number,
                    c.id AS contact_id, c.name AS contact_name, c.first_name AS contact_first_name,
                    COALESCE((SELECT SUM(ii.total) FROM invoice_item ii WHERE ii.invoice_id = i.id), 0) AS total,
-                   COALESCE((SELECT SUM(p.amount) FROM invoice_payment p WHERE p.invoice_id = i.id), 0) AS paid
+                   COALESCE((SELECT SUM(p.amount) FROM invoice_payment p WHERE p.invoice_id = i.id), 0) AS paid,
+                   COALESCE((SELECT -SUM(cii.total) FROM invoice credit JOIN invoice_item cii ON cii.invoice_id = credit.id WHERE credit.corrected_invoice_id = i.id AND credit.is_cancelation = 1 AND credit.committed_timestamp IS NOT NULL), 0) AS credited
             FROM invoice i
             LEFT JOIN contact c ON i.customer_contact_id = c.id
             WHERE ($1 IS NULL OR i.invoice_date >= $1)
@@ -1200,6 +1201,54 @@ impl KlubuRepository for SqlRepository {
                     .try_get::<Option<String>, _>("invoice_date")
                     .map_err(|e| ServerFnError::new(e.to_string()))?
                     .and_then(|date| NaiveDate::parse_from_str(&date, "%Y-%m-%d").ok());
+                let parse_date = |column| -> Result<Option<NaiveDate>, ServerFnError> {
+                    Ok(row
+                        .try_get::<Option<String>, _>(column)
+                        .map_err(|e| ServerFnError::new(e.to_string()))?
+                        .and_then(|date| NaiveDate::parse_from_str(&date, "%Y-%m-%d").ok()))
+                };
+                let discount_date = parse_date("discount_date")?;
+                let discount_basis_points = row_i64(row, "discount_basis_points")?;
+                let credited_cents = row
+                    .try_get::<i64, _>("credited")
+                    .map_err(|e| ServerFnError::new(e.to_string()))?;
+                let discount_taken_cents = shared::discount_taken_cents(
+                    total,
+                    credited_cents,
+                    discount_basis_points,
+                    discount_date,
+                    payments,
+                );
+                let number = row_optional_i64(row, "invoice_number")?
+                    .map(|value| value.to_string())
+                    .unwrap_or_else(|| "(Entwurf)".to_string());
+                let customer_name = contact
+                    .as_ref()
+                    .map(Contact::display_name)
+                    .unwrap_or_default();
+                let reference_number = row_optional_i64(row, "corrected_invoice_number")?
+                    .map(|value| value.to_string())
+                    .unwrap_or_default();
+                let subject = row
+                    .try_get::<Option<String>, _>("subject")
+                    .map_err(|e| ServerFnError::new(e.to_string()))?
+                    .map(|value| {
+                        shared::apply_placeholders(
+                            &value,
+                            &[
+                                ("{{nummer}}", number),
+                                (
+                                    "{{datum}}",
+                                    invoice_date
+                                        .map(|date| date.format("%d.%m.%Y").to_string())
+                                        .unwrap_or_default(),
+                                ),
+                                ("{{kunde}}", customer_name),
+                                ("{{summe}}", format_euro(total)),
+                                ("{{referenz_rechnung_nr}}", reference_number),
+                            ],
+                        )
+                    });
 
                 Ok(InvoiceListItem {
                     id,
@@ -1209,6 +1258,10 @@ impl KlubuRepository for SqlRepository {
                     )
                     .unwrap_or(chrono::DateTime::<Utc>::MIN_UTC),
                     invoice_date,
+                    due_date: parse_date("due_date")?,
+                    discount_date,
+                    discount_basis_points,
+                    discount_taken_cents,
                     customer_contact: contact,
                     paid_date: settled_on(payments, total),
                     committed: row
@@ -1218,13 +1271,13 @@ impl KlubuRepository for SqlRepository {
                     invoice_number: row_optional_i64(row, "invoice_number")?,
                     is_canceled: row_i64(row, "is_canceled")? != 0,
                     is_cancelation: row_i64(row, "is_cancelation")? != 0,
-                    subject: row
-                        .try_get("subject")
-                        .map_err(|e| ServerFnError::new(e.to_string()))?,
+                    is_credit_note: row_i64(row, "is_credit_note")? != 0,
+                    subject,
                     total_cents: total,
                     paid_cents: row
                         .try_get::<i64, _>("paid")
                         .map_err(|e| ServerFnError::new(e.to_string()))?,
+                    credited_cents,
                 })
             })
             .collect::<Result<Vec<_>, _>>()?;
@@ -1269,6 +1322,33 @@ impl KlubuRepository for SqlRepository {
             .map(payment_from_row)
             .collect::<Result<Vec<_>, _>>()?;
 
+        let reminder_rows =
+            sqlx::query("SELECT * FROM invoice_reminder WHERE invoice_id = $1 ORDER BY level, id")
+                .bind(id_i32)
+                .fetch_all(&self.pool)
+                .await
+                .map_err(|e| ServerFnError::new(e.to_string()))?;
+        let reminders = reminder_rows
+            .iter()
+            .map(|row| {
+                Ok(InvoiceReminder {
+                    id: row_i64(row, "id")?,
+                    invoice_id: row_i64(row, "invoice_id")?,
+                    level: row_i64(row, "level")?,
+                    reminder_date: NaiveDate::parse_from_str(
+                        &row_str(row, "reminder_date")?,
+                        "%Y-%m-%d",
+                    )
+                    .map_err(|e| ServerFnError::new(e.to_string()))?,
+                    fee_cents: row_i64(row, "fee_cents")?,
+                    note: row_str(row, "note")?,
+                    created_timestamp: row_timestamp(row, "created_timestamp")?
+                        .ok_or_else(|| ServerFnError::new("Invalid reminder timestamp"))?,
+                    sent_timestamp: row_timestamp(row, "sent_timestamp")?,
+                })
+            })
+            .collect::<Result<Vec<_>, ServerFnError>>()?;
+
         let mut contact = match row_optional_i64(&i, "customer_contact_id")? {
             Some(ccid) => sqlx::query("SELECT * FROM contact WHERE id = $1")
                 .bind(ccid as i32)
@@ -1294,6 +1374,41 @@ impl KlubuRepository for SqlRepository {
             storage_key_prefix: format!("invoice_{}", id),
         });
 
+        let credited_cents = if row_i64(&i, "is_cancelation")? == 0 {
+            sqlx::query_scalar::<_, i64>(
+                "SELECT CAST(COALESCE(-SUM(ii.total), 0) AS BIGINT) FROM invoice credit JOIN invoice_item ii ON ii.invoice_id = credit.id WHERE credit.corrected_invoice_id = $1 AND credit.is_cancelation = 1 AND credit.committed_timestamp IS NOT NULL",
+            )
+            .bind(id_i32)
+            .fetch_one(&self.pool)
+            .await
+            .map_err(|e| ServerFnError::new(e.to_string()))?
+        } else {
+            0
+        };
+        let discount_date = row_optional_str(&i, "discount_date")?
+            .and_then(|value| NaiveDate::parse_from_str(&value, "%Y-%m-%d").ok());
+        let discount_basis_points = row_i64(&i, "discount_basis_points")?;
+        let total_cents = items.iter().map(Item::total_cents).sum();
+        let discount_taken_cents = shared::discount_taken_cents(
+            total_cents,
+            credited_cents,
+            discount_basis_points,
+            discount_date,
+            &payments,
+        );
+        let corrected_invoice_id = row_optional_i64(&i, "corrected_invoice_id")?;
+        let corrected_invoice_number = match corrected_invoice_id {
+            Some(original_id) => sqlx::query_scalar::<_, Option<i64>>(
+                "SELECT invoice_number FROM invoice WHERE id = $1",
+            )
+            .bind(original_id)
+            .fetch_optional(&self.pool)
+            .await
+            .map_err(|e| ServerFnError::new(e.to_string()))?
+            .flatten(),
+            None => None,
+        };
+
         Ok(Invoice {
             id: Some(row_i64(&i, "id")?),
             items,
@@ -1306,10 +1421,19 @@ impl KlubuRepository for SqlRepository {
                 "%Y-%m-%d",
             )
             .ok(),
+            due_date: row_optional_str(&i, "due_date")?
+                .and_then(|value| NaiveDate::parse_from_str(&value, "%Y-%m-%d").ok()),
+            discount_date,
+            discount_basis_points,
+            discount_taken_cents,
+            reminders,
             is_canceled: row_i64(&i, "is_canceled")? != 0,
             is_cancelation: row_i64(&i, "is_cancelation")? != 0,
-            corrected_invoice_id: row_optional_i64(&i, "corrected_invoice_id")?,
+            is_credit_note: row_i64(&i, "is_credit_note")? != 0,
+            corrected_invoice_id,
+            corrected_invoice_number,
             cancellation_invoice_id: row_optional_i64(&i, "cancellation_invoice_id")?,
+            credited_cents,
             customer_contact: contact,
             document: doc,
             recipient: Some(recipient_from_row(&i)?),
@@ -1320,7 +1444,42 @@ impl KlubuRepository for SqlRepository {
         })
     }
 
-    async fn save_invoice(&self, invoice: Invoice) -> Result<Invoice, ServerFnError> {
+    async fn save_invoice(&self, mut invoice: Invoice) -> Result<Invoice, ServerFnError> {
+        if invoice.is_credit_note || invoice.is_cancelation {
+            invoice.discount_date = None;
+            invoice.discount_basis_points = 0;
+            invoice.discount_taken_cents = 0;
+        }
+        if !(0..10_000).contains(&invoice.discount_basis_points) {
+            return Err(ServerFnError::new(
+                "Skonto muss zwischen 0 und 99,99 % liegen",
+            ));
+        }
+        if let (Some(invoice_date), Some(due_date)) = (invoice.invoice_date, invoice.due_date) {
+            if due_date < invoice_date {
+                return Err(ServerFnError::new(
+                    "Das Zahlungsziel liegt vor dem Rechnungsdatum",
+                ));
+            }
+        }
+        if invoice.discount_basis_points > 0 {
+            let discount_date = invoice
+                .discount_date
+                .ok_or_else(|| ServerFnError::new("Für Skonto ist ein Skontodatum erforderlich"))?;
+            if invoice
+                .invoice_date
+                .map(|date| discount_date < date)
+                .unwrap_or(false)
+                || invoice
+                    .due_date
+                    .map(|date| discount_date > date)
+                    .unwrap_or(false)
+            {
+                return Err(ServerFnError::new(
+                    "Das Skontodatum muss zwischen Rechnungsdatum und Zahlungsziel liegen",
+                ));
+            }
+        }
         let recipient = invoice.recipient.clone().unwrap_or(Recipient {
             form_of_address: None,
             title: None,
@@ -1352,22 +1511,37 @@ impl KlubuRepository for SqlRepository {
         let invoice_id = if let Some(id) = invoice.id {
             let id_i32 = id as i32;
 
-            let committed_timestamp: Option<String> =
-                sqlx::query_scalar("SELECT committed_timestamp FROM invoice WHERE id = $1")
-                    .bind(id_i32)
-                    .fetch_optional(&mut *tx)
-                    .await
-                    .map_err(|e| ServerFnError::new(e.to_string()))?
-                    .ok_or_else(|| ServerFnError::new("Rechnung nicht gefunden"))?;
+            let existing = sqlx::query(
+                "SELECT committed_timestamp, is_cancelation FROM invoice WHERE id = $1",
+            )
+            .bind(id_i32)
+            .fetch_optional(&mut *tx)
+            .await
+            .map_err(|e| ServerFnError::new(e.to_string()))?
+            .ok_or_else(|| ServerFnError::new("Rechnung nicht gefunden"))?;
 
-            if committed_timestamp.is_some() {
+            if row_optional_str(&existing, "committed_timestamp")?.is_some() {
                 return Err(ServerFnError::new(
                     "Finalisierte Rechnungen können nicht bearbeitet werden",
                 ));
             }
 
+            if row_i64(&existing, "is_cancelation")? != 0 {
+                sqlx::query("UPDATE invoice SET invoice_date = $1, subject = $2, title = $3, header = $4, footer = $5, recipient_name = $6, recipient_first_name = $7, recipient_title = $8, recipient_form_of_address = $9, street = $10, house_number = $11, zip_code = $12, city = $13, country = $14, customer_contact_id = $15, due_date = $16, discount_date = $17, discount_basis_points = $18 WHERE id = $19")
+                    .bind(&date_str).bind(&invoice.subject).bind(&invoice.title).bind(&invoice.header).bind(&invoice.footer)
+                    .bind(&recipient.name).bind(&recipient.first_name).bind(&recipient.title).bind(&recipient.form_of_address)
+                    .bind(&recipient.street).bind(&recipient.house_number).bind(&recipient.zip_code).bind(&recipient.city).bind(&recipient.country)
+                    .bind(contact_id).bind(invoice.due_date.map(|date| date.format("%Y-%m-%d").to_string()))
+                    .bind(invoice.discount_date.map(|date| date.format("%Y-%m-%d").to_string())).bind(invoice.discount_basis_points).bind(id_i32)
+                    .execute(&mut *tx).await.map_err(|e| ServerFnError::new(e.to_string()))?;
+                tx.commit()
+                    .await
+                    .map_err(|e| ServerFnError::new(e.to_string()))?;
+                return self.get_invoice(id).await;
+            }
+
             sqlx::query(
-                "UPDATE invoice SET invoice_date = $1, subject = $2, title = $3, header = $4, footer = $5, recipient_name = $6, recipient_first_name = $7, recipient_title = $8, recipient_form_of_address = $9, street = $10, house_number = $11, zip_code = $12, city = $13, country = $14, customer_contact_id = $15 WHERE id = $16")
+                "UPDATE invoice SET invoice_date = $1, subject = $2, title = $3, header = $4, footer = $5, recipient_name = $6, recipient_first_name = $7, recipient_title = $8, recipient_form_of_address = $9, street = $10, house_number = $11, zip_code = $12, city = $13, country = $14, customer_contact_id = $15, due_date = $16, discount_date = $17, discount_basis_points = $18 WHERE id = $19")
         .bind(&date_str)
         .bind(&invoice.subject)
         .bind(&invoice.title)
@@ -1383,6 +1557,9 @@ impl KlubuRepository for SqlRepository {
         .bind(&recipient.city)
         .bind(&recipient.country)
         .bind(contact_id)
+        .bind(invoice.due_date.map(|date| date.format("%Y-%m-%d").to_string()))
+        .bind(invoice.discount_date.map(|date| date.format("%Y-%m-%d").to_string()))
+        .bind(invoice.discount_basis_points)
         .bind(id_i32)
             .execute(&mut *tx)
             .await
@@ -1398,7 +1575,7 @@ impl KlubuRepository for SqlRepository {
         } else {
             let created_ts = Utc::now().timestamp().to_string();
             let row = sqlx::query(
-                "INSERT INTO invoice (invoice_date, subject, title, header, footer, customer_contact_id, recipient_name, recipient_first_name, recipient_title, recipient_form_of_address, street, house_number, zip_code, city, country, created_timestamp, is_canceled, is_cancelation) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, 0, 0) RETURNING id")
+                "INSERT INTO invoice (invoice_date, subject, title, header, footer, customer_contact_id, recipient_name, recipient_first_name, recipient_title, recipient_form_of_address, street, house_number, zip_code, city, country, created_timestamp, due_date, discount_date, discount_basis_points, is_canceled, is_cancelation, is_credit_note) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, 0, 0, $20) RETURNING id")
         .bind(&date_str)
         .bind(&invoice.subject)
         .bind(&invoice.title)
@@ -1415,6 +1592,10 @@ impl KlubuRepository for SqlRepository {
         .bind(&recipient.city)
         .bind(&recipient.country)
         .bind(&created_ts)
+        .bind(invoice.due_date.map(|date| date.format("%Y-%m-%d").to_string()))
+        .bind(invoice.discount_date.map(|date| date.format("%Y-%m-%d").to_string()))
+        .bind(invoice.discount_basis_points)
+        .bind(if invoice.is_credit_note { 1 } else { 0 })
             .fetch_one(&mut *tx)
             .await
             .map_err(|e| ServerFnError::new(e.to_string()))?;
@@ -1454,7 +1635,12 @@ impl KlubuRepository for SqlRepository {
         Ok(updated)
     }
 
-    async fn cancel_invoice(&self, id: i64) -> Result<Invoice, ServerFnError> {
+    async fn cancel_invoice(
+        &self,
+        id: i64,
+        amount_cents: i64,
+        reason: String,
+    ) -> Result<Invoice, ServerFnError> {
         let id_i32 = id as i32;
         let mut tx = self
             .pool
@@ -1463,7 +1649,7 @@ impl KlubuRepository for SqlRepository {
             .map_err(|e| ServerFnError::new(e.to_string()))?;
 
         let orig = sqlx::query(
-            "SELECT committed_timestamp, is_canceled, is_cancelation, customer_contact_id, invoice_date, subject, title, header, footer, recipient_name, recipient_first_name, recipient_title, recipient_form_of_address, street, house_number, zip_code, city, country, invoice_number FROM invoice WHERE id = $1")
+            "SELECT committed_timestamp, is_canceled, is_cancelation, is_credit_note, customer_contact_id, invoice_date, subject, title, header, footer, recipient_name, recipient_first_name, recipient_title, recipient_form_of_address, street, house_number, zip_code, city, country, invoice_number FROM invoice WHERE id = $1")
         .bind(id_i32)
         .fetch_optional(&mut *tx)
         .await
@@ -1476,7 +1662,9 @@ impl KlubuRepository for SqlRepository {
             ));
         }
         if row_i64(&orig, "is_canceled")? != 0 {
-            return Err(ServerFnError::new("Rechnung ist bereits storniert"));
+            return Err(ServerFnError::new(
+                "Rechnung ist bereits vollständig storniert",
+            ));
         }
         // Cancelling a Stornorechnung would negate its already-negated items back
         // into a positive, committed invoice that nobody issued — and could be
@@ -1487,41 +1675,85 @@ impl KlubuRepository for SqlRepository {
                 "Eine Stornorechnung kann nicht storniert werden",
             ));
         }
-
-        sqlx::query("UPDATE invoice SET is_canceled = 1 WHERE id = $1")
-            .bind(id_i32)
-            .execute(&mut *tx)
-            .await
-            .map_err(|e| ServerFnError::new(e.to_string()))?;
-
-        sqlx::query(
-            "UPDATE document_counter SET next_value = next_value + 1 WHERE key = 'invoice'",
-        )
-        .execute(&mut *tx)
-        .await
-        .map_err(|e| ServerFnError::new(e.to_string()))?;
-
-        let storno_number: i64 =
-            sqlx::query_scalar("SELECT next_value - 1 FROM document_counter WHERE key = 'invoice'")
+        if row_i64(&orig, "is_credit_note")? != 0 {
+            return Err(ServerFnError::new(
+                "Eine eigenständige Gutschrift wird nicht über den Rechnungsstorno korrigiert",
+            ));
+        }
+        let payment_count: i64 =
+            sqlx::query_scalar("SELECT COUNT(*) FROM invoice_payment WHERE invoice_id = $1")
+                .bind(id_i32)
                 .fetch_one(&mut *tx)
                 .await
                 .map_err(|e| ServerFnError::new(e.to_string()))?;
-        let storno_number_i32 = storno_number as i32;
+        if payment_count > 0 {
+            return Err(ServerFnError::new(
+                "Eine Rechnung mit Zahlungen kann nicht storniert werden",
+            ));
+        }
+        let existing_cancellation: i64 = sqlx::query_scalar(
+            "SELECT COUNT(*) FROM invoice WHERE corrected_invoice_id = $1 AND is_cancelation = 1",
+        )
+        .bind(id_i32)
+        .fetch_one(&mut *tx)
+        .await
+        .map_err(|e| ServerFnError::new(e.to_string()))?;
+        if existing_cancellation > 0 {
+            return Err(ServerFnError::new(
+                "Für diese Rechnung existiert bereits ein Stornoentwurf",
+            ));
+        }
 
+        let original_total: i64 = sqlx::query_scalar(
+            "SELECT CAST(COALESCE(SUM(total), 0) AS BIGINT) FROM invoice_item WHERE invoice_id = $1",
+        )
+        .bind(id_i32)
+        .fetch_one(&mut *tx)
+        .await
+        .map_err(|e| ServerFnError::new(e.to_string()))?;
+        let already_credited: i64 = sqlx::query_scalar(
+            "SELECT CAST(COALESCE(-SUM(ii.total), 0) AS BIGINT) FROM invoice credit JOIN invoice_item ii ON ii.invoice_id = credit.id WHERE credit.corrected_invoice_id = $1 AND credit.is_cancelation = 1 AND credit.committed_timestamp IS NOT NULL",
+        )
+        .bind(id_i32)
+        .fetch_one(&mut *tx)
+        .await
+        .map_err(|e| ServerFnError::new(e.to_string()))?;
+        let remaining = original_total - already_credited;
+        if amount_cents != remaining || remaining != original_total {
+            return Err(ServerFnError::new(
+                "Ein Storno muss immer den vollständigen Rechnungsbetrag umfassen",
+            ));
+        }
         let created_ts = Utc::now().timestamp().to_string();
         let storno_date_str = Utc::now().naive_utc().date().format("%Y-%m-%d").to_string();
         let orig_num_str = row_optional_i64(&orig, "invoice_number")?
-            .map(|n| n.to_string())
-            .unwrap_or_default();
-        let storno_subject = format!("Stornierung der Rechnung Nr. {}", orig_num_str);
+            .map(|number| number.to_string())
+            .ok_or_else(|| ServerFnError::new("Originalrechnung hat keine Rechnungsnummer"))?;
+        let reason = reason.trim();
+        let mut defaults = crate::typst_gen::load_document_text_defaults("cancellation");
+        let reference_vars = [("{{referenz_rechnung_nr}}", orig_num_str.clone())];
+        defaults.title = shared::apply_placeholders(&defaults.title, &reference_vars);
+        defaults.subject = shared::apply_placeholders(&defaults.subject, &reference_vars);
+        defaults.header = shared::apply_placeholders(&defaults.header, &reference_vars);
+        defaults.footer = shared::apply_placeholders(&defaults.footer, &reference_vars);
+        let storno_subject = if reason.is_empty() {
+            defaults.subject
+        } else {
+            format!("{} – {}", defaults.subject, reason)
+        };
+        let storno_header = if reason.is_empty() {
+            defaults.header
+        } else {
+            format!("{}\n\nGrund: {}", defaults.header, reason)
+        };
 
         let row = sqlx::query(
-            "INSERT INTO invoice (invoice_number, invoice_date, subject, title, header, footer, customer_contact_id, recipient_name, recipient_first_name, recipient_title, recipient_form_of_address, street, house_number, zip_code, city, country, created_timestamp, committed_timestamp, is_canceled, is_cancelation, corrected_invoice_id) VALUES ($1, $2, $3, 'Stornorechnung', $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, 0, 1, $18) RETURNING id")
-        .bind(storno_number_i32)
+            "INSERT INTO invoice (invoice_number, invoice_date, subject, title, header, footer, customer_contact_id, recipient_name, recipient_first_name, recipient_title, recipient_form_of_address, street, house_number, zip_code, city, country, created_timestamp, committed_timestamp, is_canceled, is_cancelation, corrected_invoice_id) VALUES (NULL, $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, NULL, 0, 1, $17) RETURNING id")
         .bind(&storno_date_str)
         .bind(&storno_subject)
-        .bind(row_optional_str(&orig, "header")?)
-        .bind(row_optional_str(&orig, "footer")?)
+        .bind(&defaults.title)
+        .bind(&storno_header)
+        .bind(&defaults.footer)
         .bind(row_optional_i64(&orig, "customer_contact_id")?.map(|v| v as i32))
         .bind(row_str(&orig, "recipient_name")?)
         .bind(row_optional_str(&orig, "recipient_first_name")?)
@@ -1532,7 +1764,6 @@ impl KlubuRepository for SqlRepository {
         .bind(row_optional_str(&orig, "zip_code")?)
         .bind(row_optional_str(&orig, "city")?)
         .bind(row_optional_str(&orig, "country")?)
-        .bind(&created_ts)
         .bind(&created_ts)
         .bind(id_i32)
         .fetch_one(&mut *tx)
@@ -1577,47 +1808,33 @@ impl KlubuRepository for SqlRepository {
             }
         }
 
-        let orig_items = sqlx::query(
-            "SELECT * FROM invoice_item WHERE invoice_id = $1 ORDER BY position_number",
+        let original_items = sqlx::query(
+            "SELECT position_number, item, quantity, unit, price, total FROM invoice_item WHERE invoice_id = $1 ORDER BY position_number",
         )
         .bind(id_i32)
         .fetch_all(&mut *tx)
         .await
         .map_err(|e| ServerFnError::new(e.to_string()))?;
-
-        for item in orig_items {
-            let neg_price = -(row_i64(&item, "price")?) as i32;
-            let neg_total = -(row_i64(&item, "total")?) as i32;
-            sqlx::query(
-                "INSERT INTO invoice_item (invoice_id, position_number, item, quantity, unit, price, total) VALUES ($1, $2, $3, $4, $5, $6, $7)")
-        .bind(storno_id_i32)
-        .bind(row_i64(&item, "position_number")? as i32)
-        .bind(row_str(&item, "item")?)
-        .bind(row_f64(&item, "quantity")?)
-        .bind(row_str(&item, "unit")?)
-        .bind(neg_price)
-        .bind(neg_total)
-            .execute(&mut *tx)
-            .await
-            .map_err(|e| ServerFnError::new(e.to_string()))?;
+        for item in original_items {
+            sqlx::query("INSERT INTO invoice_item (invoice_id, position_number, item, quantity, unit, price, total) VALUES ($1, $2, $3, $4, $5, $6, $7)")
+                .bind(storno_id_i32)
+                .bind(row_i64(&item, "position_number")?)
+                .bind(row_str(&item, "item")?)
+                .bind(row_f64(&item, "quantity")?)
+                .bind(row_str(&item, "unit")?)
+                .bind(-row_i64(&item, "price")?)
+                .bind(-row_i64(&item, "total")?)
+                .execute(&mut *tx).await.map_err(|e| ServerFnError::new(e.to_string()))?;
         }
 
         self.write_audit_log(
             &mut tx,
             "invoice",
-            id_i32,
-            "cancel",
-            &format!("Invoice Nr. {} canceled", orig_num_str),
-        )
-        .await?;
-        self.write_audit_log(
-            &mut tx,
-            "invoice",
             storno_id_i32,
-            "create_storno",
+            "create_credit_draft",
             &format!(
-                "Stornorechnung Nr. {} created for invoice ID {}",
-                storno_number_i32, id_i32
+                "Credit draft of {} cents created for invoice ID {}",
+                amount_cents, id_i32
             ),
         )
         .await?;
@@ -1625,7 +1842,7 @@ impl KlubuRepository for SqlRepository {
         tx.commit()
             .await
             .map_err(|e| ServerFnError::new(e.to_string()))?;
-        self.get_invoice(id).await
+        self.get_invoice(i64::from(storno_id_i32)).await
     }
 
     /// Books one tranche. An invoice may be settled in any number of them.
@@ -1652,12 +1869,29 @@ impl KlubuRepository for SqlRepository {
 
         // A payment against a non-existent invoice would otherwise fail only on
         // the foreign key, with an opaque database error.
-        sqlx::query_scalar::<_, i64>("SELECT id FROM invoice WHERE id = $1")
-            .bind(invoice_id_i32)
-            .fetch_optional(&mut *tx)
-            .await
-            .map_err(|e| ServerFnError::new(e.to_string()))?
-            .ok_or_else(|| ServerFnError::new("Rechnung nicht gefunden"))?;
+        let invoice = sqlx::query(
+            "SELECT id, is_cancelation, corrected_invoice_id FROM invoice WHERE id = $1",
+        )
+        .bind(invoice_id_i32)
+        .fetch_optional(&mut *tx)
+        .await
+        .map_err(|e| ServerFnError::new(e.to_string()))?
+        .ok_or_else(|| ServerFnError::new("Rechnung nicht gefunden"))?;
+        if row_i64(&invoice, "is_cancelation")? != 0 {
+            return Err(ServerFnError::new(
+                "Auf einem Stornodokument sind keine Zahlungen erlaubt",
+            ));
+        }
+        let cancellation_count: i64 = sqlx::query_scalar(
+            "SELECT COUNT(*) FROM invoice WHERE corrected_invoice_id = $1 AND is_cancelation = 1",
+        )
+        .bind(invoice_id_i32)
+        .fetch_one(&mut *tx)
+        .await
+        .map_err(|e| ServerFnError::new(e.to_string()))?;
+        if cancellation_count > 0 {
+            return Err(ServerFnError::new("Nach Erstellung eines Stornos sind auf der Originalrechnung keine Zahlungen mehr erlaubt"));
+        }
 
         let row = sqlx::query(
             "INSERT INTO invoice_payment (invoice_id, amount, payment_date) VALUES ($1, $2, $3) RETURNING id")
@@ -1751,7 +1985,7 @@ impl KlubuRepository for SqlRepository {
             .map_err(|e| ServerFnError::new(e.to_string()))?;
 
         let row = sqlx::query(
-            "SELECT committed_timestamp, customer_contact_id FROM invoice WHERE id = $1",
+            "SELECT committed_timestamp, customer_contact_id, is_cancelation, corrected_invoice_id FROM invoice WHERE id = $1",
         )
         .bind(id_i32)
         .fetch_optional(&mut *tx)
@@ -1769,12 +2003,60 @@ impl KlubuRepository for SqlRepository {
             ));
         }
 
+        if row_i64(&row, "is_cancelation")? != 0 {
+            let credit_total: i64 = sqlx::query_scalar(
+                "SELECT CAST(COALESCE(SUM(total), 0) AS BIGINT) FROM invoice_item WHERE invoice_id = $1",
+            )
+            .bind(id_i32)
+            .fetch_one(&mut *tx)
+            .await
+            .map_err(|e| ServerFnError::new(e.to_string()))?;
+            if credit_total >= 0 {
+                return Err(ServerFnError::new(
+                    "Eine Gutschrift muss einen negativen Gesamtbetrag haben",
+                ));
+            }
+        }
+
         sqlx::query(
             "UPDATE document_counter SET next_value = next_value + 1 WHERE key = 'invoice'",
         )
         .execute(&mut *tx)
         .await
         .map_err(|e| ServerFnError::new(e.to_string()))?;
+
+        // A credit affects the original receivable only when this draft becomes
+        // immutable. Mark the original fully canceled once committed credits
+        // cover it; partial credits deliberately leave it active.
+        if row_i64(&row, "is_cancelation")? != 0 {
+            let original_id = row_optional_i64(&row, "corrected_invoice_id")?
+                .ok_or_else(|| ServerFnError::new("Credit note has no original invoice"))?;
+            let original_total: i64 = sqlx::query_scalar(
+                "SELECT CAST(COALESCE(SUM(total), 0) AS BIGINT) FROM invoice_item WHERE invoice_id = $1",
+            )
+            .bind(original_id)
+            .fetch_one(&mut *tx)
+            .await
+            .map_err(|e| ServerFnError::new(e.to_string()))?;
+            let credited: i64 = sqlx::query_scalar(
+                "SELECT CAST(COALESCE(-SUM(ii.total), 0) AS BIGINT) FROM invoice credit JOIN invoice_item ii ON ii.invoice_id = credit.id WHERE credit.corrected_invoice_id = $1 AND credit.is_cancelation = 1 AND credit.committed_timestamp IS NOT NULL",
+            )
+            .bind(original_id)
+            .fetch_one(&mut *tx)
+            .await
+            .map_err(|e| ServerFnError::new(e.to_string()))?;
+            if credited > original_total {
+                return Err(ServerFnError::new(
+                    "Gutschriften übersteigen den Rechnungsbetrag",
+                ));
+            }
+            sqlx::query("UPDATE invoice SET is_canceled = $1 WHERE id = $2")
+                .bind(if credited == original_total { 1 } else { 0 })
+                .bind(original_id)
+                .execute(&mut *tx)
+                .await
+                .map_err(|e| ServerFnError::new(e.to_string()))?;
+        }
 
         let next_number: i64 =
             sqlx::query_scalar("SELECT next_value - 1 FROM document_counter WHERE key = 'invoice'")

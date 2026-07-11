@@ -3,9 +3,9 @@ use leptos_router::{use_navigate, use_params_map, NavigateOptions};
 
 use crate::components::{EmptyState, MoneyInput, PaymentsPanel, QuantityInput, TextFieldHint};
 use crate::server::{
-    add_invoice_payment, cancel_invoice, commit_invoice, delete_invoice, delete_invoice_payment,
-    export_invoice_pdf, get_all_contacts, get_invoice, get_invoices, list_engagements,
-    save_invoice, send_invoice_email,
+    add_invoice_payment, cancel_invoice, commit_invoice, create_invoice_reminder, delete_invoice,
+    delete_invoice_payment, export_invoice_pdf, get_all_contacts, get_invoice,
+    get_invoice_text_defaults, get_invoices, list_engagements, save_invoice, send_invoice_email,
 };
 use chrono::{NaiveDate, Utc};
 use shared::*;
@@ -22,10 +22,23 @@ fn InvoiceEditor(
 ) -> impl IntoView {
     let is_committed = inv.committed_timestamp.is_some();
     let is_canceled = inv.is_canceled;
+    let is_cancelation = inv.is_cancelation;
+    let is_credit_note = inv.is_credit_note;
     let invoice_id = inv.id;
     let invoice_number = inv.invoice_number;
     let original_invoice_id = inv.corrected_invoice_id;
+    let original_invoice_number = inv.corrected_invoice_number;
     let cancellation_invoice_id = inv.cancellation_invoice_id;
+    let credited_cents = inv.credited_cents;
+    let discount_taken_cents = inv.discount_taken_cents;
+    let invoice_total_cents = inv.items.iter().map(Item::total_cents).sum::<i64>();
+    let invoice_is_due = inv
+        .due_date
+        .map(|date| date < Utc::now().date_naive())
+        .unwrap_or(false);
+    let (cancel_reason, set_cancel_reason) = create_signal(String::new());
+    let (cancel_open, set_cancel_open) = create_signal(false);
+    let (cancel_error, set_cancel_error) = create_signal(Option::<String>::None);
 
     // The status badge next to the heading already says ENTWURF; repeating it
     // in the title read as a duplicate.
@@ -40,6 +53,18 @@ fn InvoiceEditor(
             .map(|d| d.format("%Y-%m-%d").to_string())
             .unwrap_or_default(),
     );
+    let (due_date, set_due_date) = create_signal(
+        inv.due_date
+            .map(|d| d.format("%Y-%m-%d").to_string())
+            .unwrap_or_default(),
+    );
+    let (discount_date, set_discount_date) = create_signal(
+        inv.discount_date
+            .map(|d| d.format("%Y-%m-%d").to_string())
+            .unwrap_or_default(),
+    );
+    let (discount_percent, set_discount_percent) =
+        create_signal(format!("{:.2}", inv.discount_basis_points as f64 / 100.0));
     let (subject, set_subject) = create_signal(inv.subject.clone().unwrap_or_default());
     let (header, set_header) = create_signal(inv.header.clone().unwrap_or_default());
     let (footer, set_footer) = create_signal(inv.footer.clone().unwrap_or_default());
@@ -82,6 +107,9 @@ fn InvoiceEditor(
     let item_price = create_rw_signal(0i64);
 
     let (payments_list, set_payments_list) = create_signal(inv.payments.clone());
+    let (reminders, set_reminders) = create_signal(inv.reminders.clone());
+    let reminder_fee = create_rw_signal(0_i64);
+    let (reminder_note, set_reminder_note) = create_signal(String::new());
     let (mail_open, set_mail_open) = create_signal(false);
     let default_mail_recipient = inv
         .customer_contact
@@ -107,6 +135,24 @@ fn InvoiceEditor(
                 .map(|d| d.format("%Y-%m-%d").to_string())
                 .unwrap_or_default();
             invoice_date.get() != orig_date
+                || due_date.get()
+                    != inv
+                        .due_date
+                        .map(|d| d.format("%Y-%m-%d").to_string())
+                        .unwrap_or_default()
+                || discount_date.get()
+                    != inv
+                        .discount_date
+                        .map(|d| d.format("%Y-%m-%d").to_string())
+                        .unwrap_or_default()
+                || discount_percent
+                    .get()
+                    .replace(',', ".")
+                    .parse::<f64>()
+                    .unwrap_or(0.0)
+                    .mul_add(100.0, 0.0)
+                    .round() as i64
+                    != inv.discount_basis_points
                 || subject.get() != inv.subject.clone().unwrap_or_default()
                 || header.get() != inv.header.clone().unwrap_or_default()
                 || footer.get() != inv.footer.clone().unwrap_or_default()
@@ -207,8 +253,20 @@ fn InvoiceEditor(
         }
     });
 
+    let create_reminder_act = create_action(move |(invoice_id, fee, note): &(i64, i64, String)| {
+        let (invoice_id, fee, note) = (*invoice_id, *fee, note.clone());
+        async move {
+            if let Ok(reminder) = create_invoice_reminder(invoice_id, fee, note).await {
+                set_reminders.update(|items| items.push(reminder));
+                reminder_fee.set(0);
+                set_reminder_note.set(String::new());
+            }
+        }
+    });
+
     let navigate = use_navigate();
     let navigate_for_save = navigate.clone();
+    let navigate_for_cancel = navigate.clone();
     let navigate_for_related = navigate.clone();
     let navigate_for_delete = navigate.clone();
 
@@ -234,15 +292,25 @@ fn InvoiceEditor(
         }
     });
 
-    let cancel_invoice_act = create_action(move |id: &i64| {
-        let id = *id;
+    let cancel_invoice_act = create_action(move |(id, reason): &(i64, String)| {
+        let (id, reason) = (*id, reason.clone());
+        let navigate = navigate_for_cancel.clone();
         async move {
-            match cancel_invoice(id).await {
+            set_cancel_error.set(None);
+            match cancel_invoice(id, Some(invoice_total_cents), Some(reason)).await {
                 Ok(updated) => {
-                    on_change.call(());
-                    set_selected_invoice.set(Some(updated));
+                    leptos::set_timeout(
+                        move || {
+                            on_change.call(());
+                            let target_path =
+                                format!("/invoices/{}", updated.id.unwrap_or_default());
+                            let _ = navigate(&target_path, NavigateOptions::default());
+                            set_selected_invoice.try_set(Some(updated));
+                        },
+                        std::time::Duration::ZERO,
+                    );
                 }
-                Err(e) => logging::log!("Error canceling invoice: {:?}", e),
+                Err(e) => set_cancel_error.set(Some(e.to_string())),
             }
         }
     });
@@ -314,7 +382,7 @@ fn InvoiceEditor(
     view! {
         <div class="box">
             <h2 class="subtitle">
-                "Rechnungsdetails" {display_number}
+                {if is_credit_note { "Gutschriftdetails" } else if is_cancelation { "Stornodetails" } else { "Rechnungsdetails" }} {display_number}
                 {if is_committed {
                     if is_canceled {
                         view! { <span class="tag is-danger ml-2">"Storniert"</span> }.into_view()
@@ -326,10 +394,10 @@ fn InvoiceEditor(
                 }}
             </h2>
             {original_invoice_id.map(|id| view! {
-                <div class="message is-warning mb-3"><div class="message-body p-2">"Storno zu dieser Rechnung:" <button class="button is-small is-light ml-2" on:click=move |_| open_related_invoice_act.dispatch(id)>{format!("Rechnung #{id}")}</button></div></div>
+                <div class="message is-warning mb-3"><div class="message-body p-2">"Dieses Storno gehört zwingend zu:" <button class="button is-small is-light ml-2" on:click=move |_| open_related_invoice_act.dispatch(id)>{original_invoice_number.map(|number| format!("Rechnung Nr. {number}")).unwrap_or_else(|| format!("Originalrechnung (ID {id})"))}</button></div></div>
             })}
             {cancellation_invoice_id.map(|id| view! {
-                <div class="message is-info mb-3"><div class="message-body p-2">"Storno-Rechnung:" <button class="button is-small is-light ml-2" on:click=move |_| open_related_invoice_act.dispatch(id)>{format!("Rechnung #{id}")}</button></div></div>
+                <div class="message is-info mb-3"><div class="message-body p-2">"Storno zu dieser Rechnung:" <button class="button is-small is-light ml-2" on:click=move |_| open_related_invoice_act.dispatch(id)>{format!("Dokument #{id}")}</button></div></div>
             })}
 
             <div class="field">
@@ -395,6 +463,15 @@ fn InvoiceEditor(
                 <label class="label">"Datum"</label>
                 <div class="control"><input class="input" type="date" prop:value=invoice_date on:input=move |ev| set_invoice_date.set(event_target_value(&ev)) prop:disabled=is_committed /></div>
             </div>
+            // Nothing is owed on a Gutschrift or a Storno — the money moves the
+            // other way — so neither a due date nor a Skonto applies.
+            {(!is_credit_note && !is_cancelation).then(|| view! {
+                <div class="field-row">
+                    <div class="field"><label class="label">"Zahlbar bis"</label><input class="input" type="date" prop:value=due_date on:input=move |ev| set_due_date.set(event_target_value(&ev)) prop:disabled=is_committed /></div>
+                    <div class="field"><label class="label">"Skonto bis"</label><input class="input" type="date" prop:value=discount_date on:input=move |ev| set_discount_date.set(event_target_value(&ev)) prop:disabled=is_committed /></div>
+                    <div class="field is-narrow"><label class="label">"Skonto (%)"</label><input class="input is-amount" inputmode="decimal" prop:value=discount_percent on:input=move |ev| set_discount_percent.set(event_target_value(&ev)) prop:disabled=is_committed /></div>
+                </div>
+            })}
 
             <div class="field">
                 <label class="label">"Betreff"</label>
@@ -407,7 +484,7 @@ fn InvoiceEditor(
                 <TextFieldHint />
             </div>
 
-            {move || if !is_committed {
+            {move || if !is_committed && !is_cancelation {
                 view! {
                     <div class="box subbox p-4">
                         <h3 class="has-text-weight-bold mb-3">"Position hinzufügen"</h3>
@@ -446,7 +523,7 @@ fn InvoiceEditor(
                                     <td class="is-numeric">{format_euro(item.price.amount_cents)}</td>
                                     <td class="is-numeric">{format_euro(line_total)}</td>
                                     <td class="has-text-right">
-                                        {(!is_committed).then(|| view! {
+                                        {(!is_committed && !is_cancelation).then(|| view! {
                                             <button class="button is-small is-danger is-outlined" title="Position entfernen"
                                                 on:click=move |_| set_items_list.update(|items| { items.remove(idx); })>
                                                 <span class="icon is-small"><i class="mdi mdi-delete"></i></span>
@@ -481,6 +558,15 @@ fn InvoiceEditor(
                             <button class="button is-success" on:click=move |_| {
                                 let mut save_inv = inv.clone();
                                 save_inv.invoice_date = NaiveDate::parse_from_str(&invoice_date.get(), "%Y-%m-%d").ok();
+                                if is_credit_note || is_cancelation {
+                                    save_inv.due_date = None;
+                                    save_inv.discount_date = None;
+                                    save_inv.discount_basis_points = 0;
+                                } else {
+                                    save_inv.due_date = NaiveDate::parse_from_str(&due_date.get(), "%Y-%m-%d").ok();
+                                    save_inv.discount_date = NaiveDate::parse_from_str(&discount_date.get(), "%Y-%m-%d").ok();
+                                    save_inv.discount_basis_points = (discount_percent.get().replace(',', ".").parse::<f64>().unwrap_or(0.0) * 100.0).round() as i64;
+                                }
                                 save_inv.subject = Some(subject.get());
                                 save_inv.header = Some(header.get());
                                 save_inv.footer = Some(footer.get());
@@ -506,10 +592,10 @@ fn InvoiceEditor(
                 {if let Some(id) = invoice_id {
                     if is_committed {
                         view! {
-                            {if !is_canceled {
-                                view! { <div class="control"><button class="button is-danger" on:click=move |_| cancel_invoice_act.dispatch(id)>{"Stornieren"}</button></div> }.into_view()
+                            {if !is_canceled && !is_cancelation && !is_credit_note {
+                                view! { <div class="control"><button class="button is-danger" prop:disabled=!payments_list.get_untracked().is_empty() || cancellation_invoice_id.is_some() on:click=move |_| set_cancel_open.set(true)>{"Stornieren"}</button></div> }.into_view()
                             } else {
-                                view! { <div class="control"><button class="button is-danger" disabled=true>{"Storniert"}</button></div> }.into_view()
+                                "".into_view()
                             }}
                             {move || if let Some(doc) = document.get() {
                                 view! { <div class="control"><a class="button is-link" href=format!("/api/documents/{}", doc.id) target="_blank"><span class="icon mr-1"><i class="mdi mdi-download"></i></span>"PDF herunterladen"</a></div> }.into_view()
@@ -534,16 +620,47 @@ fn InvoiceEditor(
                 view! { <div class="message is-warning mt-2"><div class="message-body p-2 is-size-7"><span class="icon mr-1"><i class="mdi mdi-alert-circle"></i></span>"Ein Kontakt muss zugewiesen sein, bevor die Rechnung finalisiert werden kann."</div></div> }.into_view()
             } else { "".into_view() }}
 
+            {move || (cancel_open.get() && invoice_id.is_some()).then(|| view! {
+                <div class="box subbox mt-4 cancellation-panel">
+                    <h3 class="is-size-6 has-text-weight-bold mb-2">"Storno erstellen"</h3>
+                    <p class="text-muted is-size-7 mb-3">{format!("Vollstorno über {}. Alle Positionen werden unveränderbar aus der Originalrechnung übernommen.", format_euro(invoice_total_cents))}</p>
+                    {move || cancel_error.get().map(|message| view! { <div class="message is-danger"><div class="message-body p-2">{message}</div></div> })}
+                    <div class="field-row">
+                        <div class="field is-wide"><label class="label">"Grund"</label><input class="input" prop:value=cancel_reason on:input=move |event| set_cancel_reason.set(event_target_value(&event)) placeholder="z. B. Leistungsumfang reduziert" /></div>
+                    </div>
+                    <div class="buttons">
+                        <button class="button is-danger" prop:disabled=cancel_invoice_act.pending() on:click=move |_| cancel_invoice_act.dispatch((invoice_id.unwrap_or_default(), cancel_reason.get_untracked()))>"Vollständigen Stornoentwurf erstellen"</button>
+                        <button class="button is-light" on:click=move |_| set_cancel_open.set(false)>"Abbrechen"</button>
+                    </div>
+                </div>
+            })}
+
             // Payments belong to an *issued* invoice. A draft has not been sent,
             // so there is nothing for a customer to have paid yet.
-            {if is_committed && invoice_id.is_some() {
+            {if is_committed && invoice_id.is_some() && !is_cancelation && cancellation_invoice_id.is_none() {
                 view! {
                     <PaymentsPanel
                         payments=payments_list
-                        total_cents=Signal::derive(move || items_list.get().iter().map(Item::total_cents).sum::<i64>())
+                        total_cents=Signal::derive(move || (items_list.get().iter().map(Item::total_cents).sum::<i64>() - credited_cents - discount_taken_cents).max(0))
                         on_add=Callback::new(move |(amount, date)| add_payment_act.dispatch((amount, date)))
                         on_delete=Callback::new(move |id| delete_payment_act.dispatch(id))
                     />
+                }.into_view()
+            } else { "".into_view() }}
+
+            {if is_committed && !is_cancelation {
+                view! {
+                    <div class="box subbox mt-4">
+                        <h3 class="is-size-6 has-text-weight-bold mb-2">"Mahnungen"</h3>
+                        {move || if reminders.get().is_empty() { view! { <p class="text-muted is-size-7 mb-3">"Noch keine Mahnung erstellt."</p> }.into_view() } else { view! { <div class="mb-3">{reminders.get().into_iter().map(|reminder| view! { <div class="crm-record p-2 mb-1 is-size-7"><strong>{format!("{}. Mahnung · {}", reminder.level, reminder.reminder_date.format("%d.%m.%Y"))}</strong><span class="text-muted ml-2">{format!("Gebühr {}", format_euro(reminder.fee_cents))}</span><div>{reminder.note}</div></div> }).collect_view()}</div> }.into_view() }}
+                        {(invoice_is_due && !is_canceled).then(|| view! {
+                            <div class="field-row">
+                                <div class="field is-narrow"><label class="label">"Mahngebühr"</label><MoneyInput value=reminder_fee /></div>
+                                <div class="field is-wide"><label class="label">"Hinweis"</label><input class="input" prop:value=reminder_note on:input=move |event| set_reminder_note.set(event_target_value(&event)) placeholder="Zahlungserinnerung / Frist" /></div>
+                                <button class="button is-warning" prop:disabled=create_reminder_act.pending() on:click=move |_| create_reminder_act.dispatch((invoice_id.unwrap_or_default(), reminder_fee.get_untracked(), reminder_note.get_untracked()))>"Mahnung erstellen"</button>
+                            </div>
+                        })}
+                    </div>
                 }.into_view()
             } else { "".into_view() }}
 
@@ -584,6 +701,12 @@ pub fn InvoicesPage() -> impl IntoView {
                 set_selected_invoice.set(None);
             }
             Some("new") => {
+                let is_credit_note = web_sys::window()
+                    .and_then(|window| window.location().search().ok())
+                    .and_then(|search| web_sys::UrlSearchParams::new_with_str(&search).ok())
+                    .and_then(|params| params.get("type"))
+                    .as_deref()
+                    == Some("credit_note");
                 set_selected_invoice.set(Some(Invoice {
                     id: None,
                     items: vec![],
@@ -592,10 +715,19 @@ pub fn InvoicesPage() -> impl IntoView {
                     invoice_number: None,
                     payments: vec![],
                     invoice_date: Some(Utc::now().naive_utc().date()),
+                    due_date: (!is_credit_note)
+                        .then(|| Utc::now().naive_utc().date() + chrono::Duration::days(14)),
+                    discount_date: None,
+                    discount_basis_points: 0,
+                    discount_taken_cents: 0,
+                    reminders: vec![],
                     is_canceled: false,
                     is_cancelation: false,
+                    is_credit_note,
                     corrected_invoice_id: None,
+                    corrected_invoice_number: None,
                     cancellation_invoice_id: None,
+                    credited_cents: 0,
                     customer_contact: None,
                     document: None,
                     recipient: Some(Recipient {
@@ -609,13 +741,51 @@ pub fn InvoicesPage() -> impl IntoView {
                         house_number: Some("1".to_string()),
                         country: Some("Deutschland".to_string()),
                     }),
-                    header: Some("Vielen Dank für Ihre Bestellung.".to_string()),
-                    footer: Some(
-                        "Bitte überweisen Sie den Betrag innerhalb von 14 Tagen.".to_string(),
+                    header: Some(if is_credit_note {
+                        "Wir schreiben Ihnen die nachfolgend aufgeführten Beträge gut.".to_string()
+                    } else {
+                        "Vielen Dank für Ihre Bestellung.".to_string()
+                    }),
+                    footer: Some(if is_credit_note {
+                        "Der Gutschriftbetrag wird Ihnen zeitnah erstattet.".to_string()
+                    } else {
+                        "Bitte überweisen Sie den Betrag innerhalb von 14 Tagen.".to_string()
+                    }),
+                    title: Some(
+                        if is_credit_note {
+                            "Gutschrift"
+                        } else {
+                            "Rechnung"
+                        }
+                        .to_string(),
                     ),
-                    title: Some("Rechnung".to_string()),
-                    subject: Some("Rechnung".to_string()),
+                    subject: Some(
+                        if is_credit_note {
+                            "Gutschrift"
+                        } else {
+                            "Rechnung"
+                        }
+                        .to_string(),
+                    ),
                 }));
+                spawn_local(async move {
+                    let kind = if is_credit_note {
+                        "credit_note"
+                    } else {
+                        "invoice"
+                    };
+                    if let Ok(defaults) = get_invoice_text_defaults(kind.to_string()).await {
+                        if let Some(mut draft) = selected_invoice.get_untracked() {
+                            if draft.id.is_none() && draft.is_credit_note == is_credit_note {
+                                draft.title = Some(defaults.title);
+                                draft.subject = Some(defaults.subject);
+                                draft.header = Some(defaults.header);
+                                draft.footer = Some(defaults.footer);
+                                set_selected_invoice.try_set(Some(draft));
+                            }
+                        }
+                    }
+                });
             }
             Some(id_str) => {
                 if let Ok(id) = id_str.parse::<i64>() {
@@ -624,7 +794,7 @@ pub fn InvoicesPage() -> impl IntoView {
                     if !already_selected {
                         spawn_local(async move {
                             if let Ok(invoice) = get_invoice(id).await {
-                                set_selected_invoice.set(Some(invoice));
+                                set_selected_invoice.try_set(Some(invoice));
                             }
                         });
                     }
@@ -716,6 +886,9 @@ pub fn InvoicesPage() -> impl IntoView {
                         <button class="button is-link" on:click=move |_| {
                             let _ = use_navigate()("/invoices/new", NavigateOptions::default());
                         }>{"Neue Rechnung"}</button>
+                        <button class="button is-light" on:click=move |_| {
+                            let _ = use_navigate()("/invoices/new?type=credit_note", NavigateOptions::default());
+                        }>{"Neue Gutschrift"}</button>
                     </div>
             </div>
 
@@ -808,13 +981,21 @@ pub fn InvoicesPage() -> impl IntoView {
                                 let contact_name = inv.customer_contact.as_ref().map(Contact::display_name).unwrap_or_else(|| "Gast".to_string());
                                 let status_badge = if !inv.committed {
                                     view! { <span class="tag is-warning ml-2">"ENTWURF"</span> }.into_view()
+                                } else if inv.is_cancelation {
+                                    view! { <span class="tag is-info ml-2">"Storno"</span> }.into_view()
+                                } else if inv.is_credit_note {
+                                    view! { <span class="tag is-info ml-2">"Gutschrift"</span> }.into_view()
                                 } else if inv.is_canceled {
                                     view! { <span class="tag is-danger ml-2">"Storniert"</span> }.into_view()
+                                } else if inv.due_date.map(|date| date < Utc::now().date_naive()).unwrap_or(false) && inv.outstanding_cents() > 0 {
+                                    view! { <span class="tag is-danger ml-2">"Fällig"</span> }.into_view()
                                 } else {
                                     let status = inv.payment_status();
                                     view! { <span class=format!("tag {} ml-2", status.tag_class())>{status.label()}</span> }.into_view()
                                 };
-                                let amount_line = if inv.committed && !inv.is_canceled {
+                                let amount_line = if inv.committed && inv.is_cancelation {
+                                    view! { <div class="is-size-7 text-muted">{format!("{} · mit Originalrechnung verrechnet", format_euro(-inv.total_cents))}</div> }.into_view()
+                                } else if inv.committed && !inv.is_canceled {
                                     let status = inv.payment_status();
                                     let text = match status {
                                         PaymentStatus::Partial => format!(

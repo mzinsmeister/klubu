@@ -93,10 +93,15 @@
         [Kundennummer:], [#if invoice.customer_contact != none [#invoice.customer_contact.id] else [-]],
         [Rechnungsnummer:], [#if invoice.invoice_number != none [#invoice.invoice_number] else [ENTWURF]],
         [Rechnungsdatum:], [#format-date(invoice.invoice_date)],
+        ..if invoice.corrected_invoice_number != none { ([Originalrechnung Nr.:], [#invoice.corrected_invoice_number]) } else { () },
+        ..if invoice.is_cancelation or invoice.is_credit_note { () } else { ([Zahlbar bis:], [#format-date(invoice.due_date)]) },
       )
     ]
   ]
 )
+#if not invoice.is_credit_note and not invoice.is_cancelation and invoice.discount_date != none and invoice.discount_basis_points > 0 [
+  #align(right)[Skonto: #calc.round(invoice.discount_basis_points / 100, digits: 2)% bis #format-date(invoice.discount_date)]
+]
 
 #v(1cm)
 #text(12pt, weight: "bold")[#if invoice.subject != none [#invoice.subject] else [Rechnung]]

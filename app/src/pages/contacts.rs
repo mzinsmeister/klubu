@@ -300,17 +300,19 @@ pub fn ContactsPage() -> impl IntoView {
                         let contact = contact.clone();
                         move || {
                             c_name.get() != contact.name
-                                || Some(c_first.get()) != contact.first_name
-                                || Some(c_title.get()) != contact.title
-                                || Some(c_form_of_address.get()) != contact.form_of_address
-                                || Some(c_street.get()) != contact.street
-                                || Some(c_zip.get()) != contact.zip_code
-                                || Some(c_city.get()) != contact.city
-                                || Some(c_house.get()) != contact.house_number
-                                || Some(c_country.get()) != contact.country
+                                || c_first.get() != contact.first_name.clone().unwrap_or_default()
+                                || c_title.get() != contact.title.clone().unwrap_or_default()
+                                || c_form_of_address.get() != contact.form_of_address.clone().unwrap_or_default()
+                                || c_street.get() != contact.street.clone().unwrap_or_default()
+                                || c_zip.get() != contact.zip_code.clone().unwrap_or_default()
+                                || c_city.get() != contact.city.clone().unwrap_or_default()
+                                || c_house.get() != contact.house_number.clone().unwrap_or_default()
+                                || c_country.get() != contact.country.clone().unwrap_or_else(|| "Deutschland".to_string())
                                 || c_phones.get() != contact.phones
                                 || c_emails.get() != contact.emails
                                 || c_is_person.get() != contact.is_person
+                                || !new_phone.get().trim().is_empty()
+                                || !new_email.get().trim().is_empty()
                         }
                     };
 
@@ -567,33 +569,32 @@ pub fn ContactsPage() -> impl IntoView {
                                 <div class="columns">
                                     // Left Column: CRM stuff
                                     <div class="column is-7">
-                                        <div class="box">
+                                        <div class="box crm-overview">
                                             <h3 class="title is-5 mb-4">"CRM-Übersicht"</h3>
                                             <Suspense fallback=move || view! { <p class="text-muted">"Lade Aktivitäten…"</p> }>
                                                 {move || crm.get().flatten().and_then(Result::ok).map(|summary| {
                                                     let customer_id = summary.contact.id.unwrap_or_default();
+                                                    let compose_href = summary.contact.emails.first()
+                                                        .map(|email| format!("/email?customer_id={}&compose=1&to={}", customer_id, email))
+                                                        .unwrap_or_else(|| format!("/email?customer_id={}&compose=1", customer_id));
                                                     view! {
-                                                        <div class="level mb-4">
-                                                            <div class="level-left">
-                                                                <div class="tags">
-                                                                    <a class="tag is-link is-light" href=format!("/offers?customer_id={}", customer_id)>
+                                                        <div class="crm-stats">
+                                                                    <a class="crm-stat" href=format!("/offers?customer_id={}", customer_id)>
                                                                         <span class="icon mr-1"><i class="mdi mdi-file-document-outline"></i></span>
                                                                         {format!("{} Angebote", summary.offer_count)}
                                                                     </a>
-                                                                    <a class="tag is-link is-light" href=format!("/invoices?customer_id={}", customer_id)>
+                                                                    <a class="crm-stat" href=format!("/invoices?customer_id={}", customer_id)>
                                                                         <span class="icon mr-1"><i class="mdi mdi-receipt"></i></span>
                                                                         {format!("{} Rechnungen", summary.invoice_count)}
                                                                     </a>
-                                                                    <a class="tag is-link is-light" href=format!("/engagements?customer_id={}", customer_id)>
+                                                                    <a class="crm-stat" href=format!("/engagements?customer_id={}", customer_id)>
                                                                         <span class="icon mr-1"><i class="mdi mdi-briefcase-outline"></i></span>
                                                                         {format!("{} Aufträge", summary.engagement_count)}
                                                                     </a>
-                                                                    <span class="tag is-light">
+                                                                    <a class="crm-stat" href=format!("/email?customer_id={}", customer_id)>
                                                                         <span class="icon mr-1"><i class="mdi mdi-email-outline"></i></span>
                                                                         {format!("{} E-Mails", summary.recent_emails.len())}
-                                                                    </span>
-                                                                </div>
-                                                            </div>
+                                                                    </a>
                                                         </div>
 
                                                         <div class="field mb-5">
@@ -601,10 +602,16 @@ pub fn ContactsPage() -> impl IntoView {
                                                             <div class="control">
                                                                 <textarea class="textarea is-small" prop:value=note_body on:input=move |event| set_note_body.set(event_target_value(&event)) placeholder="z. B. Telefonat bezüglich neuem Projekt geführt..."></textarea>
                                                             </div>
-                                                            <button class="button is-link is-small mt-2" prop:disabled=move || add_note_action.pending().get() on:click=move |_| add_note_action.dispatch(note_body.get_untracked())>
-                                                                <span class="icon mr-1"><i class="mdi mdi-note-plus-outline"></i></span>
-                                                                {"Notiz speichern"}
-                                                            </button>
+                                                            <div class="buttons mt-2">
+                                                                <button class="button is-link is-small" prop:disabled=move || add_note_action.pending().get() on:click=move |_| add_note_action.dispatch(note_body.get_untracked())>
+                                                                    <span class="icon mr-1"><i class="mdi mdi-note-plus-outline"></i></span>
+                                                                    {"Notiz speichern"}
+                                                                </button>
+                                                                <a class="button is-light is-small" href=compose_href>
+                                                                    <span class="icon mr-1"><i class="mdi mdi-email-edit-outline"></i></span>
+                                                                    "E-Mail schreiben"
+                                                                </a>
+                                                            </div>
                                                         </div>
 
                                                         <div class="columns">
@@ -612,12 +619,12 @@ pub fn ContactsPage() -> impl IntoView {
                                                             <div class="column is-6">
                                                                 <h4 class="title is-6 mb-3"><span class="icon mr-1"><i class="mdi mdi-note-text-outline"></i></span>"Verlauf & Notizen"</h4>
                                                                 {if summary.notes.is_empty() {
-                                                                    view! { <p class="text-muted is-size-7 p-3 has-background-white-bis rounded">"Noch keine Notizen vorhanden."</p> }.into_view()
+                                                                    view! { <p class="crm-empty text-muted is-size-7 p-3">"Noch keine Notizen vorhanden."</p> }.into_view()
                                                                 } else {
                                                                     view! {
                                                                         <div style="max-height: 300px; overflow-y: auto; padding-right: 0.25rem;">
                                                                             {summary.notes.into_iter().map(|note| view! {
-                                                                                <div class="box p-3 mb-2 is-size-7 has-background-white-bis">
+                                                                                <div class="subbox p-3 mb-2 is-size-7">
                                                                                     <div style="white-space: pre-wrap;">{note.body}</div>
                                                                                     <div class="text-muted mt-1 is-size-7" style="display: flex; justify-content: space-between;">
                                                                                         <span><i class="mdi mdi-account mr-1"></i>{note.author_username}</span>
@@ -629,14 +636,17 @@ pub fn ContactsPage() -> impl IntoView {
                                                                     }.into_view()
                                                                 }}
 
-                                                                <h4 class="title is-6 mb-3 mt-4"><span class="icon mr-1"><i class="mdi mdi-email-outline"></i></span>"Letzte E-Mails"</h4>
+                                                                <div class="is-flex is-justify-content-space-between is-align-items-center mb-3 mt-4">
+                                                                    <h4 class="title is-6 mb-0"><span class="icon mr-1"><i class="mdi mdi-email-outline"></i></span>"Letzte E-Mails"</h4>
+                                                                    <a class="crm-section-link is-size-7" href=format!("/email?customer_id={}", customer_id)>"Alle anzeigen"<i class="mdi mdi-arrow-right"></i></a>
+                                                                </div>
                                                                 {if summary.recent_emails.is_empty() {
-                                                                    view! { <p class="text-muted is-size-7 p-3 has-background-white-bis rounded">"Keine archivierten E-Mails."</p> }.into_view()
+                                                                    view! { <p class="crm-empty text-muted is-size-7 p-3">"Keine archivierten E-Mails."</p> }.into_view()
                                                                 } else {
                                                                     view! {
                                                                         <div style="max-height: 250px; overflow-y: auto; padding-right: 0.25rem;">
                                                                             {summary.recent_emails.into_iter().map(|mail| view! {
-                                                                                <div class="box p-3 mb-2 is-size-7 has-background-white-bis">
+                                                                                <div class="subbox p-3 mb-2 is-size-7">
                                                                                     <div class="has-text-weight-semibold">{mail.subject}</div>
                                                                                     <div class="text-muted mt-1" style="display: flex; justify-content: space-between;">
                                                                                         <span>"Von: " {mail.sender}</span>
@@ -652,10 +662,10 @@ pub fn ContactsPage() -> impl IntoView {
                                                             <div class="column is-6">
                                                                 <div class="is-flex is-justify-content-space-between is-align-items-center mb-3">
                                                                     <h4 class="title is-6 mb-0"><span class="icon mr-1"><i class="mdi mdi-file-document-outline"></i></span>"Angebote"</h4>
-                                                                    <a class="is-size-7" href=format!("/offers?customer_id={}", customer_id)>"Alle anzeigen »"</a>
+                                                                    <a class="crm-section-link is-size-7" href=format!("/offers?customer_id={}", customer_id)>"Alle anzeigen"<i class="mdi mdi-arrow-right"></i></a>
                                                                 </div>
                                                                 {if summary.offers.is_empty() {
-                                                                    view! { <p class="text-muted is-size-7 p-3 has-background-white-bis rounded mb-4">"Keine Angebote für diesen Kunden."</p> }.into_view()
+                                                                    view! { <p class="crm-empty text-muted is-size-7 p-3 mb-4">"Keine Angebote für diesen Kunden."</p> }.into_view()
                                                                 } else {
                                                                     view! {
                                                                         <div class="mb-4" style="max-height: 200px; overflow-y: auto; padding-right: 0.25rem;">
@@ -666,7 +676,7 @@ pub fn ContactsPage() -> impl IntoView {
                                                                                 let status_cls = if offer.committed { "tag is-success is-light" } else { "tag is-warning is-light" };
                                                                                 let status_lbl = if offer.committed { "Finalisiert" } else { "Entwurf" };
                                                                                 view! {
-                                                                                    <div class="is-flex is-justify-content-space-between is-align-items-center p-2 mb-1 has-background-white-bis rounded is-size-7">
+                                                                                    <div class="crm-record is-flex is-justify-content-space-between is-align-items-center p-2 mb-1 is-size-7">
                                                                                         <div style="min-width: 0; flex: 1; padding-right: 0.5rem;">
                                                                                             <div class="has-text-weight-semibold" style="white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">
                                                                                                 {number_str} " · " {title_str}
@@ -688,10 +698,10 @@ pub fn ContactsPage() -> impl IntoView {
 
                                                                 <div class="is-flex is-justify-content-space-between is-align-items-center mb-3">
                                                                     <h4 class="title is-6 mb-0"><span class="icon mr-1"><i class="mdi mdi-receipt"></i></span>"Rechnungen"</h4>
-                                                                    <a class="is-size-7" href=format!("/invoices?customer_id={}", customer_id)>"Alle anzeigen »"</a>
+                                                                    <a class="crm-section-link is-size-7" href=format!("/invoices?customer_id={}", customer_id)>"Alle anzeigen"<i class="mdi mdi-arrow-right"></i></a>
                                                                 </div>
                                                                 {if summary.invoices.is_empty() {
-                                                                    view! { <p class="text-muted is-size-7 p-3 has-background-white-bis rounded mb-4">"Keine Rechnungen für diesen Kunden."</p> }.into_view()
+                                                                    view! { <p class="crm-empty text-muted is-size-7 p-3 mb-4">"Keine Rechnungen für diesen Kunden."</p> }.into_view()
                                                                 } else {
                                                                     view! {
                                                                         <div class="mb-4" style="max-height: 200px; overflow-y: auto; padding-right: 0.25rem;">
@@ -700,11 +710,12 @@ pub fn ContactsPage() -> impl IntoView {
                                                                                 let number_str = invoice.invoice_number.map(|num| format!("#{}", num)).unwrap_or_else(|| "Entwurf".to_string());
                                                                                 let title_str = invoice.subject.clone().unwrap_or_default();
                                                                                 let amount_str = format!("{:.2} €", invoice.total_cents as f64 / 100.0);
-                                                                                let paid = invoice.paid_cents >= invoice.total_cents;
-                                                                                let status_cls = if invoice.is_canceled { "tag is-danger is-light" } else if !invoice.committed { "tag is-warning is-light" } else if paid { "tag is-success is-light" } else { "tag is-info is-light" };
-                                                                                let status_lbl = if invoice.is_canceled { "Storniert" } else if !invoice.committed { "Entwurf" } else if paid { "Bezahlt" } else { "Offen" };
+                                                                                let effective_total = invoice.total_cents - invoice.credited_cents;
+                                                                                let paid = invoice.paid_cents >= effective_total;
+                                                                                let status_cls = if invoice.is_cancelation { "tag is-info is-light" } else if invoice.is_canceled { "tag is-danger is-light" } else if !invoice.committed { "tag is-warning is-light" } else if paid { "tag is-success is-light" } else { "tag is-info is-light" };
+                                                                                let status_lbl = if invoice.is_cancelation { "Storno" } else if invoice.is_canceled { "Storniert" } else if !invoice.committed { "Entwurf" } else if paid { "Bezahlt" } else { "Offen" };
                                                                                 view! {
-                                                                                    <div class="is-flex is-justify-content-space-between is-align-items-center p-2 mb-1 has-background-white-bis rounded is-size-7">
+                                                                                    <div class="crm-record is-flex is-justify-content-space-between is-align-items-center p-2 mb-1 is-size-7">
                                                                                         <div style="min-width: 0; flex: 1; padding-right: 0.5rem;">
                                                                                             <div class="has-text-weight-semibold" style="white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">
                                                                                                 {number_str} " · " {title_str}
@@ -726,10 +737,10 @@ pub fn ContactsPage() -> impl IntoView {
 
                                                                 <div class="is-flex is-justify-content-space-between is-align-items-center mb-3">
                                                                     <h4 class="title is-6 mb-0"><span class="icon mr-1"><i class="mdi mdi-briefcase-outline"></i></span>"Aufträge"</h4>
-                                                                    <a class="is-size-7" href=format!("/engagements?customer_id={}", customer_id)>"Alle anzeigen »"</a>
+                                                                    <a class="crm-section-link is-size-7" href=format!("/engagements?customer_id={}", customer_id)>"Alle anzeigen"<i class="mdi mdi-arrow-right"></i></a>
                                                                 </div>
                                                                 {if summary.engagements.is_empty() {
-                                                                    view! { <p class="text-muted is-size-7 p-3 has-background-white-bis rounded">"Keine Aufträge für diesen Kunden."</p> }.into_view()
+                                                                    view! { <p class="crm-empty text-muted is-size-7 p-3">"Keine Aufträge für diesen Kunden."</p> }.into_view()
                                                                 } else {
                                                                     view! {
                                                                         <div style="max-height: 200px; overflow-y: auto; padding-right: 0.25rem;">
@@ -738,7 +749,7 @@ pub fn ContactsPage() -> impl IntoView {
                                                                                 let title_str = engagement.title.clone();
                                                                                 let desc_str = engagement.description.clone().unwrap_or_default();
                                                                                 view! {
-                                                                                    <div class="is-flex is-justify-content-space-between is-align-items-center p-2 mb-1 has-background-white-bis rounded is-size-7">
+                                                                                    <div class="crm-record is-flex is-justify-content-space-between is-align-items-center p-2 mb-1 is-size-7">
                                                                                         <div style="min-width: 0; flex: 1; padding-right: 0.5rem;">
                                                                                             <div class="has-text-weight-semibold" style="white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">
                                                                                                 {title_str}

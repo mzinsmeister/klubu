@@ -17,6 +17,7 @@ mod dbcopy;
 use dbcopy::{connect_pool, migrator_for, run_db_migration, shutdown_pool};
 
 mod mail;
+mod mcp;
 
 const DEFAULT_DATABASE_URL: &str = "sqlite://klubu.db?mode=rwc";
 
@@ -316,12 +317,30 @@ async fn main() {
         .allow_methods(Any)
         .allow_headers(Any);
 
-    let app = Router::new()
+    let mut app = Router::new()
         .route("/api/*fn_name", post(handle_server_fns))
         .route("/api/pdf/invoice/:id", get(download_invoice_pdf))
         .route("/api/pdf/offer/:id", get(download_offer_pdf))
         .route("/api/documents/:id", get(download_document))
-        .layer(cors)
+        .layer(cors);
+
+    // The MCP endpoint is nested after the CORS layer on purpose: it enforces
+    // its own Origin allowlist and must not be relaxed by the permissive
+    // web-app CORS policy. `auth_middleware` only guards `/api` paths, so
+    // `/mcp` relies solely on its bearer token.
+    match mcp::router(repo.clone()) {
+        Ok(Some(mcp_router)) => {
+            println!("MCP endpoint enabled at /mcp");
+            app = app.nest_service("/mcp", mcp_router);
+        }
+        Ok(None) => println!("MCP endpoint disabled (set KLUBU_MCP_TOKEN to enable)"),
+        Err(error) => {
+            eprintln!("{error}");
+            std::process::exit(1);
+        }
+    }
+
+    let app = app
         .fallback_service(
             ServeDir::new(&dist_dir).not_found_service(tower::service_fn(|_req| async {
                 let dist_dir = get_dist_dir();

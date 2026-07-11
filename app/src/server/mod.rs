@@ -42,6 +42,9 @@ pub fn register_server_fns() {
     let _ = leptos::server_fn::axum::register_explicit::<RestoreContact>();
     let _ = leptos::server_fn::axum::register_explicit::<GetInvoices>();
     let _ = leptos::server_fn::axum::register_explicit::<GetInvoice>();
+    let _ = leptos::server_fn::axum::register_explicit::<GetInvoiceTextDefaults>();
+    let _ = leptos::server_fn::axum::register_explicit::<GetNotifications>();
+    let _ = leptos::server_fn::axum::register_explicit::<CreateInvoiceReminder>();
     let _ = leptos::server_fn::axum::register_explicit::<SaveInvoice>();
     let _ = leptos::server_fn::axum::register_explicit::<CancelInvoice>();
     let _ = leptos::server_fn::axum::register_explicit::<AddInvoicePayment>();

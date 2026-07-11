@@ -92,6 +92,7 @@ pub fn App() -> impl IntoView {
                                         <li><A href="/" exact=true>"Übersicht"</A></li>
                                         <li><A href="/contacts">"Kontakte"</A></li>
                                         <li><A href="/invoices">"Rechnungen"</A></li>
+                                        <li><A href="/notifications"><span class="icon mr-1"><i class="mdi mdi-bell-outline"></i></span>"Benachrichtigungen"</A></li>
                                         <li><A href="/offers">"Angebote"</A></li>
                                         <li><A href="/receipts">"Belege"</A></li>
                                         <li><A href="/documents">"Dokumente"</A></li>
@@ -126,6 +127,7 @@ pub fn App() -> impl IntoView {
                                     <Route path="contacts/:id" view=ContactsPage />
                                     <Route path="invoices" view=InvoicesPage />
                                     <Route path="invoices/:id" view=InvoicesPage />
+                                    <Route path="notifications" view=NotificationsPage />
                                     <Route path="offers" view=OffersPage />
                                     <Route path="offers/:id" view=OffersPage />
                                     <Route path="receipts" view=ReceiptsPage />

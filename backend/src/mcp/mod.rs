@@ -1,4 +1,15 @@
-use crate::{protocol, tools::ToolService};
+//! Model Context Protocol endpoint, served by the main backend under `/mcp`.
+//!
+//! The endpoint is mounted only when `KLUBU_MCP_TOKEN` is set. It shares the
+//! backend's database pool, migrations, and shutdown path, so there is no
+//! second binary that could run a different schema version against the same
+//! database. Authentication is a static bearer token, deliberately separate
+//! from the web app's session cookies: the token is bound server-side to one
+//! Klubu user (`KLUBU_MCP_USER`, or the single existing user).
+
+mod protocol;
+mod tools;
+
 use axum::{
     body::{Body, Bytes},
     extract::{DefaultBodyLimit, State},
@@ -9,16 +20,106 @@ use axum::{
     Router,
 };
 use serde_json::{json, Value};
-use std::{collections::HashSet, net::SocketAddr, sync::Arc};
+use sqlx::Row;
+use std::{collections::HashSet, sync::Arc};
 
-const DEFAULT_BIND: &str = "127.0.0.1:8090";
 const DEFAULT_BODY_LIMIT_MIB: usize = 75;
 
 #[derive(Clone)]
-struct HttpState {
-    service: ToolService,
+struct McpState {
+    repository: app::db::ActiveRepository,
+    /// `KLUBU_MCP_USER`, read once at startup. `None` means "the single
+    /// existing user"; the actor is re-resolved on every request so the
+    /// endpoint works as soon as the admin account has been initialized.
+    configured_user: Option<String>,
     bearer_token: Arc<str>,
     allowed_origins: Arc<HashSet<String>>,
+}
+
+/// Builds the `/mcp` router, or `None` when `KLUBU_MCP_TOKEN` is not set.
+/// A token that is set but too short is a hard startup error rather than a
+/// silently disabled endpoint.
+pub fn router(repository: app::db::ActiveRepository) -> Result<Option<Router>, String> {
+    let Ok(bearer_token) = std::env::var("KLUBU_MCP_TOKEN") else {
+        return Ok(None);
+    };
+    if bearer_token.len() < 32 {
+        return Err(
+            "KLUBU_MCP_TOKEN must contain at least 32 characters of random data".to_string(),
+        );
+    }
+
+    let configured_user = std::env::var("KLUBU_MCP_USER")
+        .ok()
+        .map(|value| value.trim().to_string())
+        .filter(|value| !value.is_empty());
+
+    let body_limit_mib = std::env::var("KLUBU_MCP_BODY_LIMIT_MIB")
+        .ok()
+        .and_then(|value| value.parse::<usize>().ok())
+        .unwrap_or(DEFAULT_BODY_LIMIT_MIB)
+        .clamp(1, 512);
+
+    let state = McpState {
+        repository,
+        configured_user,
+        bearer_token: Arc::from(bearer_token),
+        allowed_origins: Arc::new(allowed_origins()),
+    };
+    Ok(Some(
+        Router::new()
+            .route("/", post(post_mcp).get(get_mcp).delete(delete_mcp))
+            .layer(DefaultBodyLimit::max(body_limit_mib * 1024 * 1024))
+            .layer(middleware::from_fn_with_state(
+                state.clone(),
+                authorize_and_validate_origin,
+            ))
+            .with_state(state),
+    ))
+}
+
+fn allowed_origins() -> HashSet<String> {
+    std::env::var("KLUBU_MCP_ALLOWED_ORIGINS")
+        .unwrap_or_default()
+        .split(',')
+        .map(str::trim)
+        .filter(|origin| !origin.is_empty())
+        .map(str::to_string)
+        .collect()
+}
+
+/// The Klubu identity all MCP writes are attributed to. Resolved per request:
+/// the token itself carries no user, and validating against the live `users`
+/// table means renames and the initial admin setup take effect immediately.
+async fn resolve_actor(state: &McpState) -> Result<String, String> {
+    let pool = state.repository.pool();
+
+    if let Some(username) = &state.configured_user {
+        let exists: i64 =
+            sqlx::query_scalar("SELECT CAST(COUNT(*) AS BIGINT) FROM users WHERE username = $1")
+                .bind(username)
+                .fetch_one(pool)
+                .await
+                .map_err(|error| format!("Could not validate KLUBU_MCP_USER: {error}"))?;
+        return (exists == 1)
+            .then(|| username.clone())
+            .ok_or_else(|| "KLUBU_MCP_USER does not name an existing Klubu user".to_string());
+    }
+
+    let rows = sqlx::query("SELECT username FROM users ORDER BY id LIMIT 2")
+        .fetch_all(pool)
+        .await
+        .map_err(|error| format!("Could not read Klubu users: {error}"))?;
+    match rows.as_slice() {
+        [row] => row
+            .try_get::<String, _>("username")
+            .map_err(|error| format!("Could not decode Klubu username: {error}")),
+        [] => Err("Klubu has no user yet. Initialize the admin account in the web app first.".into()),
+        _ => Err(
+            "Klubu has multiple users. Set KLUBU_MCP_USER to the user whose identity and mailbox the MCP server should use."
+                .into(),
+        ),
+    }
 }
 
 fn response(status: StatusCode, content_type: Option<&str>, body: Body) -> Response<Body> {
@@ -66,7 +167,7 @@ fn bearer(headers: &HeaderMap) -> Option<&str> {
 }
 
 async fn authorize_and_validate_origin(
-    State(state): State<HttpState>,
+    State(state): State<McpState>,
     request: Request<Body>,
     next: Next,
 ) -> Response<Body> {
@@ -109,7 +210,7 @@ async fn authorize_and_validate_origin(
 }
 
 async fn post_mcp(
-    State(state): State<HttpState>,
+    State(state): State<McpState>,
     headers: HeaderMap,
     body: Bytes,
 ) -> Response<Body> {
@@ -166,7 +267,7 @@ async fn post_mcp(
         .and_then(|value| value.to_str().ok());
     if !is_initialize
         && requested_version
-            .map(|version| !matches!(version, "2025-03-26" | "2025-06-18" | "2025-11-25"))
+            .map(|version| !protocol::SUPPORTED_PROTOCOLS.contains(&version))
             .unwrap_or(false)
     {
         return response(
@@ -175,21 +276,12 @@ async fn post_mcp(
             Body::from("Unsupported MCP-Protocol-Version"),
         );
     }
-    if is_initialize
-        && message
-            .get("params")
-            .and_then(|params| params.get("protocolVersion"))
-            .and_then(Value::as_str)
-            == Some("2024-11-05")
-    {
-        return response(
-            StatusCode::BAD_REQUEST,
-            Some("text/plain;charset=utf-8"),
-            Body::from("HTTP mode requires MCP protocol 2025-03-26 or newer"),
-        );
-    }
 
-    match protocol::handle_message(&state.service, message).await {
+    let service = resolve_actor(&state)
+        .await
+        .map(|actor| tools::ToolService::new(state.repository.clone(), actor));
+
+    match protocol::handle_message(&service, message).await {
         Some(result) => json_response(StatusCode::OK, &result),
         None => response(StatusCode::ACCEPTED, None, Body::empty()),
     }
@@ -210,67 +302,6 @@ async fn delete_mcp() -> impl IntoResponse {
         StatusCode::METHOD_NOT_ALLOWED,
         "This Klubu MCP server does not allocate HTTP sessions",
     )
-}
-
-fn allowed_origins() -> HashSet<String> {
-    std::env::var("KLUBU_MCP_ALLOWED_ORIGINS")
-        .unwrap_or_default()
-        .split(',')
-        .map(str::trim)
-        .filter(|origin| !origin.is_empty())
-        .map(str::to_string)
-        .collect()
-}
-
-pub async fn serve(service: ToolService) -> Result<(), String> {
-    let bearer_token = std::env::var("KLUBU_MCP_TOKEN")
-        .map_err(|_| "KLUBU_MCP_TOKEN is required in HTTP mode".to_string())?;
-    if bearer_token.len() < 32 {
-        return Err(
-            "KLUBU_MCP_TOKEN must contain at least 32 characters of random data".to_string(),
-        );
-    }
-
-    let bind = std::env::var("KLUBU_MCP_BIND").unwrap_or_else(|_| DEFAULT_BIND.to_string());
-    let address: SocketAddr = bind
-        .parse()
-        .map_err(|error| format!("Invalid KLUBU_MCP_BIND '{bind}': {error}"))?;
-    if !address.ip().is_loopback()
-        && !std::env::var("KLUBU_MCP_ALLOW_NON_LOOPBACK")
-            .map(|value| matches!(value.to_ascii_lowercase().as_str(), "1" | "true" | "yes"))
-            .unwrap_or(false)
-    {
-        return Err(format!(
-            "Refusing non-loopback KLUBU_MCP_BIND '{address}'. Put the server behind a local HTTPS reverse proxy, or set KLUBU_MCP_ALLOW_NON_LOOPBACK=true only when a trusted private network or TLS proxy protects the connection."
-        ));
-    }
-
-    let body_limit_mib = std::env::var("KLUBU_MCP_BODY_LIMIT_MIB")
-        .ok()
-        .and_then(|value| value.parse::<usize>().ok())
-        .unwrap_or(DEFAULT_BODY_LIMIT_MIB)
-        .clamp(1, 512);
-    let state = HttpState {
-        service,
-        bearer_token: Arc::from(bearer_token),
-        allowed_origins: Arc::new(allowed_origins()),
-    };
-    let router = Router::new()
-        .route("/mcp", post(post_mcp).get(get_mcp).delete(delete_mcp))
-        .layer(DefaultBodyLimit::max(body_limit_mib * 1024 * 1024))
-        .layer(middleware::from_fn_with_state(
-            state.clone(),
-            authorize_and_validate_origin,
-        ))
-        .with_state(state);
-
-    let listener = tokio::net::TcpListener::bind(address)
-        .await
-        .map_err(|error| format!("Could not bind Klubu MCP HTTP server to {address}: {error}"))?;
-    eprintln!("Klubu MCP Streamable HTTP endpoint listening on http://{address}/mcp");
-    axum::serve(listener, router)
-        .await
-        .map_err(|error| format!("Klubu MCP HTTP server failed: {error}"))
 }
 
 #[cfg(test)]

@@ -506,7 +506,19 @@ pub const TEXT_PLACEHOLDERS: &[(&str, &str)] = &[
     ("{{kunde}}", "Name des Empfängers"),
     ("{{summe}}", "Gesamtbetrag, z. B. 1.234,56 €"),
     ("{{gueltig_bis}}", "Gültigkeitsdatum (nur Angebote)"),
+    (
+        "{{referenz_rechnung_nr}}",
+        "Rechnungsnummer der stornierten Originalrechnung (nur Storno)",
+    ),
 ];
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct DocumentTextDefaults {
+    pub title: String,
+    pub subject: String,
+    pub header: String,
+    pub footer: String,
+}
 
 /// Substitutes `{{key}}` occurrences from `vars`.
 ///
@@ -589,6 +601,31 @@ impl PaymentStatus {
 /// Sum of all tranches, corrections included (they are negative).
 pub fn paid_cents(payments: &[Payment]) -> i64 {
     payments.iter().map(|p| p.amount_cents).sum()
+}
+
+pub fn discount_taken_cents(
+    total_cents: i64,
+    credited_cents: i64,
+    basis_points: i64,
+    deadline: Option<NaiveDate>,
+    payments: &[Payment],
+) -> i64 {
+    let Some(deadline) = deadline else { return 0 };
+    if basis_points <= 0 || basis_points >= 10_000 {
+        return 0;
+    }
+    let base = (total_cents - credited_cents).max(0);
+    let discount = (base * basis_points + 5_000) / 10_000;
+    let received_in_time: i64 = payments
+        .iter()
+        .filter(|payment| payment.date <= deadline)
+        .map(|payment| payment.amount_cents)
+        .sum();
+    if received_in_time >= base - discount {
+        discount
+    } else {
+        0
+    }
 }
 
 /// The date the cumulative sum first covers `total_cents`, or `None` while the
@@ -690,12 +727,32 @@ pub struct Invoice {
     pub payments: Vec<Payment>,
     pub invoice_date: Option<NaiveDate>,
     #[serde(default)]
+    pub due_date: Option<NaiveDate>,
+    #[serde(default)]
+    pub discount_date: Option<NaiveDate>,
+    /// Skonto percentage in basis points: 200 = 2.00%.
+    #[serde(default)]
+    pub discount_basis_points: i64,
+    /// Skonto amount recognized because sufficient payment arrived by its deadline.
+    #[serde(default)]
+    pub discount_taken_cents: i64,
+    #[serde(default)]
+    pub reminders: Vec<InvoiceReminder>,
+    #[serde(default)]
     pub is_canceled: bool,
     #[serde(default)]
     pub is_cancelation: bool,
+    /// Standalone Gutschrift, independent from cancellation documents.
+    #[serde(default)]
+    pub is_credit_note: bool,
     pub corrected_invoice_id: Option<i64>,
     #[serde(default)]
+    pub corrected_invoice_number: Option<i64>,
+    #[serde(default)]
     pub cancellation_invoice_id: Option<i64>,
+    /// Amount already credited against this invoice by committed cancellation documents.
+    #[serde(default)]
+    pub credited_cents: i64,
     pub customer_contact: Option<Contact>,
     pub document: Option<Document>,
     pub recipient: Option<Recipient>,
@@ -712,6 +769,14 @@ pub struct InvoiceListItem {
     pub id: i64,
     pub created_timestamp: DateTime<Utc>,
     pub invoice_date: Option<NaiveDate>,
+    #[serde(default)]
+    pub due_date: Option<NaiveDate>,
+    #[serde(default)]
+    pub discount_date: Option<NaiveDate>,
+    #[serde(default)]
+    pub discount_basis_points: i64,
+    #[serde(default)]
+    pub discount_taken_cents: i64,
     pub customer_contact: Option<Contact>,
     /// Date the cumulative payments first covered the total; `None` while short.
     pub paid_date: Option<NaiveDate>,
@@ -722,6 +787,8 @@ pub struct InvoiceListItem {
     pub is_canceled: bool,
     #[serde(default)]
     pub is_cancelation: bool,
+    #[serde(default)]
+    pub is_credit_note: bool,
     pub subject: Option<String>,
     /// Invoiced amount, so the list can show a settlement state without
     /// fetching every invoice in full.
@@ -730,15 +797,47 @@ pub struct InvoiceListItem {
     /// Sum of all tranches booked against it, corrections included.
     #[serde(default)]
     pub paid_cents: i64,
+    /// Positive amount credited against the original invoice. Zero on credit notes.
+    #[serde(default)]
+    pub credited_cents: i64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct InvoiceReminder {
+    pub id: i64,
+    pub invoice_id: i64,
+    pub level: i64,
+    pub reminder_date: NaiveDate,
+    pub fee_cents: i64,
+    pub note: String,
+    pub created_timestamp: DateTime<Utc>,
+    pub sent_timestamp: Option<DateTime<Utc>>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct Notification {
+    pub kind: String,
+    pub title: String,
+    pub detail: String,
+    pub href: String,
+    pub date: NaiveDate,
+    pub amount_cents: Option<i64>,
 }
 
 impl InvoiceListItem {
     pub fn payment_status(&self) -> PaymentStatus {
-        payment_status(self.total_cents, self.paid_cents)
+        if self.is_cancelation {
+            PaymentStatus::Paid
+        } else {
+            payment_status(
+                self.total_cents - self.credited_cents - self.discount_taken_cents,
+                self.paid_cents,
+            )
+        }
     }
 
     pub fn outstanding_cents(&self) -> i64 {
-        self.total_cents - self.paid_cents
+        self.total_cents - self.credited_cents - self.discount_taken_cents - self.paid_cents
     }
 }
 

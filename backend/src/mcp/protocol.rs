@@ -1,9 +1,11 @@
-use crate::tools::{tool_definitions, ToolService, OPERATING_INSTRUCTIONS};
+use super::tools::{tool_definitions, ToolService, OPERATING_INSTRUCTIONS};
 use serde_json::{json, Value};
-use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 
 const LATEST_PROTOCOL: &str = "2025-11-25";
-const SUPPORTED_PROTOCOLS: &[&str] = &["2025-11-25", "2025-06-18", "2025-03-26", "2024-11-05"];
+// Streamable HTTP is the only transport, and it entered the spec with
+// 2025-03-26. A client requesting an older version gets the newest one
+// offered back per the negotiation rules and can disconnect if incompatible.
+pub(crate) const SUPPORTED_PROTOCOLS: &[&str] = &["2025-11-25", "2025-06-18", "2025-03-26"];
 
 fn success(id: Value, result: Value) -> Value {
     json!({"jsonrpc": "2.0", "id": id, "result": result})
@@ -74,7 +76,10 @@ fn resource_list() -> Value {
     })
 }
 
-async fn handle_request(service: &ToolService, request: Value) -> Option<Value> {
+/// `service` is `Err` when no Klubu actor could be resolved yet (for example
+/// before the admin account exists). The handshake and discovery methods must
+/// still work then; only the methods that execute as a user report the error.
+async fn handle_request(service: &Result<ToolService, String>, request: Value) -> Option<Value> {
     let Some(object) = request.as_object() else {
         return Some(error(Value::Null, -32600, "Invalid Request", None));
     };
@@ -94,6 +99,10 @@ async fn handle_request(service: &ToolService, request: Value) -> Option<Value> 
         Some("ping") => success(id, json!({})),
         Some("tools/list") => success(id, json!({"tools": tool_definitions()})),
         Some("tools/call") => {
+            let service = match service {
+                Ok(service) => service,
+                Err(message) => return Some(error(id, -32000, message.clone(), None)),
+            };
             let Some(name) = params.get("name").and_then(Value::as_str) else {
                 return Some(error(id, -32602, "Missing tool name", None));
             };
@@ -125,6 +134,10 @@ async fn handle_request(service: &ToolService, request: Value) -> Option<Value> 
         }
         Some("resources/list") => success(id, resource_list()),
         Some("resources/read") => {
+            let service = match service {
+                Ok(service) => service,
+                Err(message) => return Some(error(id, -32000, message.clone(), None)),
+            };
             let uri = params.get("uri").and_then(Value::as_str).unwrap_or("");
             match service.read_resource(uri).await {
                 Ok((mime_type, text)) => success(
@@ -139,7 +152,10 @@ async fn handle_request(service: &ToolService, request: Value) -> Option<Value> 
     })
 }
 
-pub(crate) async fn handle_message(service: &ToolService, message: Value) -> Option<Value> {
+pub(crate) async fn handle_message(
+    service: &Result<ToolService, String>,
+    message: Value,
+) -> Option<Value> {
     if let Some(batch) = message.as_array() {
         if batch.is_empty() {
             return Some(error(Value::Null, -32600, "Invalid Request", None));
@@ -154,48 +170,6 @@ pub(crate) async fn handle_message(service: &ToolService, message: Value) -> Opt
     } else {
         handle_request(service, message).await
     }
-}
-
-pub async fn serve(service: ToolService) -> Result<(), String> {
-    let stdin = tokio::io::stdin();
-    let mut lines = BufReader::new(stdin).lines();
-    let mut stdout = tokio::io::stdout();
-
-    while let Some(line) = lines
-        .next_line()
-        .await
-        .map_err(|error| format!("Could not read MCP stdin: {error}"))?
-    {
-        if line.trim().is_empty() {
-            continue;
-        }
-        let response = match serde_json::from_str::<Value>(&line) {
-            Ok(message) => handle_message(&service, message).await,
-            Err(parse_error) => Some(error(
-                Value::Null,
-                -32700,
-                "Parse error",
-                Some(json!({"detail": parse_error.to_string()})),
-            )),
-        };
-        if let Some(response) = response {
-            let encoded = serde_json::to_vec(&response)
-                .map_err(|error| format!("Could not encode MCP response: {error}"))?;
-            stdout
-                .write_all(&encoded)
-                .await
-                .map_err(|error| format!("Could not write MCP stdout: {error}"))?;
-            stdout
-                .write_all(b"\n")
-                .await
-                .map_err(|error| format!("Could not delimit MCP response: {error}"))?;
-            stdout
-                .flush()
-                .await
-                .map_err(|error| format!("Could not flush MCP stdout: {error}"))?;
-        }
-    }
-    Ok(())
 }
 
 #[cfg(test)]

@@ -48,10 +48,41 @@ pub fn EmailPage() -> impl IntoView {
     let (engagement_choice, set_engagement_choice) = create_signal(String::new());
     let (error, set_error) = create_signal(Option::<String>::None);
     let (notice, set_notice) = create_signal(Option::<String>::None);
+    let (customer_filter, set_customer_filter) = create_signal(Option::<i64>::None);
+    let (search, set_search) = create_signal(String::new());
+
+    create_effect(move |_| {
+        if let Some(window) = web_sys::window() {
+            if let Ok(params) = web_sys::UrlSearchParams::new_with_str(
+                &window.location().search().unwrap_or_default(),
+            ) {
+                set_customer_filter.set(
+                    params
+                        .get("customer_id")
+                        .and_then(|value| value.parse().ok()),
+                );
+                if params.get("compose").as_deref() == Some("1") {
+                    set_compose_open.set(true);
+                    if let Some(address) = params.get("to") {
+                        set_to.set(address);
+                    }
+                }
+            }
+        }
+    });
 
     let messages = create_resource(
-        move || (mailbox.get(), refresh.get()),
-        |(mailbox, _)| async move { list_emails(mailbox, 0, PAGE_SIZE).await },
+        move || {
+            (
+                mailbox.get(),
+                refresh.get(),
+                customer_filter.get(),
+                search.get(),
+            )
+        },
+        |(mailbox, _, customer_id, search)| async move {
+            list_emails(mailbox, 0, PAGE_SIZE, customer_id, Some(search)).await
+        },
     );
     let selected = create_resource(
         move || selected_id.get(),
@@ -246,19 +277,31 @@ pub fn EmailPage() -> impl IntoView {
 
             <div class="columns is-split email-layout">
                 <div class="column">
-                    <div class="box">
-                        <div class="buttons mb-3">
+                    <div class="box email-mailbox">
+                        <div class="email-toolbar mb-3">
+                          <div class="buttons mb-0">
                             <button class="button" class:is-link=move || mailbox.get() == "INBOX" on:click=move |_| { set_mailbox.set("INBOX".to_string()); set_selected_id.set(None); }>
                                 <span class="icon mr-1"><i class="mdi mdi-inbox"></i></span>"Posteingang"
                             </button>
                             <button class="button" class:is-link=move || mailbox.get() == "Sent" on:click=move |_| { set_mailbox.set("Sent".to_string()); set_selected_id.set(None); }>
                                 <span class="icon mr-1"><i class="mdi mdi-send-check-outline"></i></span>"Gesendet"
                             </button>
+                          </div>
+                          <div class="control has-icons-left email-search">
+                            <input class="input is-small" type="search" placeholder="Absender, Empfänger, Betreff …" prop:value=search on:input=move |event| set_search.set(event_target_value(&event)) />
+                            <span class="icon is-left"><i class="mdi mdi-magnify"></i></span>
+                          </div>
                         </div>
+                        {move || customer_filter.get().map(|_| view! {
+                            <div class="email-filter-banner mb-3">
+                                <span><i class="mdi mdi-account-filter-outline mr-1"></i>"Nur E-Mails dieses Kontakts"</span>
+                                <button class="button is-small is-light" on:click=move |_| set_customer_filter.set(None)>"Filter entfernen"</button>
+                            </div>
+                        })}
                         <Suspense fallback=move || view! { <p class="text-muted">"Lade Postfach…"</p> }>
                             {move || messages.get().map(|result| match result {
                                 Err(load_error) => view! { <div class="message is-danger"><div class="message-body">{load_error.to_string()}</div></div> }.into_view(),
-                                Ok(page) if page.items.is_empty() => view! { <p class="text-muted">"Keine E-Mails in diesem Postfach."</p> }.into_view(),
+                                Ok(page) if page.items.is_empty() => view! { <div class="crm-empty text-muted p-4 has-text-centered"><i class="mdi mdi-email-search-outline is-size-4"></i><p class="mt-2">"Keine passenden E-Mails gefunden."</p></div> }.into_view(),
                                 Ok(page) => view! {
                                     <div class="email-list">
                                         {page.items.into_iter().map(|message| {
@@ -273,7 +316,10 @@ pub fn EmailPage() -> impl IntoView {
                                                         <span class="text-muted is-size-7">{timestamp(&message.timestamp)}</span>
                                                     </div>
                                                     <div class:has-text-weight-bold=unread>{subject_text}</div>
-                                                    <div class="text-muted is-size-7 email-preview">{message.message_id.clone()}</div>
+                                                    <div class="email-list-meta mt-1">
+                                                        {message.customer_name.clone().map(|name| view! { <span class="tag">{name}</span> })}
+                                                        <span class="text-muted is-size-7">{format!("{} Anhänge", message.attachment_count)}</span>
+                                                    </div>
                                                     {(!message.delivery_status.eq_ignore_ascii_case("sent") && mailbox.get_untracked() == "Sent").then(|| view! { <span class="tag is-warning mt-2">{message.delivery_status.clone()}</span> })}
                                                 </div>
                                             }

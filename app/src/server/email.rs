@@ -713,14 +713,20 @@ async fn list_for_user(
     mailbox: &str,
     offset: u32,
     limit: u32,
+    customer_contact_id: Option<i64>,
+    search: Option<&str>,
 ) -> Result<Page<EmailSummary>, ServerFnError> {
     let mailbox = mailbox_name(mailbox)?;
     let limit = limit.clamp(1, MAX_PAGE_SIZE);
+    let search = search.map(str::trim).filter(|value| !value.is_empty());
+    let search_pattern = search.map(|value| format!("%{}%", value.to_lowercase()));
     let rows = sqlx::query(
-        "SELECT mail.id, mail.mailbox, mail.message_id, mail.sender, mail.recipients, mail.subject, mail.sent_timestamp, mail.archived_timestamp, mail.flags, mail.raw_size, mail.delivery_status, mail.customer_contact_id, c.name AS customer_name, (SELECT COUNT(*) FROM mail_attachment a WHERE a.mail_message_id = mail.id) AS attachment_count FROM mail_message mail LEFT JOIN contact c ON c.id = mail.customer_contact_id WHERE mail.owner_username = $1 AND mail.mailbox = $2 AND mail.deleted_timestamp IS NULL ORDER BY mail.id DESC LIMIT $3 OFFSET $4",
+        "SELECT mail.id, mail.mailbox, mail.message_id, mail.sender, mail.recipients, mail.subject, mail.sent_timestamp, mail.archived_timestamp, mail.flags, mail.raw_size, mail.delivery_status, mail.customer_contact_id, c.name AS customer_name, (SELECT COUNT(*) FROM mail_attachment a WHERE a.mail_message_id = mail.id) AS attachment_count FROM mail_message mail LEFT JOIN contact c ON c.id = mail.customer_contact_id WHERE mail.owner_username = $1 AND mail.mailbox = $2 AND mail.deleted_timestamp IS NULL AND ($3 IS NULL OR mail.customer_contact_id = $3) AND ($4 IS NULL OR LOWER(mail.sender) LIKE $4 OR LOWER(mail.recipients) LIKE $4 OR LOWER(mail.subject) LIKE $4 OR LOWER(COALESCE(c.name, '')) LIKE $4) ORDER BY mail.id DESC LIMIT $5 OFFSET $6",
     )
     .bind(owner)
     .bind(&mailbox)
+    .bind(customer_contact_id)
+    .bind(search_pattern)
     .bind(i64::from(limit) + 1)
     .bind(i64::from(offset))
     .fetch_all(repo.pool())
@@ -1420,17 +1426,28 @@ pub async fn list_emails(
     mailbox: String,
     offset: u32,
     limit: u32,
+    customer_contact_id: Option<i64>,
+    search: Option<String>,
 ) -> Result<Page<EmailSummary>, ServerFnError> {
     #[cfg(feature = "ssr")]
     {
         let repo = use_context::<ActiveRepository>()
             .ok_or_else(|| ServerFnError::new("Repository not found"))?;
         let owner = current_user()?;
-        list_for_user(&repo, &owner, &mailbox, offset, limit).await
+        list_for_user(
+            &repo,
+            &owner,
+            &mailbox,
+            offset,
+            limit,
+            customer_contact_id,
+            search.as_deref(),
+        )
+        .await
     }
     #[cfg(not(feature = "ssr"))]
     {
-        let _ = (mailbox, offset, limit);
+        let _ = (mailbox, offset, limit, customer_contact_id, search);
         Err(ServerFnError::new("Client side DB access not supported"))
     }
 }

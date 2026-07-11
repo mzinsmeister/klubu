@@ -117,6 +117,42 @@ pub(crate) fn get_prop(
 }
 
 #[cfg(feature = "ssr")]
+pub fn load_document_text_defaults(kind: &str) -> DocumentTextDefaults {
+    let props = load_props();
+    let (prefix, env_prefix, fallback) = match kind {
+        "credit_note" => ("klubu.documents.creditNote", "KLUBU_CREDIT_NOTE", ("Gutschrift", "Gutschrift", "Wir schreiben Ihnen die nachfolgend aufgeführten Beträge gut.", "Der Gutschriftbetrag wird Ihnen zeitnah erstattet.")),
+        "cancellation" => ("klubu.documents.cancellation", "KLUBU_CANCELLATION", ("Stornorechnung", "Stornierung der Rechnung Nr. {{referenz_rechnung_nr}}", "Hiermit stornieren wir die Rechnung Nr. {{referenz_rechnung_nr}} vollständig.", "Dieses Stornodokument hebt die Rechnung Nr. {{referenz_rechnung_nr}} vollständig auf.")),
+        _ => ("klubu.documents.invoice", "KLUBU_INVOICE", ("Rechnung", "Rechnung", "Vielen Dank für Ihre Bestellung.", "Bitte überweisen Sie den Betrag innerhalb von 14 Tagen.")),
+    };
+    DocumentTextDefaults {
+        title: get_prop(
+            &props,
+            &format!("{prefix}.title"),
+            &format!("{env_prefix}_TITLE"),
+            fallback.0,
+        ),
+        subject: get_prop(
+            &props,
+            &format!("{prefix}.subject"),
+            &format!("{env_prefix}_SUBJECT"),
+            fallback.1,
+        ),
+        header: get_prop(
+            &props,
+            &format!("{prefix}.header"),
+            &format!("{env_prefix}_HEADER"),
+            fallback.2,
+        ),
+        footer: get_prop(
+            &props,
+            &format!("{prefix}.footer"),
+            &format!("{env_prefix}_FOOTER"),
+            fallback.3,
+        ),
+    }
+}
+
+#[cfg(feature = "ssr")]
 pub fn load_config() -> AppConfig {
     let props = load_props();
     let get_prop = |key: &str, env_var: &str, default: &str| -> String {
@@ -308,10 +344,15 @@ const DEFAULT_INVOICE_TEMPLATE: &str = r#"
         [Kundennummer:], [#if invoice.customer_contact != none [#invoice.customer_contact.id] else [-]],
         [Rechnungsnummer:], [#if invoice.invoice_number != none [#invoice.invoice_number] else [ENTWURF]],
         [Rechnungsdatum:], [#format-date(invoice.invoice_date)],
+        ..if invoice.corrected_invoice_number != none { ([Originalrechnung Nr.:], [#invoice.corrected_invoice_number]) } else { () },
+        ..if invoice.is_cancelation or invoice.is_credit_note { () } else { ([Zahlbar bis:], [#format-date(invoice.due_date)]) },
       )
     ]
   ]
 )
+#if not invoice.is_credit_note and not invoice.is_cancelation and invoice.discount_date != none and invoice.discount_basis_points > 0 [
+  #align(right)[Skonto: #calc.round(invoice.discount_basis_points / 100, digits: 2)% bis #format-date(invoice.discount_date)]
+]
 
 #v(1cm)
 #text(12pt, weight: "bold")[#if invoice.subject != none [#invoice.subject] else [Rechnung]]
@@ -572,6 +613,13 @@ pub fn generate_invoice_typst(invoice: &Invoice) -> String {
                 ("{{datum}}", de_date(invoice.invoice_date)),
                 ("{{kunde}}", customer),
                 ("{{summe}}", format_euro(invoice.total_cents())),
+                (
+                    "{{referenz_rechnung_nr}}",
+                    invoice
+                        .corrected_invoice_number
+                        .map(|number| number.to_string())
+                        .unwrap_or_default(),
+                ),
             ],
         );
 
@@ -695,10 +743,18 @@ mod tests {
             invoice_number: Some(7),
             payments: vec![],
             invoice_date: NaiveDate::from_ymd_opt(2026, 7, 9),
+            due_date: None,
+            discount_date: None,
+            discount_basis_points: 0,
+            discount_taken_cents: 0,
+            reminders: vec![],
             is_canceled: false,
             is_cancelation: false,
+            is_credit_note: false,
             corrected_invoice_id: None,
+            corrected_invoice_number: None,
             cancellation_invoice_id: None,
+            credited_cents: 0,
             customer_contact: None,
             document: None,
             recipient: Some(Recipient {
@@ -769,5 +825,54 @@ mod tests {
         let markup = generate_invoice_typst(&inv);
         assert!(markup.contains("(Entwurf)"), "draft placeholder missing");
         assert!(!markup.contains("None"));
+    }
+
+    #[test]
+    fn cancellation_reference_placeholder_is_resolved() {
+        let mut invoice = sample_invoice();
+        invoice.is_cancelation = true;
+        invoice.corrected_invoice_id = Some(42);
+        invoice.corrected_invoice_number = Some(2026007);
+        invoice.header = Some("Storno zu {{referenz_rechnung_nr}}".to_string());
+        let markup = generate_invoice_typst(&invoice);
+        assert!(markup.contains("Storno zu 2026007"));
+        assert!(!markup.contains("{{referenz_rechnung_nr}}"));
+    }
+
+    /// Nothing is owed on a storno or a Gutschrift, so neither prints a due
+    /// date; a storno prints the original invoice number in its place. Compiles
+    /// each through the real Typst template, which is the only way to know the
+    /// conditional rows are valid markup.
+    #[test]
+    fn only_invoices_print_a_due_date() {
+        use_repo_templates();
+
+        let render = |invoice: &Invoice| {
+            crate::pdf::compiler::compile_typst_page_text(generate_invoice_typst(invoice))
+                .unwrap_or_else(|e| panic!("typst failed: {e}"))
+        };
+
+        let mut storno = sample_invoice();
+        storno.is_cancelation = true;
+        storno.corrected_invoice_id = Some(42);
+        storno.corrected_invoice_number = Some(2026007);
+        storno.due_date = NaiveDate::from_ymd_opt(2026, 8, 1);
+        let page = render(&storno);
+        assert!(!page.contains("Zahlbar bis"), "storno prints a due date");
+        assert!(page.contains("Originalrechnung Nr."));
+        assert!(page.contains("2026007"));
+
+        let mut credit_note = sample_invoice();
+        credit_note.is_credit_note = true;
+        let page = render(&credit_note);
+        assert!(!page.contains("Zahlbar bis"), "Gutschrift prints a due date");
+        assert!(!page.contains("Originalrechnung Nr."));
+
+        let mut plain = sample_invoice();
+        plain.due_date = NaiveDate::from_ymd_opt(2026, 8, 1);
+        let page = render(&plain);
+        assert!(page.contains("Zahlbar bis"));
+        assert!(page.contains("01.08.2026"));
+        assert!(!page.contains("Originalrechnung Nr."));
     }
 }

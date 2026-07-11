@@ -117,7 +117,11 @@ pub fn invoice_to_cii(invoice: &Invoice, ctx: &CiiContext) -> Result<String, Str
 
     // 380 = commercial invoice, 381 = credit note. A Stornorechnung carries
     // negated amounts, which only makes sense to a reader as a credit note.
-    let type_code = if invoice.is_cancelation { "381" } else { "380" };
+    let type_code = if invoice.is_cancelation || invoice.is_credit_note {
+        "381"
+    } else {
+        "380"
+    };
 
     let recipient = invoice
         .recipient

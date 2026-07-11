@@ -126,6 +126,8 @@ pub trait KlubuRepository: Send + Sync {
     fn cancel_invoice(
         &self,
         id: i64,
+        amount_cents: i64,
+        reason: String,
     ) -> impl std::future::Future<Output = Result<Invoice, ServerFnError>> + Send;
     fn add_invoice_payment(
         &self,
