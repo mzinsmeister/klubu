@@ -1,5 +1,6 @@
 pub mod ai;
 pub mod auth;
+pub mod chat;
 pub mod contacts;
 pub mod dashboard;
 pub mod documents;
@@ -17,6 +18,7 @@ pub mod db;
 // Re-export all server functions for convenience
 pub use ai::*;
 pub use auth::*;
+pub use chat::*;
 pub use contacts::*;
 pub use dashboard::*;
 pub use email::*;
@@ -74,6 +76,10 @@ pub fn register_server_fns() {
     let _ = leptos::server_fn::axum::register_explicit::<ExportOfferPdf>();
     let _ = leptos::server_fn::axum::register_explicit::<GetDashboardStats>();
     let _ = leptos::server_fn::axum::register_explicit::<GetAiStatus>();
+    let _ = leptos::server_fn::axum::register_explicit::<GetChatStatus>();
+    let _ = leptos::server_fn::axum::register_explicit::<StartChatRun>();
+    let _ = leptos::server_fn::axum::register_explicit::<PollChatRun>();
+    let _ = leptos::server_fn::axum::register_explicit::<ResolveChatConfirmation>();
     let _ = leptos::server_fn::axum::register_explicit::<PrefillReceipt>();
     let _ = leptos::server_fn::axum::register_explicit::<ListReports>();
     let _ = leptos::server_fn::axum::register_explicit::<RunReport>();

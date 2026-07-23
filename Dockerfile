@@ -11,8 +11,9 @@ RUN cargo build --release --package backend
 
 FROM debian:bookworm-slim AS runtime
 
+# python3 + numpy/pandas back the assistant's sandboxed run_python tool.
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends ca-certificates fontconfig poppler-utils tesseract-ocr tesseract-ocr-deu tesseract-ocr-eng \
+    && apt-get install -y --no-install-recommends ca-certificates fontconfig poppler-utils tesseract-ocr tesseract-ocr-deu tesseract-ocr-eng python3 python3-numpy python3-pandas \
     && rm -rf /var/lib/apt/lists/*
 
 RUN groupadd --gid 1000 klubu \

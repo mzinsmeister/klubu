@@ -22,3 +22,8 @@ sha2 = "0.10"
 base64 = "0.22"
 walkdir = "2.5"
 tower = { version = "0.4", features = ["util"] }
+# Assistant tools: streaming row fetch for the read-only SQL tool …
+futures-util = { version = "0.3", default-features = false, features = ["std"] }
+# … and the process-level sandbox of the Python tool (rlimits, scratch dir).
+libc = "0.2"
+tempfile = "3"

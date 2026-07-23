@@ -1053,3 +1053,69 @@ impl DashboardStats {
         self.revenue_cents - self.expenses_cents
     }
 }
+
+/// Whether the chat assistant is available and which tools it may use.
+/// The client hides the whole chat page unless `enabled` is true, so an
+/// instance without a configured LLM endpoint never shows the feature.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Default)]
+pub struct ChatStatus {
+    pub enabled: bool,
+    pub model: String,
+    pub sql_tool_enabled: bool,
+    pub python_tool_enabled: bool,
+}
+
+/// One prior turn of the conversation as the client remembers it. Tool calls
+/// and tool results are deliberately not part of the durable history: they are
+/// transient details of a single run and would bloat every follow-up prompt.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct ChatHistoryMessage {
+    /// "user" or "assistant".
+    pub role: String,
+    pub content: String,
+}
+
+/// One observable step of a chat run, in the order it happened. The client
+/// polls these and renders them incrementally.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(tag = "type", rename_all = "snake_case")]
+pub enum ChatEvent {
+    AssistantMessage {
+        text: String,
+    },
+    ToolCall {
+        call_id: String,
+        name: String,
+        title: String,
+        arguments: String,
+    },
+    ToolResult {
+        call_id: String,
+        ok: bool,
+        summary: String,
+    },
+    /// The run is paused until the user approves or rejects this call.
+    ConfirmationRequest {
+        call_id: String,
+        name: String,
+        title: String,
+        arguments: String,
+    },
+    ConfirmationResolved {
+        call_id: String,
+        approved: bool,
+    },
+    Error {
+        message: String,
+    },
+}
+
+/// Poll answer: everything that happened after the client's cursor.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Default)]
+pub struct ChatRunUpdate {
+    pub events: Vec<ChatEvent>,
+    /// Pass back as the next `cursor`.
+    pub next_cursor: u32,
+    /// True once the run has finished (successfully or not).
+    pub done: bool,
+}

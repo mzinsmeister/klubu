@@ -22,9 +22,11 @@ pub use typst_gen::{generate_invoice_typst, generate_offer_typst, html_to_typst}
 #[cfg(feature = "ssr")]
 pub use typst_gen::{init_templates, load_config, AppConfig, BankConfig};
 
-use crate::server::{check_setup_required, get_current_user, get_email_settings, logout};
+use crate::server::{
+    check_setup_required, get_chat_status, get_current_user, get_email_settings, logout,
+};
 use pages::*;
-use shared::EmailSettings;
+use shared::{ChatStatus, EmailSettings};
 
 #[component]
 pub fn App() -> impl IntoView {
@@ -32,6 +34,7 @@ pub fn App() -> impl IntoView {
     let (setup_required, set_setup_required) = create_signal(false);
     let (loading, set_loading) = create_signal(true);
     let (email_settings, set_email_settings) = create_signal(None::<EmailSettings>);
+    let (chat_status, set_chat_status) = create_signal(None::<ChatStatus>);
 
     // Fetch auth status on mount
     create_effect(move |_| {
@@ -44,6 +47,9 @@ pub fn App() -> impl IntoView {
             }
             if let Ok(settings) = get_email_settings().await {
                 set_email_settings.set(Some(settings));
+            }
+            if let Ok(status) = get_chat_status().await {
+                set_chat_status.set(Some(status));
             }
             set_loading.set(false);
         });
@@ -104,6 +110,12 @@ pub fn App() -> impl IntoView {
                                             })}
                                         <li><A href="/engagements">"Aufträge"</A></li>
                                         <li><A href="/reports">"Berichte"</A></li>
+                                        {move || chat_status.get()
+                                            .map(|status| status.enabled)
+                                            .unwrap_or(false)
+                                            .then(|| view! {
+                                                <li><A href="/chat"><span class="icon mr-1"><i class="mdi mdi-robot-outline"></i></span>"Assistent"</A></li>
+                                            })}
                                     </ul>
                                 </nav>
                                 <div class="app-sidebar-footer p-4 border-top" style="border-top: 1px solid var(--border); margin-top: auto;">
@@ -149,6 +161,19 @@ pub fn App() -> impl IntoView {
                                      } />
                                     <Route path="engagements" view=EngagementsPage />
                                     <Route path="reports" view=ReportsPage />
+                                    <Route path="chat" view=move || {
+                                        if chat_status.get().map(|status| status.enabled).unwrap_or(false) {
+                                            view! { <ChatPage /> }.into_view()
+                                        } else {
+                                            view! {
+                                                <div class="container p-5">
+                                                    <div class="notification is-warning">
+                                                        "Der Chat-Assistent ist in dieser Instanz nicht konfiguriert (klubu.chat)."
+                                                    </div>
+                                                </div>
+                                            }.into_view()
+                                        }
+                                    } />
                                 </Routes>
                             </main>
                         </div>

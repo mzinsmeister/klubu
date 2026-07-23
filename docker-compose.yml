@@ -27,6 +27,16 @@ services:
       KLUBU_EXPORT_TEMPLATES_PATH: /app/templates
       KLUBU_DOCUMENT_STORAGE_PATH: /app/document_storage
       KLUBU_MAIL_STORAGE_PATH: /app/mail_storage
+      # Chat assistant (OpenAI-compatible endpoint; the chat page is hidden
+      # until these are set). For the bundled Ollama profile:
+      #   KLUBU_CHAT_URL: http://ollama:11434
+      #   KLUBU_CHAT_MODEL: qwen3:4b
+      # KLUBU_CHAT_URL: ""
+      # KLUBU_CHAT_API_KEY: ""
+      # KLUBU_CHAT_MODEL: ""
+      # Individually disable assistant tools (chat and MCP):
+      # KLUBU_TOOLS_SQL_QUERIES_ENABLED: "false"
+      # KLUBU_TOOLS_PYTHON_ENABLED: "false"
 
   # Optional — start with `docker compose --profile ai up` for receipt prefill.
   ollama:

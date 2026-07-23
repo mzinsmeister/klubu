@@ -1,4 +1,5 @@
 pub mod auth;
+pub mod chat;
 pub mod contacts;
 pub mod dashboard;
 pub mod documents;
@@ -11,6 +12,7 @@ pub mod receipts;
 pub mod reports;
 
 pub use auth::{LoginPage, SetupPage};
+pub use chat::ChatPage;
 pub use contacts::ContactsPage;
 pub use dashboard::DashboardPage;
 pub use documents::DocumentsPage;

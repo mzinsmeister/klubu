@@ -89,6 +89,9 @@ async fn handle_server_fns(
     leptos_axum::handle_server_fns_with_context(
         move || {
             leptos::provide_context(repo.clone());
+            // The chat assistant's tool table; shared with /mcp but available
+            // regardless of whether that endpoint is enabled.
+            leptos::provide_context(mcp::chat_tool_backend(repo.clone()));
             if let Some(user) = current_user.clone() {
                 leptos::provide_context(user);
             }
@@ -171,6 +174,22 @@ async fn download_offer_pdf(
     }
 }
 
+/// Media types a browser may render in place (chat previews open this
+/// endpoint in a same-origin iframe that carries the session cookie).
+/// Everything else — HTML, SVG, and anything unknown — is forced to download
+/// so an uploaded file can never run script in the app's origin.
+fn renders_inline(media_type: &str) -> bool {
+    matches!(
+        media_type,
+        "application/pdf"
+            | "image/png"
+            | "image/jpeg"
+            | "image/webp"
+            | "image/gif"
+            | "text/plain"
+    )
+}
+
 async fn download_document(
     Path(id): Path<i64>,
     State(repo): State<app::db::ActiveRepository>,
@@ -225,11 +244,21 @@ async fn download_document(
     match tokio::fs::read(&file_path).await {
         Ok(bytes) => Response::builder()
             .status(StatusCode::OK)
-            .header(header::CONTENT_TYPE, doc.1)
+            .header(header::X_CONTENT_TYPE_OPTIONS, "nosniff")
             .header(
                 header::CONTENT_DISPOSITION,
-                format!("inline; filename=\"document_{}.{}\"", doc_id, doc.0),
+                format!(
+                    "{}; filename=\"document_{}.{}\"",
+                    if renders_inline(&doc.1) {
+                        "inline"
+                    } else {
+                        "attachment"
+                    },
+                    doc_id,
+                    doc.0
+                ),
             )
+            .header(header::CONTENT_TYPE, doc.1)
             .body(Body::from(bytes))
             .unwrap(),
         Err(e) => Response::builder()
@@ -401,5 +430,19 @@ async fn shutdown_signal() {
     tokio::select! {
         _ = ctrl_c => {},
         _ = terminate => {},
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn scriptable_uploads_are_forced_to_download() {
+        assert!(renders_inline("application/pdf"));
+        assert!(renders_inline("image/png"));
+        assert!(!renders_inline("text/html"));
+        assert!(!renders_inline("image/svg+xml"));
+        assert!(!renders_inline("application/octet-stream"));
     }
 }

@@ -8,6 +8,8 @@
 //! Klubu user (`KLUBU_MCP_USER`, or the single existing user).
 
 mod protocol;
+mod pytool;
+mod sqltool;
 mod tools;
 
 use axum::{
@@ -34,6 +36,34 @@ struct McpState {
     configured_user: Option<String>,
     bearer_token: Arc<str>,
     allowed_origins: Arc<HashSet<String>>,
+}
+
+/// Bridges the chat assistant onto the same tool table the MCP endpoint
+/// serves — same business rules, same audit attribution, same confirmation
+/// flags. Built unconditionally: the chat must keep working when the external
+/// `/mcp` endpoint is disabled (no `KLUBU_MCP_TOKEN`).
+pub fn chat_tool_backend(repository: app::db::ActiveRepository) -> app::server::chat::ChatTools {
+    struct Backend {
+        repository: app::db::ActiveRepository,
+    }
+    impl app::server::chat::ChatToolBackend for Backend {
+        fn definitions(&self) -> Vec<Value> {
+            tools::tool_definitions()
+        }
+        fn instructions(&self) -> &'static str {
+            tools::OPERATING_INSTRUCTIONS
+        }
+        fn call(
+            &self,
+            actor: String,
+            name: String,
+            arguments: Value,
+        ) -> app::server::chat::ToolFuture {
+            let service = tools::ToolService::new(self.repository.clone(), actor);
+            Box::pin(async move { service.call(&name, arguments).await })
+        }
+    }
+    app::server::chat::ChatTools(Arc::new(Backend { repository }))
 }
 
 /// Builds the `/mcp` router, or `None` when `KLUBU_MCP_TOKEN` is not set.

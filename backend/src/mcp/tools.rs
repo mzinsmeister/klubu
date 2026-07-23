@@ -408,6 +408,27 @@ impl ToolService {
                 .await,
             ),
 
+            "run_sql_query" => {
+                if !app::server::chat::load_assistant_tool_gates().sql {
+                    return Err(
+                        "The SQL query tool is disabled (klubu.tools.sqlQueriesEnabled)".to_string()
+                    );
+                }
+                super::sqltool::run_read_only_query(
+                    self.repository.pool(),
+                    required(&arguments, "query")?,
+                )
+                .await
+            }
+            "run_python" => {
+                if !app::server::chat::load_assistant_tool_gates().python {
+                    return Err(
+                        "The Python tool is disabled (klubu.tools.pythonEnabled)".to_string()
+                    );
+                }
+                super::pytool::run(required(&arguments, "code")?).await
+            }
+
             "list_reports" => result_json(app::server::list_reports().await),
             "run_report" => result_json(
                 app::server::run_report(required(&arguments, "name")?, report_params(&arguments)?)
@@ -805,9 +826,31 @@ fn report_schema() -> Value {
     )
 }
 
+/// Tools that irreversibly change business state or reach the outside world.
+/// MCP clients see this as `_meta["klubu/requiresConfirmation"]` (on top of
+/// the standard `destructiveHint`); the built-in chat pauses these calls until
+/// the user explicitly approves them.
+const CONFIRMATION_REQUIRED: &[&str] = &[
+    "finalize_invoice",
+    "cancel_invoice",
+    "delete_invoice_draft",
+    "delete_invoice_payment",
+    "create_invoice_reminder",
+    "send_invoice_email",
+    "finalize_offer",
+    "delete_offer_draft",
+    "send_offer_email",
+    "finalize_receipt",
+    "delete_receipt_draft",
+    "delete_receipt_payment",
+    "send_email",
+    "tombstone_document",
+    "link_engagement_record",
+];
+
 pub fn tool_definitions() -> Vec<Value> {
     let empty = || object_schema(json!({}), &[]);
-    vec![
+    let mut definitions = vec![
         tool("system_overview", "System overview", "Return the authenticated actor, supported business domains, data conventions, and autonomous operating rules.", empty(), true, false, true, false),
         tool("get_dashboard", "Get dashboard", "Read current Klubu business totals and counts for a quick operational overview.", empty(), true, false, true, false),
         tool("get_notifications", "Get notifications", "List actionable business notifications such as overdue invoices, with dates, outstanding amounts, and application links.", empty(), true, false, true, false),
@@ -877,5 +920,65 @@ pub fn tool_definitions() -> Vec<Value> {
         tool("run_report", "Run report", "Render a report with declared scalar parameters and return its self-contained HTML fragment.", report_schema(), true, false, true, false),
         tool("export_report_csv", "Export report CSV", "Return the report's underlying machine-readable rows as a base64 CSV file for audit/data access.", report_schema(), true, false, true, false),
         tool("export_report_pdf", "Export report PDF", "Render a report as a base64 PDF file using its declared scalar parameters.", report_schema(), true, false, true, false),
-    ]
+    ];
+
+    // The two general-purpose tools are individually configurable and vanish
+    // from discovery entirely when disabled (the dispatcher re-checks anyway).
+    let gates = app::server::chat::load_assistant_tool_gates();
+    if gates.sql {
+        definitions.push(tool(
+            "run_sql_query",
+            "Run read-only SQL",
+            "Execute exactly one read-only SQL statement (SELECT/WITH/EXPLAIN) against the live Klubu database and return columns plus up to 200 rows. The dialect is reported in the result (sqlite or postgres); inspect the schema via sqlite_master or information_schema. Runs in a rolled-back, read-only transaction.",
+            object_schema(json!({"query": {"type": "string", "description": "A single read-only SQL statement without a trailing second statement."}}), &["query"]),
+            true, false, true, false,
+        ));
+    }
+    if gates.python {
+        definitions.push(tool(
+            "run_python",
+            "Run sandboxed Python",
+            "Execute a Python 3 script in a restricted local subprocess (isolated mode, cleared environment, scratch working directory, CPU/memory/output limits; numpy and pandas are available in the Docker image). The script reads nothing from stdin; print results to stdout.",
+            object_schema(json!({"code": {"type": "string", "description": "Complete Python 3 script; stdout is returned."}}), &["code"]),
+            false, false, false, true,
+        ));
+    }
+
+    for definition in &mut definitions {
+        let name = definition["name"].as_str().unwrap_or_default();
+        definition["_meta"] = json!({
+            "klubu/requiresConfirmation": CONFIRMATION_REQUIRED.contains(&name)
+        });
+    }
+    definitions
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn every_confirmation_entry_names_an_existing_tool() {
+        let names: std::collections::HashSet<String> = tool_definitions()
+            .iter()
+            .map(|definition| definition["name"].as_str().unwrap().to_string())
+            .collect();
+        for required in CONFIRMATION_REQUIRED {
+            assert!(names.contains(*required), "unknown tool: {required}");
+        }
+    }
+
+    #[test]
+    fn irreversible_tools_are_flagged_and_reads_are_not() {
+        for definition in tool_definitions() {
+            let name = definition["name"].as_str().unwrap();
+            let flagged = definition["_meta"]["klubu/requiresConfirmation"]
+                .as_bool()
+                .unwrap();
+            assert_eq!(flagged, CONFIRMATION_REQUIRED.contains(&name), "{name}");
+            if definition["annotations"]["readOnlyHint"].as_bool().unwrap() {
+                assert!(!flagged, "read-only tool {name} must not require confirmation");
+            }
+        }
+    }
 }
