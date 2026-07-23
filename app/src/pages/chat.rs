@@ -28,7 +28,11 @@ fn safe_href(dest: &str) -> bool {
 /// a plain link stays a link, image syntax on an app URL means "the user
 /// should see this file right here".
 fn image_replacement(dest: &str, alt: &str) -> Event<'static> {
-    let label = if alt.trim().is_empty() { "Dokument" } else { alt };
+    let label = if alt.trim().is_empty() {
+        "Dokument"
+    } else {
+        alt
+    };
     let label = escape_xml(label);
     if dest.starts_with('/') {
         // Same-origin app resource (e.g. /api/documents/9, /api/pdf/invoice/42):
@@ -209,9 +213,8 @@ struct BuiltChart {
 fn y_axis(svg: &mut String, min: f64, max: f64, plot_w: f64) -> impl Fn(f64) -> f64 {
     let step = nice_step(max - min);
     let mut tick = (min / step).floor() * step;
-    let scale = move |value: f64| {
-        MARGIN_T + (max - value) / (max - min) * (CHART_H - MARGIN_T - MARGIN_B)
-    };
+    let scale =
+        move |value: f64| MARGIN_T + (max - value) / (max - min) * (CHART_H - MARGIN_T - MARGIN_B);
     while tick <= max + step * 0.001 {
         let y = scale(tick);
         if y >= MARGIN_T - 1.0 && y <= CHART_H - MARGIN_B + 1.0 {
@@ -331,9 +334,16 @@ fn build_chart(spec: &ChartSpec) -> Result<BuiltChart, String> {
             Ok(BuiltChart { svg, legend })
         }
         "line" => {
-            let all: Vec<f64> = series.iter().flat_map(|s| s.values.iter().copied()).collect();
+            let all: Vec<f64> = series
+                .iter()
+                .flat_map(|s| s.values.iter().copied())
+                .collect();
             let mut min = all.iter().copied().fold(f64::INFINITY, f64::min).min(0.0);
-            let mut max = all.iter().copied().fold(f64::NEG_INFINITY, f64::max).max(0.0);
+            let mut max = all
+                .iter()
+                .copied()
+                .fold(f64::NEG_INFINITY, f64::max)
+                .max(0.0);
             if max - min < f64::EPSILON {
                 max += 1.0;
                 min -= 1.0;
@@ -381,9 +391,7 @@ fn build_chart(spec: &ChartSpec) -> Result<BuiltChart, String> {
                 series
                     .iter()
                     .enumerate()
-                    .map(|(index, s)| {
-                        (SERIES_COLORS[index].to_string(), series_name(index, s))
-                    })
+                    .map(|(index, s)| (SERIES_COLORS[index].to_string(), series_name(index, s)))
                     .collect()
             } else {
                 Vec::new()
@@ -392,9 +400,16 @@ fn build_chart(spec: &ChartSpec) -> Result<BuiltChart, String> {
         }
         // Everything else renders as bars; "bar" is the documented name.
         _ => {
-            let all: Vec<f64> = series.iter().flat_map(|s| s.values.iter().copied()).collect();
+            let all: Vec<f64> = series
+                .iter()
+                .flat_map(|s| s.values.iter().copied())
+                .collect();
             let mut min = all.iter().copied().fold(f64::INFINITY, f64::min).min(0.0);
-            let mut max = all.iter().copied().fold(f64::NEG_INFINITY, f64::max).max(0.0);
+            let mut max = all
+                .iter()
+                .copied()
+                .fold(f64::NEG_INFINITY, f64::max)
+                .max(0.0);
             if max - min < f64::EPSILON {
                 max += 1.0;
                 min -= 1.0;
@@ -408,8 +423,7 @@ fn build_chart(spec: &ChartSpec) -> Result<BuiltChart, String> {
             let group_w = plot_w / points.max(1) as f64;
             // 2px gap between bars of a group; groups get breathing room too.
             let bar_w = ((group_w * 0.72 / series_count) - 2.0).clamp(2.0, 44.0);
-            let position =
-                |index: usize| MARGIN_L + group_w * index as f64 + group_w / 2.0;
+            let position = |index: usize| MARGIN_L + group_w * index as f64 + group_w / 2.0;
             x_labels(&mut svg, &labels, position);
             let zero_y = scale_y(0.0);
             for (series_index, series) in series.iter().enumerate() {
@@ -442,9 +456,7 @@ fn build_chart(spec: &ChartSpec) -> Result<BuiltChart, String> {
                 series
                     .iter()
                     .enumerate()
-                    .map(|(index, s)| {
-                        (SERIES_COLORS[index].to_string(), series_name(index, s))
-                    })
+                    .map(|(index, s)| (SERIES_COLORS[index].to_string(), series_name(index, s)))
                     .collect()
             } else {
                 Vec::new()
@@ -559,9 +571,11 @@ fn apply_event(entries: &mut Vec<Entry>, event: ChatEvent) {
                 status,
                 summary: entry_summary,
                 ..
-            }) = entries.iter_mut().rev().find(|entry| {
-                matches!(entry, Entry::Tool { call_id: id, .. } if *id == call_id)
-            }) {
+            }) = entries
+                .iter_mut()
+                .rev()
+                .find(|entry| matches!(entry, Entry::Tool { call_id: id, .. } if *id == call_id))
+            {
                 *status = if ok {
                     ToolStatus::Succeeded
                 } else {
@@ -582,11 +596,9 @@ fn apply_event(entries: &mut Vec<Entry>, event: ChatEvent) {
             resolved: None,
         }),
         ChatEvent::ConfirmationResolved { call_id, approved } => {
-            if let Some(Entry::Confirmation { resolved, .. }) =
-                entries.iter_mut().rev().find(|entry| {
-                    matches!(entry, Entry::Confirmation { call_id: id, .. } if *id == call_id)
-                })
-            {
+            if let Some(Entry::Confirmation { resolved, .. }) = entries.iter_mut().rev().find(
+                |entry| matches!(entry, Entry::Confirmation { call_id: id, .. } if *id == call_id),
+            ) {
                 *resolved = Some(approved);
             }
         }
@@ -891,7 +903,9 @@ mod tests {
 
     #[test]
     fn markdown_neutralizes_raw_html_and_bad_links() {
-        let html = render_markdown("Hallo <script>alert(1)</script> [ok](/invoices/4) [bad](javascript:alert(1))");
+        let html = render_markdown(
+            "Hallo <script>alert(1)</script> [ok](/invoices/4) [bad](javascript:alert(1))",
+        );
         assert!(!html.contains("<script>"));
         assert!(html.contains("&lt;script&gt;"));
         assert!(html.contains("href=\"/invoices/4\""));

@@ -411,7 +411,8 @@ impl ToolService {
             "run_sql_query" => {
                 if !app::server::chat::load_assistant_tool_gates().sql {
                     return Err(
-                        "The SQL query tool is disabled (klubu.tools.sqlQueriesEnabled)".to_string()
+                        "The SQL query tool is disabled (klubu.tools.sqlQueriesEnabled)"
+                            .to_string(),
                     );
                 }
                 super::sqltool::run_read_only_query(
@@ -977,7 +978,10 @@ mod tests {
                 .unwrap();
             assert_eq!(flagged, CONFIRMATION_REQUIRED.contains(&name), "{name}");
             if definition["annotations"]["readOnlyHint"].as_bool().unwrap() {
-                assert!(!flagged, "read-only tool {name} must not require confirmation");
+                assert!(
+                    !flagged,
+                    "read-only tool {name} must not require confirmation"
+                );
             }
         }
     }

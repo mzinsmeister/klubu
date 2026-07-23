@@ -536,7 +536,9 @@ async fn run_agent_loop(
             .unwrap_or_default()
             .trim()
             .to_string();
-        if !content.is_empty() && !push_event(&run_id, ChatEvent::AssistantMessage { text: content }) {
+        if !content.is_empty()
+            && !push_event(&run_id, ChatEvent::AssistantMessage { text: content })
+        {
             // The run was purged (client long gone); stop calling the model.
             return;
         }

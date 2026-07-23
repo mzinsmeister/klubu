@@ -181,12 +181,7 @@ async fn download_offer_pdf(
 fn renders_inline(media_type: &str) -> bool {
     matches!(
         media_type,
-        "application/pdf"
-            | "image/png"
-            | "image/jpeg"
-            | "image/webp"
-            | "image/gif"
-            | "text/plain"
+        "application/pdf" | "image/png" | "image/jpeg" | "image/webp" | "image/gif" | "text/plain"
     )
 }
 
